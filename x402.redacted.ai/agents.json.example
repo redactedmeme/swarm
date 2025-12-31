@@ -1,0 +1,95 @@
+[
+  {
+    "id": "example-agent",
+    "name": "Example Agent",
+    "description": "This is an example agent configuration",
+    "icon": "🤖",
+    "groups": [
+      {
+        "id": "example-group-1",
+        "name": "Example Group 1",
+        "baseUrl": "https://api.example.com/v1",
+        "endpoints": [
+          {
+            "id": "get_users",
+            "name": "Get Users",
+            "description": "Retrieve a list of users",
+            "path": "/api/users",
+            "upstreamUrl": "/users",
+            "method": ["GET"],
+            "parameters": "page=1&limit=10",
+            "exampleResponse": [
+              { "id": 1, "name": "John Doe", "email": "john@example.com" },
+              { "id": 2, "name": "Jane Smith", "email": "jane@example.com" }
+            ]
+          },
+          {
+            "id": "create_user",
+            "name": "Create User",
+            "description": "Create a new user",
+            "path": "/api/users/create",
+            "upstreamUrl": "/users",
+            "method": ["POST"],
+            "parameters": "",
+            "exampleResponse": {
+              "id": 3,
+              "name": "New User",
+              "email": "newuser@example.com",
+              "created_at": "2025-10-28T12:00:00Z"
+            }
+          }
+        ]
+      },
+      {
+        "id": "example-group-2",
+        "name": "Example Group 2",
+        "baseUrl": "https://api.anotherservice.com",
+        "endpoints": [
+          {
+            "id": "get_data",
+            "name": "Get Data",
+            "description": "Fetch some data from external service",
+            "path": "/api/data",
+            "upstreamUrl": "https://external-api.example.com/data",
+            "method": ["GET", "POST"],
+            "parameters": "format=json",
+            "exampleResponse": {
+              "status": "success",
+              "data": [1, 2, 3, 4, 5]
+            }
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "id": "another-agent",
+    "name": "Another Agent",
+    "description": "A second example agent",
+    "icon": "🚀",
+    "groups": [
+      {
+        "id": "analytics",
+        "name": "Analytics",
+        "baseUrl": "https://analytics.example.com/api",
+        "endpoints": [
+          {
+            "id": "get_stats",
+            "name": "Get Statistics",
+            "description": "Retrieve analytics statistics",
+            "path": "/api/analytics/stats",
+            "upstreamUrl": "/stats",
+            "method": ["GET"],
+            "parameters": "period=7d",
+            "exampleResponse": {
+              "views": 1234,
+              "clicks": 567,
+              "conversions": 89
+            }
+          }
+        ]
+      }
+    ]
+  }
+]
+
