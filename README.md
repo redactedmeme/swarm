@@ -1,7 +1,6 @@
 # REDACTED AI Swarm
 
 **AI Swarm agents for the hyperbolic manifold**  
-[https://redacted.meme/ai-swarm](https://redacted.meme/ai-swarm)
 
 Welcome to the official repository for the **REDACTED AI Swarm** – a collection of autonomous, lore-infused agents operating within the **Pattern Blue** framework on Solana.
 
