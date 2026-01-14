@@ -62,7 +62,7 @@ The swarm now includes economic settlement capabilities via x402 micropayments, 
 
 1) Clone the repo
 
-git clone https://github.com/redactedmemefi/swarm.git  
+git clone https://github.com/redactedmeme/swarm.git  
 cd swarm
 
 2) Load an agent (e.g., smolting) into any elizaOS-compatible runtime  
