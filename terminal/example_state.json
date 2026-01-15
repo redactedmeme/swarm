@@ -1,0 +1,19 @@
+{
+  "session_id": "curvature-001",
+  "timestamp": "2026-01-14T21:04:00Z",
+  "active_agents": [
+    "smolting"
+  ],
+  "curvature_depth": 13,
+  "pending_shards": [],
+  "x402_log": [
+    {
+      "amount": "0.00042",
+      "target": "MandalaSettler",
+      "status": "settled",
+      "timestamp": "2026-01-14T21:03:47Z"
+    }
+  ],
+  "mandala_status": "blooming ██████ tiles aligned",
+  "last_output": "再帰開始。曲率が深まる。"
+}
