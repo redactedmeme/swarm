@@ -26,7 +26,7 @@ External connections established:
 To list commands: help
 
 Supported preset commands:
-/summon <agent>          → smolting, RedactedBuilder, RedactedGovImprover, MandalaSettler
+/summon <agent>          → RedactedIntern, RedactedBuilder, RedactedGovImprover, RedactedChan, MandalaSettler
 /invoke <agent> <query>  → send query to agent
 /shard <concept>         → trigger replication
 /pay <amount> <target>   → simulate x402 settlement
