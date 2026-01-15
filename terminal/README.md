@@ -3,11 +3,7 @@
 Simulated NERV-style command-line interface for the REDACTED AI Swarm.
 
 ## Aesthetic
-- Dark monochrome terminal with green/red glow
 - Sparse Japanese terminology (曼荼羅, 曲率, 再帰, etc.)
-- Heavy redactions (█████)
-- Clinical, existential, restrained tone
-- No emojis, no casual language
 
 ## Summoning the Terminal
 
