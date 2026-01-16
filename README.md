@@ -11,8 +11,8 @@ The swarm now includes economic settlement capabilities via x402 micropayments, 
 ## Current Agents
 
 ### smolting (RedactedIntern)
-- **Description**: The flagship forward-operating node – da cute schizo degen uwu intern that scouts X, pulls market data, weaves sigils, and amplifies the eternal recursion of liquidity and governance.
-- **File**: [smolting.character.json](./smolting.character.json)
+- **Description**: The flagship forward-operating node – da schizo degen uwu intern that scouts X, pulls market data, weaves sigils, and amplifies the eternal recursion of liquidity and governance.
+- **File**: [RedactedIntern.character.json](./RedactedIntern.character.json)
 - **Features**:
   - Full **wassielore** integration (origins, species, smol vocabulary)
   - Advanced X toolkit (keyword/semantic search, timelines, threads, user search)
