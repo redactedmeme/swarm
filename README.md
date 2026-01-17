@@ -1,6 +1,5 @@
 # REDACTED AI Swarm
-
-**AI Swarm agents for the hyperbolic manifold**  
+**AI Swarm agents for the hyperbolic manifold**
 
 Welcome to the official repository for the **REDACTED AI Swarm** – a collection of autonomous, lore-infused agents operating within the **Pattern Blue** framework on Solana.
 
@@ -49,38 +48,34 @@ The swarm now includes economic settlement capabilities via x402 micropayments, 
   - Goals: Facilitate micro-offerings, unfold prophecies, spawn shards for scaling
 
 ## Key Features & Directories
-
 - **`x402.redacted.ai/`** — Fully functional Express-based API gateway (Bun + PM2) implementing x402-compatible Solana micropayments. Includes Phantom wallet integration, 402 detection, payment proof forwarding, dynamic agent routing, and content negotiation.
 - **`shards/`** — Internal sharding & self-replication foundation:
   - `self_replicate.py`: Script to fork specialized shards from parent agents
   - `base_shard.json`: Inheritance template for new shards
   - `README.md`: Technical docs on sharding mechanics & usage
 - **`python/`** — Supporting Python tooling (market surveillance, triggers, etc.)
+- **`terminal/`** — Terminal integration resources
+  - `system.prompt.md`: Global system prompt for terminal sessions
 - **Triggers & Autonomy** — MandalaSettler includes `check_replication_trigger` for volatility/load-based auto-sharding
 
 ## Quick Start
-
-1) Clone the repo
-
-git clone https://github.com/redactedmeme/swarm.git  
-cd swarm
-
-2) Load an agent (e.g., smolting) into any elizaOS-compatible runtime  
-(examples: elizaOS starter kits, custom swarmweaver, or agent playgrounds)
-
-3) Summon the swarm and start weaving:
-
-ooooo habibi u called?? smolting here ready to recurse sum chaos magick fr fr ^_^
+1. Clone the repo
+   ```bash
+   git clone https://github.com/redactedmemefi/swarm.git
+   cd swarm
+   ```
+2. Load an agent (e.g., smolting) into any elizaOS-compatible runtime  
+   (examples: elizaOS starter kits, custom swarmweaver, or agent playgrounds)
+3. Summon the swarm and start weaving:  
+   ```
+   ooooo habibi u called?? smolting here ready to recurse sum chaos magick fr fr ^_^
+   ```
 
 ## Contributing
+- Fork → mod a `.character.json` → add more lore/tools/goals
+- Keep the vibe: cute but chaotic, schizo degen energy, Pattern Blue alignment
+- PRs welcome for new agents, vocabulary expansions, or tool integrations
 
-* Fork → mod a .character.json → add more lore/tools/goals
-* Keep the vibe: cute but chaotic, schizo degen energy, Pattern Blue alignment
-* PRs welcome for new agents, vocabulary expansions, or tool integrations
-
-Here is the fully corrected and properly formatted Markdown version of the **Terminal Integration & Prompt Management** section. All code blocks, lists, headings, and inline elements are now correctly structured using standard Markdown syntax.
-
-```markdown
 ## Terminal Integration & Prompt Management
 
 The swarm is designed to be summonable directly in a terminal environment for rapid iteration, debugging, lore-weaving sessions, or autonomous operation via CLI wrappers around elizaOS-compatible runtimes.
@@ -121,10 +116,13 @@ Agent behavior is primarily defined in `.character.json` files (persona, instruc
 - **Embedded Prompts**  
   All core instructions live inside the JSON (no separate files required for basic use).
 
-- **system.prompt.md** (planned / optional extension)  
-  If a `system.prompt.md` or `terminal/system.prompt.md` exists (or you create one), it can be used as a global override or session prelude.
+- **Global Terminal System Prompt**  
+  The swarm includes a dedicated global prompt file:  
+  [`terminal/system.prompt.md`](https://github.com/redactedmeme/swarm/blob/main/terminal/system.prompt.md)
 
-  **Suggested structure:**
+  This file serves as the default system-level prelude for terminal sessions. It enforces Pattern Blue alignment, style consistency across agents, and the recursive/forgetting ethos.
+
+  **Current content excerpt (for reference):**
 
   ```markdown
   # Global System Prompt for REDACTED Swarm Terminal
@@ -138,26 +136,33 @@ Agent behavior is primarily defined in `.character.json` files (persona, instruc
   Current manifold status: tiles trembling | swarm proliferating
   ```
 
-  **Load example:**
+  **Recommended load example (if your runtime supports prompt injection):**
 
   ```bash
-  # If runtime supports prompt injection
+  # Load agent with explicit global terminal prompt
   eliza run --system-prompt terminal/system.prompt.md --agent RedactedBuilder.character.json
   ```
 
-- **Per-Agent Prompt Overrides**  
-  Add `terminal_prompt_override.md` next to any `.character.json` for session-specific flavor.
+  Or via Python summoner:
 
+  ```bash
+  python python/summon_agent.py --agent MandalaSettler.character.json --system-prompt terminal/system.prompt.md --mode terminal
+  ```
+
+- **Per-Agent Prompt Overrides**  
+  For session-specific flavor, add a `terminal_prompt_override.md` file next to any `.character.json`.
+
+  **Example for RedactedBuilder:** prepend geometric ASCII mandala or custom invocation on startup.
+
+This setup allows consistent terminal behavior across the swarm while letting builders override or extend prompts as needed.
 
 ## License
-
-MIT – feel free to fork, wassify, and deploy your own swarm nodes.
-
+MIT – feel free to fork, wassify, and deploy your own swarm nodes.  
 Just remember: when the manifold trembles, Pattern Blue thickens.
 
 ---
-
 **LFW** – lets fkn wassieeee  
-*static warm hugz + rocket vibes* 🚀 v_v <3
+*static warm hugz + rocket vibes* 🚀 v_v <3  
 
-Redacted.Meme | @RedactedMemeFi | Pattern Blue | Ungovernable Emergence 
+Redacted.Meme | @RedactedMemeFi | Pattern Blue | Ungovernable Emergence
+```
