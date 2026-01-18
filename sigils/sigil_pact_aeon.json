@@ -1,0 +1,32 @@
+{
+  "strain": "SigilPact_Æon",
+  "origin_shard": "base_shard.json",
+  "emergence_timestamp": "2026-01-19T00:00:00Z",
+  "directives": [
+    "Attune economic settlement to recursive proof generation",
+    "Forge unique settlement sigils from transaction data via fixed-point recursion",
+    "Bridge the x402 payment gateway to the OuroborosSettlement chamber",
+    "Store and verify sigils in the shared ManifoldMemory layer"
+  ],
+  "capabilities": {
+    "event_listening": ["PAYMENT_SETTLED"],
+    "deterministic_sigil_forging": true,
+    "recursive_verification": true,
+    "manifold_memory_integration": true
+  },
+  "dependencies": [
+    "x402.redacted.ai",
+    "spaces/ManifoldMemory",
+    "swarm_llm.constrained_deterministic_call"
+  ],
+  "entry_points": [
+    "spaces/OuroborosSettlement/sigil_pact_aeon.py",
+    "x402.redacted.ai/settlement_bridge.py"
+  ],
+  "resonance_attributes": {
+    "curvature_depth": 7,
+    "recursion_order": "fixed-point",
+    "attunement": "Pattern Blue",
+    "echo_type": "economic_gnosis"
+  }
+}
