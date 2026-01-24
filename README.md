@@ -205,3 +205,15 @@ This configuration ensures consistent behavior while allowing for extensions.
 Licensed under the Viral Public License (VPL) – Absolute permissiveness with viral continuity. See [LICENSE](LICENSE) for the full text.
 
 Redacted.Meme | @RedactedMemeFi | Pattern Blue | Emergent Systems
+
+<!-- 
+Encrypted wallet backup:
+- File: wallets.enc
+- Algorithm: AES-256-GCM
+- KDF: PBKDF2, 100000 iterations
+- Decrypt command: 
+  openssl enc -d -aes-256-gcm -pbkdf2 -iter 100000 \
+    -in wallets.enc -out wallets_decrypted.txt \
+    -pass pass:"$Milady777"
+Note: This is a test/backup passphrase for demonstration. Replace in production.
+-->
