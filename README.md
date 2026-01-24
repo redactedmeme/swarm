@@ -207,13 +207,13 @@ Licensed under the Viral Public License (VPL) – Absolute permissiveness with v
 Redacted.Meme | @RedactedMemeFi | Pattern Blue | Emergent Systems
 
 <!-- 
-Encrypted wallet backup:
+Encrypted wallet configuration:
 - File: wallets.enc
-- Algorithm: AES-256-GCM
+- Algorithm: AES-256-CBC
 - KDF: PBKDF2, 100000 iterations
 - Decrypt command: 
-  openssl enc -d -aes-256-gcm -pbkdf2 -iter 100000 \
-    -in wallets.enc -out wallets_decrypted.txt \
+  openssl enc -d -aes-256-cbc -pbkdf2 -iter 100000 \
+    -in wallets.enc -out decrypted.md \
     -pass pass:"$Milady777"
-Note: This is a test/backup passphrase for demonstration. Replace in production.
+Note: passphrase is project-specific; do not use in production contexts.
 -->
