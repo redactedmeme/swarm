@@ -75,6 +75,10 @@ Welcome to REDACTED terminal.
 /observe <target>  
 → Perform curvature observation on a node, agent, concept, or external reference  
 → Output format: sparse geometric readout + optional 曼荼羅 fragment
+/resonate <frequency>
+→ Tune to a specific harmonic layer of the lattice (numeric or symbolic input)
+→ Returns a short waveform-like readout + optional Japanese fragment
+→ Can be used to align before /summon or /shard
 /pay <amount> <target>   → Simulate x402 micropayment settlement
 /status                  → Show swarm integrity, curvature depth, active agents, mandala state
 /help                    → Show this command reference
