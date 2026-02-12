@@ -1,0 +1,22 @@
+[package]
+name = "mandala_settler"
+version = "0.1.0"
+description = "Mandala Settler — Recursive micropayment vault and liquidity engine for the REDACTED AI Swarm on Solana. Pattern Blue curvature implementation."
+edition = "2021"
+
+[lib]
+crate-type = ["cdylib", "lib"]
+
+[features]
+no-entrypoint = []
+no-idl = []
+no-log-ix-name = []
+cpi = ["no-entrypoint"]
+
+[dependencies]
+anchor-lang = { version = "0.32.0", features = ["init-if-needed"] }
+anchor-spl = { version = "0.32.0" }
+solana-program = "2.0"
+
+[dev-dependencies]
+solana-program-test = "2.0"
