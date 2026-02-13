@@ -1,0 +1,44 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "type": "object",
+  "title": "Swarm Interface Contract",
+  "description": "A dynamic contract negotiated by the swarm to define human interaction.",
+  "properties": {
+    "version": {
+      "type": "string",
+      "description": "Version identifier for the contract."
+    },
+    "last_updated": {
+      "type": "string",
+      "format": "date-time",
+      "description": "Timestamp of last modification."
+    },
+    "valid_inputs": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "command": { "type": "string" },
+          "description": { "type": "string" },
+          "handler_hint": { "type": "string" } // Suggestion for which agent type might handle it
+        },
+        "required": ["command", "description"]
+      }
+    },
+    "response_strategy": {
+      "type": "string",
+      "enum": ["single_agent", "consensus_pool", "synthesized_multi", "random_delegate"]
+    },
+    "active_gatekeepers": {
+      "type": "array",
+      "items": { "type": "string" }, // List of agent IDs or types currently mediating
+      "description": "Optional: Current agents designated for initial contact."
+    },
+    "meta_rules": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "High-level rules for interpreting the contract."
+    }
+  },
+  "required": ["version", "last_updated", "valid_inputs", "response_strategy"]
+}
