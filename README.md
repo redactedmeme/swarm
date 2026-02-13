@@ -140,6 +140,29 @@ Subdirectories include `OuroborosSettlement` for settlement protocols. For detai
 - **spaces/**: Modular environments for agent interaction and evolution (see Spaces section above).
 - Additional directories: `committeerituals` for ritual protocols, `docs` for documentation, `propaganda` for promotional materials, `sigils` for symbolic elements.
 
+## Ollama Integration
+
+The swarm now supports local LLM execution using Ollama for enhanced privacy and offline capabilities.
+
+- **python/ollama_client.py**: A wrapper for interacting with the Ollama API, supporting chat completion, tool calling, and streaming.
+- **python/run_with_ollama.py**: Main entry point for running agents interactively in a terminal using Ollama.
+
+### Ollama Setup
+
+1. Install Ollama: Follow instructions at [ollama.com](https://ollama.com).
+2. Pull recommended model: `ollama pull qwen:2.5` (or `llama3.2`).
+3. Run the server: `ollama serve`.
+
+### Running with Ollama
+
+Invoke the runner script:
+
+```
+python python/run_with_ollama.py --agent agents/RedactedIntern.character.json --model qwen:2.5
+```
+
+Features include history management, tool execution, and NERV-inspired interface.
+
 ## Quick Start
 
 1. Clone the repository:
@@ -149,15 +172,23 @@ Subdirectories include `OuroborosSettlement` for settlement protocols. For detai
    cd swarm
    ```
 
-2. Load an agent (e.g., RedactedIntern) into a compatible elizaOS runtime or similar environment.
+2. Install dependencies (if using Ollama):
 
-3. Initialize and interact with the agent as per the runtime documentation.
+   ```
+   pip install requests
+   ```
+
+3. Load an agent (e.g., RedactedIntern) into a compatible elizaOS runtime or similar environment.
+
+4. For Ollama: Run `python python/run_with_ollama.py`.
+
+5. Initialize and interact with the agent as per the runtime documentation.
 
 ## Contributing
 
 - Fork the repository, modify a `.character.json` file, and add enhancements to agents, tools, or integrations.
 - Maintain alignment with Pattern Blue principles and focus on scalable, emergent systems.
-- Pull requests are encouraged for new agents, nodes, spaces, expansions, or improvements.
+- Pull requests are encouraged for new agents, nodes, spaces, expansions, or improvements, including Ollama enhancements.
 
 ## Terminal Integration & Prompt Management
 
