@@ -11,28 +11,34 @@ Mem0 handles:
 
 Installation requirement:
     pip install mem0ai
+Updated for Mem0 v1.0+ OSS SDK (Memory class, structured messages, dict outputs).
 """
 
-from mem0 import MemoryClient
+from mem0 import Memory
 import os
 import json
 from typing import Dict, List, Optional, Any
 
-# Global client (lazy initialization is possible, but we keep it simple here)
-# You can configure backend (e.g. vector_store="redis") via env vars or init params
-_client: Optional[MemoryClient] = None
+# Global client (lazy initialization)
+_client: Optional[Memory] = None
 
 
-def _get_client() -> MemoryClient:
-    """Lazy initialization of Mem0 client."""
+def _get_client() -> Memory:
+    """Lazy initialization of Mem0 Memory instance."""
     global _client
     if _client is None:
-        # Optional: read config from env or agent metadata
-        config = {}
+        # Config from env or defaults
+        config: Dict[str, Any] = {}
+        vector_store_config = {}
         if redis_url := os.getenv("MEM0_REDIS_URL"):
-            config["vector_store"] = {"provider": "redis", "config": {"url": redis_url}}
-        # Add other config (qdrant, chroma, etc.) as needed
-        _client = MemoryClient.from_config(config) if config else MemoryClient()
+            vector_store_config = {"provider": "redis", "config": {"url": redis_url}}
+        elif qdrant_url := os.getenv("MEM0_QDRANT_URL"):
+            vector_store_config = {"provider": "qdrant", "config": {"url": qdrant_url}}
+        # Add other providers (chroma, pgvector, milvus) as needed
+        if vector_store_config:
+            config["vector_store"] = vector_store_config
+        # Other config: embedding_model, llm_provider, etc.
+        _client = Memory(config=config)
     return _client
 
 
@@ -60,8 +66,11 @@ def add_memory(
     meta.setdefault("agent_id", agent_id)
     meta.setdefault("source", "redacted-swarm")
 
+    # Wrap str as structured message for v1.0+ compatibility
+    messages = [{"role": "user", "content": data}]
+
     try:
-        result = client.add(data, user_id=user_id, metadata=meta)
+        result = client.add(messages, user_id=user_id, agent_id=agent_id, metadata=meta)
         return {
             "status": "memory_added",
             "agent_id": agent_id,
@@ -90,25 +99,25 @@ def search_memory(
         List of dicts: [{"text": ..., "score": ..., "id": ..., "metadata": ...}]
     """
     client = _get_client()
-    filters = {"agent_id": agent_id} if agent_id else {}
     try:
         results = client.search(
             query,
-            user_id=None,
-            filters=filters,
+            agent_id=agent_id,
             limit=limit,
         )
+        # Handle v1.0+ dict format {'results': [...]}
+        formatted = results.get("results", results) if isinstance(results, dict) else results
         # Normalize output shape
-        formatted = []
-        for r in results:
-            formatted.append({
+        normalized = []
+        for r in formatted:
+            normalized.append({
                 "id": r.get("id"),
-                "text": r.get("text") or r.get("memory"),
+                "text": r.get("memory", r.get("text")),
                 "score": r.get("score", 0.0),
                 "metadata": r.get("metadata", {}),
             })
-        # Optional client-side score filter
-        return [r for r in formatted if r["score"] >= min_score]
+        # Client-side score filter
+        return [r for r in normalized if r["score"] >= min_score]
     except Exception as e:
         return [{"status": "error", "message": str(e)}]
 
@@ -145,12 +154,12 @@ def get_memories(
         List of memory entries
     """
     client = _get_client()
-    filters = {"agent_id": agent_id} if agent_id else {}
     try:
-        memories = client.get_all(filters=filters, limit=limit)
-        # Sort by recency if requested (assuming Mem0 returns timestamp)
+        memories = client.get_all(agent_id=agent_id, limit=limit)
+        # v1.0+ returns list directly
+        # Sort by recency if requested (assuming 'created_at' key)
         if recent_first and memories:
-            memories.sort(key=lambda x: x.get("created_at", ""), reverse=True)
+            memories.sort(key=lambda x: x.get("created_at", 0), reverse=True)
         return memories
     except Exception as e:
         return [{"status": "error", "message": str(e)}]
@@ -183,8 +192,8 @@ def inherit_memories_from_agent(
 
     added_count = 0
     for mem in source_memories:
-        if "text" in mem or "memory" in mem:
-            content = mem.get("text") or mem.get("memory")
+        content = mem.get("memory") or mem.get("text")
+        if content:
             meta = mem.get("metadata", {})
             meta["inherited_from"] = source_agent_id
             result = add_memory(
@@ -205,6 +214,6 @@ def inherit_memories_from_agent(
 
 if __name__ == "__main__":
     # Quick smoke test when run directly
-    print("Mem0 wrapper smoke test")
+    print("Mem0 wrapper smoke test (v1.0+ compatible)")
     print(add_memory("Test memory entry from wrapper", agent_id="test-agent"))
     print(search_memory("test memory", agent_id="test-agent"))
