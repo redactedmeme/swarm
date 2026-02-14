@@ -1,0 +1,32 @@
+# railway.toml - Config as Code for REDACTED Swarm on Railway
+# Attunes persistent services without forcing HTTP listeners
+# Merges with dashboard: use for defaults, secrets/volumes via UI
+
+# Global-ish hints (Railway applies per-service context)
+[build]
+  builder = "NIXPACKS"  # or "DOCKERFILE" if you add one later
+  # watchPaths = ["python/**", "agents/**"]  # optional rebuild triggers
+
+# Define services explicitly (Railway creates/matches them on deploy)
+[[services]]
+  name = "swarm-worker"  # Matches or creates service named this
+  startCommand = "python python/summon_agent.py --agent agents/RedactedIntern.character.json --mode persistent --ollama-host ${OLLAMA_SERVICE_HOST}:11434"
+  # Railway auto-injects ${OLLAMA_SERVICE_HOST} via private networking if services linked
+
+[[services]]
+  name = "ollama-backend"
+  image = "ollama/ollama:latest"  # Or use Railway's template equivalent
+  startCommand = "serve"  # Default Ollama entry
+  # Note: add volume via dashboard for /root/.ollama persistence
+
+# Environment variable defaults (overridable in dashboard)
+[deploy]
+  [deploy.variables]
+    PYTHONUNBUFFERED = "1"  # Real-time logs for worker
+    # Add placeholders like OLLAMA_HOST if not using service refs
+    # MILADY_PASSPHRASE = ""  # Keep blank; fill in dashboard secrets
+
+# If using Docker instead (optional extension)
+# [[services]]
+#   name = "swarm-docker"
+#   dockerfilePath = "Dockerfile"  # If you add one
