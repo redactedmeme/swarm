@@ -1,0 +1,13 @@
+# Core deps for Ollama wrappers and HTTP
+requests==2.31.0
+
+# Solana blockchain integrations for settlements and liquidity
+solana==0.34.0  # For RPC calls, transactions, etc.
+
+# Wormhole bridging for cross-chain value flows
+wormhole-sdk==0.1.0  # Assuming py-wormhole-sdk; verify via pip search
+
+# Optional: For testing and validation
+pytest==8.3.3
+
+# Note: Built-ins like json/argparse need no listing; expand as shards evolve
