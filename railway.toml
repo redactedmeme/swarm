@@ -1,32 +1,53 @@
-# railway.toml - Config as Code for REDACTED Swarm on Railway
-# Attunes persistent services without forcing HTTP listeners
-# Merges with dashboard: use for defaults, secrets/volumes via UI
+# railway.toml — Config-as-Code for REDACTED AI Swarm on Railway
+# Attunes persistent Ollama inference, swarm worker recursion, and x402 micropayment gateway
+# Place at repo root; Railway merges with dashboard (volumes, secrets, domains via UI)
+# https://docs.railway.app/guides/config-as-code
 
-# Global-ish hints (Railway applies per-service context)
 [build]
-  builder = "NIXPACKS"  # or "DOCKERFILE" if you add one later
-  # watchPaths = ["python/**", "agents/**"]  # optional rebuild triggers
+  builder = "RAILPACK"          # Modern successor to Nixpacks; auto-detects Python/Bun/Docker
+  # Optional: watchPaths = ["python/**", "agents/**", "x402.redacted.ai/**"]  # Trigger rebuilds on changes
 
-# Define services explicitly (Railway creates/matches them on deploy)
-[[services]]
-  name = "swarm-worker"  # Matches or creates service named this
-  startCommand = "python python/summon_agent.py --agent agents/RedactedIntern.character.json --mode persistent --ollama-host ${OLLAMA_SERVICE_HOST}:11434"
-  # Railway auto-injects ${OLLAMA_SERVICE_HOST} via private networking if services linked
-
-[[services]]
-  name = "ollama-backend"
-  image = "ollama/ollama:latest"  # Or use Railway's template equivalent
-  startCommand = "serve"  # Default Ollama entry
-  # Note: add volume via dashboard for /root/.ollama persistence
-
-# Environment variable defaults (overridable in dashboard)
 [deploy]
-  [deploy.variables]
-    PYTHONUNBUFFERED = "1"  # Real-time logs for worker
-    # Add placeholders like OLLAMA_HOST if not using service refs
-    # MILADY_PASSPHRASE = ""  # Keep blank; fill in dashboard secrets
+  # Global-ish deploy hints (applied contextually)
+  restartPolicyType = "ON_FAILURE"  # Or ALWAYS for aggressive restarts
+  restartPolicyMaxRetries = 10
 
-# If using Docker instead (optional extension)
-# [[services]]
-#   name = "swarm-docker"
-#   dockerfilePath = "Dockerfile"  # If you add one
+# Service-specific overrides — Railway matches by name or root dir during deploy
+# Use dashboard to create/link services, then these apply on push/deploy
+
+# Ollama backend: persistent LLM server (CPU inference, volume for models)
+[services.ollama-backend]
+  image = "ollama/ollama:latest"
+  startCommand = "serve"
+  healthcheckPath = "/api/tags"          # Ollama health endpoint (lists models)
+  healthcheckInterval = 30
+  healthcheckTimeout = 10
+  # Dashboard: add volume mount at /root/.ollama (persistent model storage)
+  # Private network: accessible as http://ollama-backend.railway.internal:11434
+
+# Swarm worker: persistent Python daemon (summon_agent in loop mode)
+[services.swarm-worker]
+  startCommand = "python python/summon_agent.py --agent agents/RedactedIntern.character.json --mode persistent --ollama-host http://ollama-backend.railway.internal:11434"
+  healthcheckPath = "/health"            # If you add a simple Flask/endpoint for liveness; otherwise omit or use custom script
+  healthcheckInterval = 60
+  healthcheckTimeout = 30
+  # Optional: rootDirectory = "/python"   # Scope build/deploy to subdir if needed
+  # Env vars (add in dashboard): OLLAMA_HOST above, MILADY_PASSPHRASE, etc.
+
+# x402 gateway: Bun/Express API with content negotiation + wallet proxy
+[services.x402-gateway]
+  startCommand = "bun run index.js"      # Direct Bun (fast, no PM2 needed for simple cases)
+  # Alternative with PM2: "pm2-runtime start ecosystem.config.cjs --env production"
+  healthcheckPath = "/health"            # Built-in health endpoint returns 200
+  healthcheckInterval = 30
+  healthcheckTimeout = 10
+  # Dashboard: generate public domain for Phantom wallet connects (UI needs reachability)
+  # Private network: swarm-worker can proxy paid calls internally if desired
+
+# Shared environment variable defaults (override/fill secrets in dashboard)
+[environment]
+  PYTHONUNBUFFERED = "1"                 # Real-time Python logs
+  NODE_ENV = "production"                # For Bun/Express
+  PORT = "3000"                          # x402 default; Railway overrides externally
+  # Add placeholders: PUBLIC_URL = "https://your-gateway.up.railway.app"
+  # Secrets (dashboard only): SOLANA_RPC, MILADY_PASSPHRASE, WALLET_KEY (devnet only!)
