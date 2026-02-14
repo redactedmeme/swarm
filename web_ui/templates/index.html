@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>REDACTED Swarm Terminal</title>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/xterm@5.5.0/css/xterm.css">
+    <script src="https://cdn.jsdelivr.net/npm/xterm@5.5.0/lib/xterm.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/socket.io-client@4.7.5/dist/socket.io.min.js"></script>
+    <style>
+        body { margin: 0; background: #000; color: #0f0; font-family: monospace; }
+        #terminal { width: 100vw; height: 100vh; }
+    </style>
+</head>
+<body>
+    <div id="terminal"></div>
+    <script>
+        const socket = io();
+        const term = new Terminal({ cursorBlink: true, theme: { background: '#000', foreground: '#0f0' } });
+        term.open(document.getElementById('terminal'));
+        term.writeln('REDACTED Swarm Web Terminal activated.');
+
+        let buffer = '';
+        term.onData(data => {
+            const code = data.charCodeAt(0);
+            if (code === 13) {  // Enter
+                term.writeln('');
+                socket.emit('command', { cmd: buffer });
+                buffer = '';
+            } else if (code === 127) {  // Backspace
+                if (buffer.length > 0) {
+                    buffer = buffer.slice(0, -1);
+                    term.write('\b \b');
+                }
+            } else {
+                buffer += data;
+                term.write(data);
+            }
+        });
+
+        socket.on('output', msg => term.writeln(msg.data));
+    </script>
+</body>
+</html>
