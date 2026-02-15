@@ -1,263 +1,419 @@
-# python/ollama_client.py
 """
-Ollama Client Wrapper for REDACTED Swarm
-=========================================
-This module provides a Python interface to interact with Ollama's local LLM server.
-Supports chat completion, tool calling, and streaming responses.
+Enhanced Ollama Client for REDACTED Swarm
+========================================
+Advanced client for interacting with Ollama API with streaming, 
+retry logic, health checks, and improved tool calling.
 
-Dependencies:
-- requests (for HTTP communication)
-- json (for payload handling)
-
-Configuration:
-- Default model: qwen:2.5 (recommended for tool calling)
-- Alternative: llama3.2
-- Base URL: http://localhost:11434 (Ollama default)
+Features:
+- Streaming responses for real-time output
+- Automatic retry with exponential backoff
+- Connection health checks
+- Enhanced tool calling support
+- Model capability detection
 """
 
-import requests
 import json
-from typing import Optional, List, Dict, Any
+import requests
+import time
+from typing import Dict, List, Optional, Generator, Any
+from urllib3.util.retry import Retry
+from requests.adapters import HTTPAdapter
 import logging
 
 # Configure logging
-logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 class OllamaClient:
     """
-    Client for interacting with Ollama's API.
+    Enhanced client for interacting with Ollama API.
     
-    Features:
-    - Chat completion with system/user/assistant messages
-    - Tool calling support (requires Qwen 2.5 or Llama 3.2)
-    - Streaming and non-streaming modes
-    - Error handling and retry logic
-    - Response parsing and validation
+    Provides robust communication with Ollama service including:
+    - Streaming responses
+    - Automatic retries
+    - Health checks
+    - Tool calling support
     """
     
-    def __init__(
-        self,
-        model: str = "qwen:2.5",
-        base_url: str = "http://localhost:11434",
-        timeout: int = 120,
-        max_retries: int = 3
-    ):
+    def __init__(self, model: str = "qwen:2.5", base_url: str = "http://localhost:11434"):
         """
-        Initialize Ollama client.
+        Initialize the Ollama client.
         
         Args:
-            model: Ollama model to use (e.g., "qwen:2.5", "llama3.2")
-            base_url: Ollama server URL (default: http://localhost:11434)
-            timeout: Request timeout in seconds
-            max_retries: Maximum retry attempts on failure
+            model: Default model to use for completions
+            base_url: Base URL for Ollama API
         """
         self.model = model
         self.base_url = base_url.rstrip('/')
-        self.timeout = timeout
-        self.max_retries = max_retries
-        self.chat_endpoint = f"{self.base_url}/api/chat"
-        self.generate_endpoint = f"{self.base_url}/api/generate"
+        self.session = requests.Session()
         
-        # Verify connection on initialization
-        self._verify_connection()
+        # Configure retry strategy
+        retry_strategy = Retry(
+            total=3,
+            backoff_factor=1,
+            status_forcelist=[429, 500, 502, 503, 504],
+        )
+        adapter = HTTPAdapter(max_retries=retry_strategy)
+        self.session.mount("http://", adapter)
+        self.session.mount("https://", adapter)
+        
+        # Test connection on initialization
+        if not self.health_check():
+            logger.warning("⚠ Ollama service not responding. Please ensure Ollama is running.")
     
-    def _verify_connection(self) -> bool:
-        """Verify Ollama server is running and accessible."""
+    def health_check(self) -> bool:
+        """
+        Check if Ollama service is running and healthy.
+        
+        Returns:
+            bool: True if service is healthy, False otherwise
+        """
         try:
-            response = requests.get(f"{self.base_url}/api/version", timeout=5)
-            if response.status_code == 200:
-                logger.info(f"✓ Connected to Ollama server at {self.base_url}")
-                logger.info(f"  Model: {self.model}")
-                return True
-            else:
-                logger.warning(f"⚠ Ollama server returned status {response.status_code}")
-                return False
-        except requests.exceptions.ConnectionError:
-            logger.error(f"✗ Cannot connect to Ollama server at {self.base_url}")
-            logger.error("  Please ensure Ollama is running: 'ollama serve'")
-            return False
+            response = self.session.get(f"{self.base_url}/api/tags", timeout=5)
+            return response.status_code == 200
         except Exception as e:
-            logger.error(f"✗ Error verifying connection: {str(e)}")
+            logger.debug(f"Health check failed: {str(e)}")
             return False
-    
-    def generate(
-        self,
-        messages: List[Dict[str, str]],
-        tools: Optional[List[Dict[str, Any]]] = None,
-        stream: bool = False,
-        options: Optional[Dict[str, Any]] = None
-    ) -> Dict[str, Any]:
-        """
-        Generate a response from Ollama using the chat API.
-        
-        Args:
-            messages: List of message dictionaries (role, content)
-            tools: List of tool definitions for function calling
-            stream: Whether to stream the response
-            options: Additional model options (temperature, top_p, etc.)
-        
-        Returns:
-            Dictionary containing the response data
-            
-        Example:
-            client = OllamaClient()
-            response = client.generate(
-                messages=[
-                    {"role": "system", "content": "You are a helpful assistant"},
-                    {"role": "user", "content": "What's the weather like?"}
-                ],
-                tools=[{"type": "function", "function": {...}}]
-            )
-        """
-        # Build request payload
-        payload = {
-            "model": self.model,
-            "messages": messages,
-            "stream": stream
-        }
-        
-        # Add tools if provided
-        if tools:
-            payload["tools"] = tools
-            logger.debug(f"Tools enabled: {len(tools)} functions available")
-        
-        # Add custom options
-        if options:
-            payload["options"] = options
-        
-        # Make request with retry logic
-        for attempt in range(self.max_retries):
-            try:
-                logger.debug(f"Sending request to Ollama (attempt {attempt + 1}/{self.max_retries})")
-                response = requests.post(
-                    self.chat_endpoint,
-                    json=payload,
-                    timeout=self.timeout,
-                    stream=stream
-                )
-                
-                response.raise_for_status()
-                
-                if stream:
-                    return self._handle_stream_response(response)
-                else:
-                    result = response.json()
-                    logger.info(f"✓ Received response (tokens: {result.get('eval_count', 'N/A')})")
-                    return result
-                    
-            except requests.exceptions.RequestException as e:
-                logger.warning(f"Request failed (attempt {attempt + 1}): {str(e)}")
-                if attempt == self.max_retries - 1:
-                    raise Exception(f"Failed to get response from Ollama after {self.max_retries} attempts: {str(e)}")
-                continue
-        
-        raise Exception("Unexpected error in generate method")
-    
-    def _handle_stream_response(self, response) -> Dict[str, Any]:
-        """
-        Handle streaming response from Ollama.
-        
-        Args:
-            response: Streaming HTTP response object
-            
-        Returns:
-            Aggregated response dictionary
-        """
-        full_response = {
-            "model": self.model,
-            "created_at": None,
-            "message": {"role": "assistant", "content": ""},
-            "done": False,
-            "total_duration": 0,
-            "load_duration": 0,
-            "prompt_eval_count": 0,
-            "eval_count": 0,
-            "eval_duration": 0
-        }
-        
-        for line in response.iter_lines():
-            if line:
-                chunk = json.loads(line.decode('utf-8'))
-                
-                # Initialize created_at from first chunk
-                if not full_response["created_at"]:
-                    full_response["created_at"] = chunk.get("created_at")
-                
-                # Append message content
-                if "message" in chunk and "content" in chunk["message"]:
-                    full_response["message"]["content"] += chunk["message"]["content"]
-                
-                # Accumulate statistics
-                full_response["total_duration"] += chunk.get("total_duration", 0)
-                full_response["load_duration"] += chunk.get("load_duration", 0)
-                full_response["eval_count"] += chunk.get("eval_count", 0)
-                full_response["eval_duration"] += chunk.get("eval_duration", 0)
-                
-                # Update done status
-                full_response["done"] = chunk.get("done", False)
-        
-        logger.info(f"✓ Stream complete (tokens: {full_response['eval_count']})")
-        return full_response
     
     def list_models(self) -> List[str]:
         """
-        List available models on the Ollama server.
+        List all available models in Ollama.
         
         Returns:
             List of model names
         """
         try:
-            response = requests.get(f"{self.base_url}/api/tags", timeout=10)
+            response = self.session.get(f"{self.base_url}/api/tags")
             response.raise_for_status()
-            data = response.json()
-            return [model["name"] for model in data.get("models", [])]
+            models = response.json().get("models", [])
+            return [model["name"] for model in models]
         except Exception as e:
             logger.error(f"Failed to list models: {str(e)}")
             return []
     
     def pull_model(self, model_name: str) -> bool:
         """
-        Pull a model from Ollama's library.
+        Pull a model from Ollama library.
         
         Args:
             model_name: Name of the model to pull
             
         Returns:
-            True if successful, False otherwise
+            bool: True if successful, False otherwise
         """
         try:
-            logger.info(f"Pulling model: {model_name}")
-            response = requests.post(
+            response = self.session.post(
                 f"{self.base_url}/api/pull",
                 json={"name": model_name},
-                stream=True,
-                timeout=None
+                stream=True
             )
+            response.raise_for_status()
             
+            # Process streaming response
             for line in response.iter_lines():
                 if line:
-                    status = json.loads(line.decode('utf-8'))
-                    if "status" in status:
-                        logger.info(f"  {status['status']}")
-                    if status.get("done"):
-                        logger.info(f"✓ Model {model_name} pulled successfully")
-                        return True
+                    data = json.loads(line)
+                    if "status" in data:
+                        logger.info(f"Pull status: {data['status']}")
+                    if "error" in data:
+                        logger.error(f"Pull error: {data['error']}")
+                        return False
             
-            return False
+            logger.info(f"Successfully pulled model: {model_name}")
+            return True
         except Exception as e:
             logger.error(f"Failed to pull model {model_name}: {str(e)}")
             return False
     
-    def health_check(self) -> bool:
+    def get_model_info(self, model_name: str = None) -> Dict[str, Any]:
         """
-        Check if Ollama server is healthy and responsive.
+        Get detailed information about a model.
         
+        Args:
+            model_name: Name of the model (defaults to current model)
+            
         Returns:
-            True if healthy, False otherwise
+            Dictionary with model information
+        """
+        model_name = model_name or self.model
+        try:
+            response = self.session.post(
+                f"{self.base_url}/api/show",
+                json={"name": model_name}
+            )
+            response.raise_for_status()
+            return response.json()
+        except Exception as e:
+            logger.error(f"Failed to get model info for {model_name}: {str(e)}")
+            return {}
+    
+    def chat_completion(
+        self, 
+        messages: List[Dict[str, str]], 
+        tools: Optional[List[Dict]] = None,
+        options: Optional[Dict] = None,
+        stream: bool = False
+    ) -> Dict[str, Any]:
+        """
+        Generate a chat completion using Ollama.
+        
+        Args:
+            messages: List of message dictionaries with role/content
+            tools: Optional list of tool definitions
+            options: Model options (temperature, etc.)
+            stream: Whether to stream the response
+            
+        Returns:
+            Dictionary with response data
+        """
+        payload = {
+            "model": self.model,
+            "messages": messages,
+            "stream": stream
+        }
+        
+        if tools:
+            payload["tools"] = tools
+            
+        if options:
+            payload["options"] = options
+        
+        try:
+            response = self.session.post(
+                f"{self.base_url}/api/chat",
+                json=payload
+            )
+            response.raise_for_status()
+            return response.json()
+        except Exception as e:
+            logger.error(f"Chat completion failed: {str(e)}")
+            raise
+    
+    def generate(
+        self,
+        messages: List[Dict[str, str]],
+        tools: Optional[List[Dict]] = None,
+        options: Optional[Dict] = None,
+        stream: bool = False
+    ) -> Dict[str, Any] | Generator[Dict[str, Any], None, None]:
+        """
+        Generate a completion with enhanced features.
+        
+        Args:
+            messages: List of message dictionaries with role/content
+            tools: Optional list of tool definitions
+            options: Model options (temperature, etc.)
+            stream: Whether to stream the response
+            
+        Returns:
+            Response dictionary or generator for streaming
+        """
+        payload = {
+            "model": self.model,
+            "messages": messages,
+            "stream": stream
+        }
+        
+        if tools:
+            payload["tools"] = tools
+            
+        if options:
+            payload["options"] = options
+        
+        try:
+            if stream:
+                return self._stream_generate(payload)
+            else:
+                response = self.session.post(
+                    f"{self.base_url}/api/chat",
+                    json=payload
+                )
+                response.raise_for_status()
+                return response.json()
+        except Exception as e:
+            logger.error(f"Generation failed: {str(e)}")
+            raise
+    
+    def _stream_generate(self, payload: Dict) -> Generator[Dict[str, Any], None, None]:
+        """
+        Internal method to handle streaming responses.
+        
+        Args:
+            payload: Request payload
+            
+        Yields:
+            Response chunks as dictionaries
         """
         try:
-            response = requests.get(f"{self.base_url}/", timeout=5)
-            return response.status_code == 200
-        except:
-            return False
+            response = self.session.post(
+                f"{self.base_url}/api/chat",
+                json=payload,
+                stream=True
+            )
+            response.raise_for_status()
+            
+            for line in response.iter_lines():
+                if line:
+                    try:
+                        chunk = json.loads(line)
+                        yield chunk
+                    except json.JSONDecodeError:
+                        logger.warning(f"Failed to decode streaming chunk: {line}")
+        except Exception as e:
+            logger.error(f"Streaming generation failed: {str(e)}")
+            raise
+    
+    def embedding(self, prompt: str) -> List[float]:
+        """
+        Generate embeddings for a prompt.
+        
+        Args:
+            prompt: Text to generate embeddings for
+            
+        Returns:
+            List of embedding values
+        """
+        try:
+            response = self.session.post(
+                f"{self.base_url}/api/embeddings",
+                json={
+                    "model": self.model,
+                    "prompt": prompt
+                }
+            )
+            response.raise_for_status()
+            return response.json().get("embedding", [])
+        except Exception as e:
+            logger.error(f"Embedding generation failed: {str(e)}")
+            raise
+    
+    def model_capabilities(self, model_name: str = None) -> Dict[str, Any]:
+        """
+        Get capabilities of a model.
+        
+        Args:
+            model_name: Name of the model (defaults to current model)
+            
+        Returns:
+            Dictionary with model capabilities
+        """
+        model_name = model_name or self.model
+        info = self.get_model_info(model_name)
+        
+        # Extract capabilities from model info
+        capabilities = {
+            "tool_calling": False,
+            "streaming": True,  # Ollama generally supports streaming
+            "embedding": False,
+            "context_length": None,
+            "family": None
+        }
+        
+        # Try to determine capabilities from model info
+        if info:
+            # Check for tool calling capability
+            if "template" in info and "tools" in str(info["template"]).lower():
+                capabilities["tool_calling"] = True
+            
+            # Extract model family if available
+            if "details" in info:
+                capabilities["family"] = info["details"].get("family")
+                capabilities["context_length"] = info["details"].get("context_length")
+            
+            # Check for embedding capability
+            if "embed" in info.get("details", {}):
+                capabilities["embedding"] = True
+        
+        return capabilities
+    
+    def benchmark_model(self, model_name: str = None, prompt: str = None) -> Dict[str, Any]:
+        """
+        Benchmark a model's performance.
+        
+        Args:
+            model_name: Name of the model to benchmark (defaults to current)
+            prompt: Test prompt (defaults to standard benchmark)
+            
+        Returns:
+            Dictionary with benchmark results
+        """
+        model_name = model_name or self.model
+        prompt = prompt or "Explain the importance of low latency in AI systems."
+        
+        start_time = time.time()
+        
+        try:
+            response = self.session.post(
+                f"{self.base_url}/api/generate",
+                json={
+                    "model": model_name,
+                    "prompt": prompt,
+                    "stream": False
+                }
+            )
+            response.raise_for_status()
+            
+            end_time = time.time()
+            duration = end_time - start_time
+            
+            result = response.json()
+            tokens = result.get("eval_count", 0)
+            throughput = tokens / duration if duration > 0 else 0
+            
+            return {
+                "model": model_name,
+                "response_time": duration,
+                "tokens_generated": tokens,
+                "tokens_per_second": throughput,
+                "successful": True
+            }
+        except Exception as e:
+            logger.error(f"Benchmark failed for {model_name}: {str(e)}")
+            return {
+                "model": model_name,
+                "successful": False,
+                "error": str(e)
+            }
+
+# Convenience functions for common operations
+def create_client(model: str = "qwen:2.5") -> OllamaClient:
+    """
+    Create an OllamaClient instance with health checking.
+    
+    Args:
+        model: Model name to use
+        
+    Returns:
+        Configured OllamaClient instance
+    """
+    client = OllamaClient(model=model)
+    return client
+
+def get_available_models(client: OllamaClient = None) -> List[str]:
+    """
+    Get list of available models.
+    
+    Args:
+        client: OllamaClient instance (creates default if None)
+        
+    Returns:
+        List of model names
+    """
+    if client is None:
+        client = create_client()
+    return client.list_models()
+
+def test_connection(base_url: str = "http://localhost:11434") -> bool:
+    """
+    Test if Ollama service is accessible.
+    
+    Args:
+        base_url: Base URL for Ollama API
+        
+    Returns:
+        True if service is accessible, False otherwise
+    """
+    try:
+        response = requests.get(f"{base_url}/api/tags", timeout=5)
+        return response.status_code == 200
+    except Exception:
+        return False
