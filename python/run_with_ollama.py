@@ -1,4 +1,5 @@
-# python/run_with_ollama.py
+#!/usr/bin/env python3
+
 """
 REDACTED Swarm - Ollama Runner
 ===============================
@@ -28,6 +29,9 @@ from datetime import datetime
 # Import Ollama client
 from ollama_client import OllamaClient
 
+# Import Ollama utilities for auto-detection
+from utils.ollama_utils import get_running_ollama_model, DEFAULT_OLLAMA_MODEL
+
 # Configure logging
 logging.basicConfig(
     level=logging.INFO,
@@ -38,7 +42,6 @@ logger = logging.getLogger(__name__)
 
 # Default paths
 DEFAULT_AGENT_FILE = "agents/default.character.json"
-DEFAULT_MODEL = "qwen:2.5"
 DEFAULT_HISTORY_FILE = ".swarm_history.json"
 
 class SwarmRunner:
@@ -55,7 +58,7 @@ class SwarmRunner:
     def __init__(
         self,
         agent_file: str = DEFAULT_AGENT_FILE,
-        model: str = DEFAULT_MODEL,
+        model: str = DEFAULT_OLLAMA_MODEL,
         load_history: bool = True,
         save_history: bool = True
     ):
@@ -416,8 +419,8 @@ Examples:
     parser.add_argument(
         "--model",
         type=str,
-        default=DEFAULT_MODEL,
-        help=f"Ollama model to use (default: {DEFAULT_MODEL})"
+        default=DEFAULT_OLLAMA_MODEL,
+        help=f"Ollama model to use (default: {DEFAULT_OLLAMA_MODEL})"
     )
     
     parser.add_argument(
@@ -470,6 +473,18 @@ def main():
         else:
             print(f"\n✗ Failed to pull model {args.pull_model}\n")
         return
+    
+    # AUTOMATIC MODEL DETECTION LOGIC
+    # Only auto-detect if user didn't explicitly specify a model
+    if args.model == DEFAULT_OLLAMA_MODEL and '--model' not in sys.argv:
+        detected_model = get_running_ollama_model()
+        if detected_model:
+            args.model = detected_model
+            logger.info(f"✓ Auto-detected running model: {args.model}")
+        else:
+            logger.warning(f"No running model detected, using fallback: {DEFAULT_OLLAMA_MODEL}")
+    else:
+        logger.info(f"Using specified model: {args.model}")
     
     # Create and run swarm
     runner = SwarmRunner(
