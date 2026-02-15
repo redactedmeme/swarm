@@ -1,28 +1,29 @@
-# requirements.txt - Minimal dependencies for Pattern Blue Swarm on Railway
-# Loosened versions for compatibility with ollama/ollama:latest base image (Python 3.11, Ubuntu Noble)
-# Focus: supervisor, FastAPI health endpoint, basic agents, Solana/x402, Ollama client
-# No heavy extras (e.g. no torch, no aiohttp, no mem0ai) to keep build fast and small
+# Pattern Blue Swarm Railway Requirements
+# Minimal dependencies optimized for Railway deployment
 
+# Web framework
 fastapi>=0.115.0
 uvicorn>=0.32.0
 pydantic>=2.9.0
 
+# Solana blockchain integration
 solana>=0.34.0
 solders>=0.20.0
 
+# HTTP clients
 requests>=2.32.0
 httpx>=0.27.0
 
-ollama-python>=0.3.0
+# Ollama integration (FIXED: use available version)
+ollama-python>=0.1.0,<0.2.0
 
+# Configuration and utilities
 python-dotenv>=1.0.0
 pyyaml>=6.0.0
 structlog>=24.4.0
 
-# Optional fallback for external LLM (Groq, Together, OpenRouter) - uncomment if needed
+# Optional: External LLM fallback (comment out if not needed)
 # openai>=1.0.0
 
-# Optional dev tools - do NOT include in production build
-# pytest>=7.4.0
-# black>=24.0.0
-# ruff>=0.1.0
+# Note: Keep dependencies minimal for Railway memory constraints
+# Avoid heavy ML libraries (torch, tensorflow, etc.)
