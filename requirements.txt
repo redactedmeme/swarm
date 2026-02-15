@@ -1,0 +1,35 @@
+# Core LLM / Ollama integration (used in ollama_client.py, run_with_ollama.py, etc.)
+ollama>=0.3.0               # Official Ollama Python client (or use openai for compatibility)
+
+# OpenAI-compatible client – allows fallback to cloud providers (Groq, OpenRouter, etc.)
+openai>=1.0.0
+
+# Async support (useful for streaming responses in terminal/web)
+aiohttp>=3.9.0
+asyncio>=3.4.3              # Usually bundled, but explicit for clarity
+
+# Web-related (if web_ui or x402 backend has Python components, or for FastAPI if added)
+fastapi>=0.100.0            # Optional: for custom API layer / terminal backend
+uvicorn>=0.23.0             # ASGI server for FastAPI
+websockets>=11.0            # For real-time streaming in web terminal
+
+# Memory / persistence (mem0-memory plugin in plugins/)
+mem0ai>=0.0.1               # If using the mem0 wrapper – adjust version as needed
+
+# Solana / blockchain interaction (for mandala_settler integration, x402 calls)
+solders>=0.10.0             # Modern Solana Python SDK (replaces solana-py in many cases)
+solana>=0.30.0              # Core Solana client (if still used)
+anchorpy>=0.19.0            # Optional: for Anchor IDL interaction if calling Rust program
+
+# Utilities / common deps
+pydantic>=2.0               # For structured outputs, configs, .character.json parsing
+python-dotenv>=1.0.0        # Loads .env.example
+requests>=2.31.0            # API calls (DexScreener, Birdeye, CoinGecko, etc.)
+rich>=13.0                  # Beautiful terminal output (likely used in NERV-style UI)
+typer>=0.9.0                # Modern CLI building (good for summon_agent.py / upgrade_terminal.py)
+pyyaml>=6.0                 # If any YAML configs appear later
+
+# Development / optional
+pytest>=7.4.0               # For any tests
+black>=24.0                 # Formatting
+ruff>=0.1.0                 # Linting
