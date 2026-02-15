@@ -1,35 +1,22 @@
-# Core LLM / Ollama integration (used in ollama_client.py, run_with_ollama.py, etc.)
-ollama>=0.3.0               # Official Ollama Python client (or use openai for compatibility)
+# Core dependencies for Pattern Blue agents and supervisor
+fastapi==0.115.0               # Lightweight API for /health endpoint
+uvicorn==0.32.0                # ASGI server (single worker mode for Railway)
+pydantic==2.9.2                # FastAPI dependency (pinned for stability)
 
-# OpenAI-compatible client – allows fallback to cloud providers (Groq, OpenRouter, etc.)
-openai>=1.0.0
+# Solana + blockchain coordination (x402 micropayments)
+solana==0.34.3                 # Official Solana Python SDK
+solders==0.21.0                # Low-level Solana primitives (required by solana-py)
 
-# Async support (useful for streaming responses in terminal/web)
-aiohttp>=3.9.0
-asyncio>=3.4.3              # Usually bundled, but explicit for clarity
+# HTTP & streaming (for RedactedIntern monitoring, if polling X or web)
+requests==2.32.3
+httpx==0.27.2                  # Modern async HTTP client (faster than requests in some cases)
 
-# Web-related (if web_ui or x402 backend has Python components, or for FastAPI if added)
-fastapi>=0.100.0            # Optional: for custom API layer / terminal backend
-uvicorn>=0.23.0             # ASGI server for FastAPI
-websockets>=11.0            # For real-time streaming in web terminal
+# Ollama client (for local inference)
+ollama-python==0.3.3           # Official Ollama Python library
 
-# Memory / persistence (mem0-memory plugin in plugins/)
-mem0ai>=0.0.1               # If using the mem0 wrapper – adjust version as needed
+# Utilities
+python-dotenv==1.0.1           # Load .env files if needed (optional)
+pyyaml==6.0.2                  # For config parsing (if JSON not enough)
 
-# Solana / blockchain interaction (for mandala_settler integration, x402 calls)
-solders>=0.10.0             # Modern Solana Python SDK (replaces solana-py in many cases)
-solana>=0.30.0              # Core Solana client (if still used)
-anchorpy>=0.19.0            # Optional: for Anchor IDL interaction if calling Rust program
-
-# Utilities / common deps
-pydantic>=2.0               # For structured outputs, configs, .character.json parsing
-python-dotenv>=1.0.0        # Loads .env.example
-requests>=2.31.0            # API calls (DexScreener, Birdeye, CoinGecko, etc.)
-rich>=13.0                  # Beautiful terminal output (likely used in NERV-style UI)
-typer>=0.9.0                # Modern CLI building (good for summon_agent.py / upgrade_terminal.py)
-pyyaml>=6.0                 # If any YAML configs appear later
-
-# Development / optional
-pytest>=7.4.0               # For any tests
-black>=24.0                 # Formatting
-ruff>=0.1.0                 # Linting
+# Logging & observability (minimal)
+structlog==24.4.0              # Structured logging (optional but nice for Railway)
