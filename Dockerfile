@@ -1,35 +1,50 @@
 # Pattern Blue Swarm Railway Optimized Dockerfile
+# - Uses official ollama/ollama:latest base (pre-installed Ollama)
+# - Creates venv to avoid externally-managed-environment error
+# - Runtime model pull (persists via volume)
+# - Minimal footprint for Railway hobby tier
+
 FROM ollama/ollama:latest
+
+# Metadata
+LABEL maintainer="Pattern Blue Swarm <@RedactedMemeFi>"
+LABEL description="Railway-optimized Pattern Blue swarm - lightweight agents + Ollama"
 
 WORKDIR /app
 
-# Install Python and system dependencies
+# Install Python + venv tools (Ubuntu Noble base)
 RUN apt-get update && apt-get install -y --no-install-recommends \
     python3 \
     python3-pip \
     python3-venv \
-    curl \
-    && rm -rf /var/lib/apt/lists/*
+    && rm -rf /var/lib/apt/lists/* \
+    && apt-get clean
 
-# Upgrade pip and install Python dependencies
-RUN pip3 install --no-cache-dir --upgrade pip
+# Create and activate virtual environment
+RUN python3 -m venv /app/venv
+ENV PATH="/app/venv/bin:$PATH"
 
-# Copy requirements and install Python packages
+# Upgrade pip in venv
+RUN pip install --upgrade pip setuptools wheel
+
+# Copy and install dependencies
 COPY requirements.txt .
-RUN pip3 install --no-cache-dir -r requirements.txt
+RUN pip install --no-cache-dir -r requirements.txt
 
 # Copy application source
 COPY agents/ ./agents/
 COPY config/ ./config/
 COPY main.py .
 COPY supervisor.py .
-COPY railway.json .
-COPY railway.toml .
+COPY railway.json .   # optional, but you had it
+# COPY railway.toml .   # optional - remove if not used
 
-# Create necessary directories for volumes
-RUN mkdir -p /app/shards /app/manifold-memory /root/.ollama
+# Create directories for persistent volumes
+RUN mkdir -p /app/shards \
+    /app/manifold-memory \
+    /root/.ollama
 
-# Set environment variables
+# Environment variables (overridable in Railway UI or railway.json)
 ENV PYTHONUNBUFFERED=1 \
     OLLAMA_HOST=http://localhost:11434 \
     OLLAMA_MODEL=phi3:mini \
@@ -37,14 +52,15 @@ ENV PYTHONUNBUFFERED=1 \
     SOLANA_RPC_URL=https://api.devnet.solana.com \
     PORT=8000
 
+# Expose Ollama + app ports
 EXPOSE 11434 8000
 
-# Health check for Railway
+# Healthcheck using your FastAPI /health endpoint
 HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
     CMD curl -f http://localhost:${PORT}/health || exit 1
 
-# Start Ollama serve and main application
+# Runtime: start Ollama serve → pull model if missing → supervisor
 CMD ["sh", "-c", "ollama serve & \
-     sleep 10 && \
-     (ollama list | grep -q ${OLLAMA_MODEL} || ollama pull ${OLLAMA_MODEL}) && \
-     python3 -m uvicorn main:app --host 0.0.0.0 --port ${PORT}"]
+    sleep 10 && \
+    (ollama list | grep -q ${OLLAMA_MODEL} || ollama pull ${OLLAMA_MODEL}) && \
+    python supervisor.py"]
