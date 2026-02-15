@@ -1,8 +1,7 @@
 # Dockerfile - Railway Optimized Pattern Blue Swarm
 # Base: official Ollama image (Ollama binary pre-installed)
+# Uses venv to avoid externally-managed-environment error
 # Runtime model pull + persistent volume for ~/.ollama
-# Python agents + supervisor in same container
-# Minimal footprint for Railway hobby tier
 
 FROM ollama/ollama:latest
 
@@ -10,10 +9,10 @@ FROM ollama/ollama:latest
 LABEL maintainer="Pattern Blue Swarm <@RedactedMemeFi>"
 LABEL description="Railway-optimized Pattern Blue swarm - agents on official Ollama base"
 
-# Set working directory for Python code
+# Set working directory
 WORKDIR /app
 
-# Install minimal Python + pip (bookworm base has python3)
+# Install minimal system deps + Python venv tools
 RUN apt-get update && apt-get install -y --no-install-recommends \
     python3 \
     python3-pip \
@@ -21,22 +20,26 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/* \
     && apt-get clean
 
-# Copy and install requirements (cached layer)
-COPY requirements.txt .
-RUN pip3 install --no-cache-dir -r requirements.txt
+# Create & activate virtual environment
+RUN python3 -m venv /app/venv
+ENV PATH="/app/venv/bin:$PATH"
 
-# Copy source (agents, config, main, supervisor)
+# Copy and install requirements inside venv (cached layer)
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
+# Copy source code
 COPY agents/ ./agents/
 COPY config/ ./config/
 COPY main.py .
 COPY supervisor.py .
 
-# Ensure volume directories exist (Railway mounts over them)
+# Ensure volume directories exist
 RUN mkdir -p /app/shards \
     /app/manifold-memory \
     /root/.ollama
 
-# Environment defaults (overridable in railway.json or UI)
+# Environment defaults
 ENV PYTHONUNBUFFERED=1 \
     OLLAMA_HOST=http://localhost:11434 \
     OLLAMA_MODEL=phi3:mini \
@@ -44,15 +47,15 @@ ENV PYTHONUNBUFFERED=1 \
     SOLANA_RPC_URL=https://api.devnet.solana.com \
     PORT=8000
 
-# Expose Ollama (11434) + app port (8000)
+# Expose ports
 EXPOSE 11434 8000
 
-# Healthcheck: use your FastAPI /health endpoint
+# Healthcheck
 HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
     CMD curl -f http://localhost:${PORT}/health || exit 1
 
-# Runtime entrypoint: start Ollama serve → pull model (if not present) → supervisor
+# Runtime: start Ollama serve → conditional pull → supervisor (uses venv python)
 CMD ["sh", "-c", "ollama serve & \
     sleep 8 && \
     (ollama list | grep -q ${OLLAMA_MODEL} || ollama pull ${OLLAMA_MODEL}) && \
-    python3 supervisor.py"]
+    python supervisor.py"]
