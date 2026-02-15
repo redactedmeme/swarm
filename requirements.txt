@@ -1,22 +1,20 @@
-# Core dependencies for Pattern Blue agents and supervisor
-fastapi==0.115.0               # Lightweight API for /health endpoint
-uvicorn==0.32.0                # ASGI server (single worker mode for Railway)
-pydantic==2.9.2                # FastAPI dependency (pinned for stability)
+# Core (loose versions for compatibility)
+fastapi>=0.115.0
+uvicorn>=0.32.0
+pydantic>=2.9.0
 
-# Solana + blockchain coordination (x402 micropayments)
-solana==0.34.3                 # Official Solana Python SDK
-solders==0.21.0                # Low-level Solana primitives (required by solana-py)
+# Solana
+solana>=0.34.0
+solders>=0.21.0
 
-# HTTP & streaming (for RedactedIntern monitoring, if polling X or web)
-requests==2.32.3
-httpx==0.27.2                  # Modern async HTTP client (faster than requests in some cases)
+# HTTP
+requests>=2.32.0
+httpx>=0.27.0
 
-# Ollama client (for local inference)
-ollama-python==0.3.3           # Official Ollama Python library
+# Ollama client
+ollama-python>=0.3.0
 
-# Utilities
-python-dotenv==1.0.1           # Load .env files if needed (optional)
-pyyaml==6.0.2                  # For config parsing (if JSON not enough)
-
-# Logging & observability (minimal)
-structlog==24.4.0              # Structured logging (optional but nice for Railway)
+# Utils
+python-dotenv>=1.0.0
+pyyaml>=6.0.0
+structlog>=24.4.0
