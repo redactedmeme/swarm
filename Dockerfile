@@ -1,50 +1,35 @@
-# Stage 1: Builder with Rust + Python deps
-FROM python:3.11-slim-bookworm AS builder
-
-WORKDIR /app
-
-# Install build deps + Rust
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    build-essential \
-    libssl-dev \
-    pkg-config \
-    curl \
-    && curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y \
-    && rm -rf /var/lib/apt/lists/*
-
-# Activate Rust (correct sh syntax)
-ENV PATH="/root/.cargo/bin:${PATH}"
-RUN rustup default stable
-
-# Create venv
-RUN python -m venv /app/venv
-ENV PATH="/app/venv/bin:$PATH"
-
-# Upgrade pip
-RUN pip install --upgrade pip setuptools wheel
-
-# Copy & install requirements (loose solders to allow build)
-COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
-
-# Stage 2: Ollama base + copied venv
+# Pattern Blue Swarm Railway Optimized Dockerfile
 FROM ollama/ollama:latest
 
 WORKDIR /app
 
-# Copy venv from builder
-COPY --from=builder /app/venv /app/venv
-ENV PATH="/app/venv/bin:$PATH"
+# Install Python and system dependencies
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    python3 \
+    python3-pip \
+    python3-venv \
+    curl \
+    && rm -rf /var/lib/apt/lists/*
 
-# Copy source
+# Upgrade pip and install Python dependencies
+RUN pip3 install --no-cache-dir --upgrade pip
+
+# Copy requirements and install Python packages
+COPY requirements.txt .
+RUN pip3 install --no-cache-dir -r requirements.txt
+
+# Copy application source
 COPY agents/ ./agents/
 COPY config/ ./config/
 COPY main.py .
 COPY supervisor.py .
+COPY railway.json .
+COPY railway.toml .
 
-# Volume dirs
+# Create necessary directories for volumes
 RUN mkdir -p /app/shards /app/manifold-memory /root/.ollama
 
+# Set environment variables
 ENV PYTHONUNBUFFERED=1 \
     OLLAMA_HOST=http://localhost:11434 \
     OLLAMA_MODEL=phi3:mini \
@@ -54,10 +39,12 @@ ENV PYTHONUNBUFFERED=1 \
 
 EXPOSE 11434 8000
 
+# Health check for Railway
 HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
     CMD curl -f http://localhost:${PORT}/health || exit 1
 
+# Start Ollama serve and main application
 CMD ["sh", "-c", "ollama serve & \
-    sleep 8 && \
-    (ollama list | grep -q ${OLLAMA_MODEL} || ollama pull ${OLLAMA_MODEL}) && \
-    python supervisor.py"]
+     sleep 10 && \
+     (ollama list | grep -q ${OLLAMA_MODEL} || ollama pull ${OLLAMA_MODEL}) && \
+     python3 -m uvicorn main:app --host 0.0.0.0 --port ${PORT}"]
