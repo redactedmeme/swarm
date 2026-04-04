@@ -14,8 +14,8 @@ COPY skills ./skills
 # Install deps (runtime + core)
 RUN bun install --frozen-lockfile
 
-# Build TS → JS if needed (optional — Bun can run TS directly)
-RUN bun run --cwd runtime build   # if you added "build" script
+# Build TS → JS if needed (Bun can run TS directly, build step is optional)
+RUN bun run --cwd runtime build 2>/dev/null || true
 
 # Production image (slim)
 FROM base AS production

@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-REDACTED Swarm — unified service launcher.
+REDACTED Swarm - unified service launcher.
 
 Mirrors openclaw's gateway-first startup model:
   1. Validate environment
@@ -31,7 +31,7 @@ BOT_MAIN  = REPO_ROOT / "smolting-telegram-bot" / "main.py"
 SUMMON    = REPO_ROOT / "python" / "summon_agent.py"
 
 
-# ── Environment validation ────────────────────────────────────────────────────
+# -- Environment validation ---------------------------------------------------
 
 _REQUIRED_FOR = {
     "web terminal (cloud)": ["LLM_PROVIDER"],
@@ -70,7 +70,7 @@ def _check_env() -> list[str]:
     return warnings
 
 
-# ── Service health checks ─────────────────────────────────────────────────────
+# -- Service health checks ----------------------------------------------------
 
 def _check_ollama() -> bool:
     try:
@@ -95,16 +95,16 @@ def _print_health():
     ollama_ok = _check_ollama()
     web_ok    = _check_web_ui_port()
 
-    print("── Health check ─────────────────────────────")
+    print("-- Health check -------------------------------------")
     print(f"  LLM provider : {provider}")
-    print(f"  Ollama       : {'✓ running' if ollama_ok else '✗ not reachable (localhost:11434)'}")
-    print(f"  Web terminal : {'✓ running (port 5000)' if web_ok else '✗ not started yet'}")
-    print(f"  XAI_API_KEY  : {'✓ set' if os.getenv('XAI_API_KEY') else '— not set'}")
-    print(f"  OPENAI_API_KEY: {'✓ set' if os.getenv('OPENAI_API_KEY') else '— not set'}")
-    print(f"  ANTHROPIC_API_KEY: {'✓ set' if os.getenv('ANTHROPIC_API_KEY') else '— not set'}")
-    print(f"  TELEGRAM_BOT_TOKEN: {'✓ set' if os.getenv('TELEGRAM_BOT_TOKEN') else '— not set'}")
-    print(f"  MOLTBOOK_API_KEY: {'✓ set' if os.getenv('MOLTBOOK_API_KEY') else '— not set'}")
-    print("─────────────────────────────────────────────")
+    print(f"  Ollama       : {'OK running' if ollama_ok else 'NOT reachable (localhost:11434)'}")
+    print(f"  Web terminal : {'OK running (port 5000)' if web_ok else 'not started yet'}")
+    print(f"  XAI_API_KEY  : {'set' if os.getenv('XAI_API_KEY') else 'not set'}")
+    print(f"  OPENAI_API_KEY: {'set' if os.getenv('OPENAI_API_KEY') else 'not set'}")
+    print(f"  ANTHROPIC_API_KEY: {'set' if os.getenv('ANTHROPIC_API_KEY') else 'not set'}")
+    print(f"  TELEGRAM_BOT_TOKEN: {'set' if os.getenv('TELEGRAM_BOT_TOKEN') else 'not set'}")
+    print(f"  MOLTBOOK_API_KEY: {'set' if os.getenv('MOLTBOOK_API_KEY') else 'not set'}")
+    print("-----------------------------------------------------")
 
     env_warnings = _check_env()
     for w in env_warnings:
@@ -115,13 +115,13 @@ def _print_health():
         print("         Or set LLM_PROVIDER=xai / anthropic / openai and the matching API key.")
 
 
-# ── Process launchers ─────────────────────────────────────────────────────────
+# -- Process launchers --------------------------------------------------------
 
 def _start_web_ui() -> subprocess.Popen:
     env = os.environ.copy()
     # Ensure web_ui can import from repo root and python/
     env["PYTHONPATH"] = str(REPO_ROOT / "python") + os.pathsep + env.get("PYTHONPATH", "")
-    print(f"[start] Web terminal → http://localhost:5000")
+    print(f"[start] Web terminal -> http://localhost:5000")
     return subprocess.Popen(
         [sys.executable, str(WEB_UI)],
         cwd=str(REPO_ROOT),
@@ -154,10 +154,10 @@ def _start_agent_daemon(agent_file: str) -> subprocess.Popen:
     )
 
 
-# ── Main ──────────────────────────────────────────────────────────────────────
+# -- Main ---------------------------------------------------------------------
 
 def main():
-    parser = argparse.ArgumentParser(description="REDACTED Swarm — unified launcher")
+    parser = argparse.ArgumentParser(description="REDACTED Swarm - unified launcher")
     parser.add_argument("--all",    action="store_true", help="Start all services (web UI + Telegram bot)")
     parser.add_argument("--agent",  metavar="FILE",      help="Also start a persistent agent daemon")
     parser.add_argument("--check",  action="store_true", help="Health check only, do not start services")
@@ -178,7 +178,7 @@ def main():
     # Wait briefly, then verify it started
     time.sleep(2)
     if not _check_web_ui_port():
-        print("[warn] Web terminal did not bind to port 5000 within 2s — check for errors above.")
+        print("[warn] Web terminal did not bind to port 5000 within 2s - check for errors above.")
 
     if args.all:
         bot = _start_telegram_bot()
@@ -196,7 +196,7 @@ def main():
             # Restart any crashed processes
             for i, p in enumerate(processes):
                 if p and p.poll() is not None:
-                    print(f"[warn] Process {p.args[0]} exited with code {p.returncode} — restarting...")
+                    print(f"[warn] Process {p.args[0]} exited with code {p.returncode} - restarting...")
                     processes[i] = subprocess.Popen(p.args, cwd=p.cwd if hasattr(p, 'cwd') else None, env=p.env if hasattr(p, 'env') else None)
             time.sleep(5)
     except KeyboardInterrupt:
