@@ -40,7 +40,10 @@ AGENTS_DIR = BOT_DIR / "agents"
 logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
     level=logging.INFO,
-    filename='bot_audit.log'
+    handlers=[
+        logging.StreamHandler(),
+        logging.FileHandler('bot_audit.log'),
+    ]
 )
 logger = logging.getLogger(__name__)
 
