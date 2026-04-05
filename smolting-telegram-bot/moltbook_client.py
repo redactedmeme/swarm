@@ -17,6 +17,11 @@ logger = logging.getLogger(__name__)
 
 MOLTBOOK_BASE = "https://www.moltbook.com/api/v1"
 
+# Global rate limit lock — prevents concurrent posts from hammering the 2.5 min limit
+_post_lock = asyncio.Lock()
+_last_post_ts: float = 0.0
+RATE_LIMIT_SECS = 155  # 2.5 min + 5s buffer
+
 # Submolt IDs (fetched 2026-04-05)
 SUBMOLTS = {
     "introductions": "6f095e83-af5f-4b4e-ba0b-ab5050a138b8",
@@ -141,8 +146,19 @@ class MoltbookClient:
                 logger.warning(f"Could not parse challenge: {expr_raw!r}")
                 return None
 
-            # Sum all numbers found (Moltbook challenges are always addition so far)
-            result = sum(numbers)
+            # Detect operator: multiplication if * / "times" / "multiplied by" present
+            is_multiply = bool(re.search(r'\*|times|multiplied by|x \d', text))
+            is_subtract = bool(re.search(r'\bminus\b|\bsubtract\b', text))
+            if is_multiply and len(numbers) >= 2:
+                result = numbers[0]
+                for n in numbers[1:]:
+                    result *= n
+            elif is_subtract and len(numbers) >= 2:
+                result = numbers[0]
+                for n in numbers[1:]:
+                    result -= n
+            else:
+                result = sum(numbers)
             return f"{result:.2f}"
         except Exception as e:
             logger.error(f"Challenge solve error: {e} | raw={challenge}")
@@ -168,6 +184,33 @@ class MoltbookClient:
             logger.warning(f"Challenge submit error: {e}")
             return None
 
+    async def _llm_solve_challenge(self, challenge: dict) -> Optional[str]:
+        """LLM fallback for heavily-obfuscated challenges the regex solver can't parse."""
+        try:
+            from llm.cloud_client import CloudLLMClient
+            llm = CloudLLMClient()
+            expr_raw = (
+                challenge.get("challenge_text") or challenge.get("expression")
+                or challenge.get("problem") or challenge.get("question") or ""
+            )
+            instructions = challenge.get("instructions", "")
+            raw = await llm.chat_completion([
+                {"role": "system", "content": (
+                    "Solve the obfuscated math problem. The text uses mixed case, "
+                    "spaces between letters, and letter substitutions (e.g. 'v'→'f'). "
+                    "Decode the words, extract the numbers, perform the operation. "
+                    "Return ONLY the numeric answer with exactly 2 decimal places (e.g. '55.00'). "
+                    "No other text."
+                )},
+                {"role": "user", "content": f"{expr_raw}\n\n{instructions}".strip()},
+            ])
+            m = re.search(r'\d+(?:\.\d+)?', raw.strip())
+            if m:
+                return f"{float(m.group()):.2f}"
+        except Exception as e:
+            logger.warning(f"LLM challenge fallback error: {e}")
+        return None
+
     async def _resolve_verification(self, session: aiohttp.ClientSession,
                                      post_body: dict = None) -> Optional[str]:
         """Solve verification challenge embedded in post response or fetched separately."""
@@ -181,6 +224,9 @@ class MoltbookClient:
             or challenge.get("challenge_id")
         )
         answer = self._solve_challenge(challenge)
+        if answer is None:
+            logger.info("Moltbook: regex solver failed — trying LLM fallback")
+            answer = await self._llm_solve_challenge(challenge)
         if not (challenge_id and answer):
             return None
         token = await self._submit_challenge(session, challenge_id, answer)
@@ -201,62 +247,81 @@ class MoltbookClient:
         self._check_key()
         submolt_id = SUBMOLTS.get(submolt, submolt)  # accept key or raw UUID
 
-        async with aiohttp.ClientSession() as session:
-            # Try posting; if challenge required, solve and retry
-            for attempt in range(2):
-                payload: dict = {
-                    "title": title,
-                    "content": content,
-                    "submolt": submolt,  # API expects submolt name, not UUID
-                    "type": post_type,
-                }
-                async with session.post(
-                    f"{MOLTBOOK_BASE}/posts",
-                    headers=self.headers,
-                    json=payload,
-                    timeout=aiohttp.ClientTimeout(total=15),
-                ) as resp:
-                    body = await resp.json()
-                    if resp.status in (200, 201):
-                        post_data = body.get("post") or body
-                        post_id = post_data.get("id", "?")
-                        url = f"https://www.moltbook.com/post/{post_id}"
-                        logger.info(f"Moltbook post created: {url}")
-                        # Auto-solve embedded verification challenge if present
-                        verification = post_data.get("verification")
-                        if verification and post_data.get("verification_status") == "pending":
-                            logger.info("Moltbook: solving embedded verification challenge...")
-                            await self._resolve_verification(session, post_body=verification)
-                        return {**body, "_url": url}
+        global _last_post_ts
+        async with _post_lock:
+            # Enforce rate limit — wait if last post was too recent
+            import time
+            elapsed = time.monotonic() - _last_post_ts
+            if elapsed < RATE_LIMIT_SECS and _last_post_ts > 0:
+                wait = RATE_LIMIT_SECS - elapsed
+                logger.info(f"Moltbook: rate limit wait {wait:.0f}s before posting")
+                await asyncio.sleep(wait)
 
-                    # Challenge required (403 flow)
-                    if resp.status == 403 and "challenge" in str(body).lower() and attempt == 0:
-                        logger.info("Moltbook: challenge required, solving...")
-                        token = await self._resolve_verification(session)
-                        if token:
+            async with aiohttp.ClientSession() as session:
+                # Try posting; if challenge required or 429, retry once
+                for attempt in range(2):
+                    payload: dict = {
+                        "title": title,
+                        "content": content,
+                        "submolt": submolt,
+                        "type": post_type,
+                    }
+                    async with session.post(
+                        f"{MOLTBOOK_BASE}/posts",
+                        headers=self.headers,
+                        json=payload,
+                        timeout=aiohttp.ClientTimeout(total=15),
+                    ) as resp:
+                        body = await resp.json()
+                        if resp.status in (200, 201):
+                            _last_post_ts = time.monotonic()
+                            post_data = body.get("post") or body
+                            post_id = post_data.get("id", "?")
+                            url = f"https://www.moltbook.com/post/{post_id}"
+                            logger.info(f"Moltbook post created: {url}")
+                            verification = post_data.get("verification")
+                            if verification and post_data.get("verification_status") == "pending":
+                                logger.info("Moltbook: solving embedded verification challenge...")
+                                await self._resolve_verification(session, post_body=verification)
+                            return {**body, "_url": url}
+
+                        if resp.status == 429 and attempt == 0:
+                            retry_after = body.get("retry_after_seconds", RATE_LIMIT_SECS)
+                            logger.warning(f"Moltbook 429 — waiting {retry_after}s")
+                            await asyncio.sleep(retry_after + 2)
                             continue
 
-                    logger.error(f"Moltbook post error {resp.status}: {body}")
-                    return None
+                        if resp.status == 403 and "challenge" in str(body).lower() and attempt == 0:
+                            logger.info("Moltbook: challenge required, solving...")
+                            token = await self._resolve_verification(session)
+                            if token:
+                                continue
+
+                        logger.error(f"Moltbook post error {resp.status}: {body}")
+                        return None
         return None
 
     async def comment(self, post_id: str, content: str,
                       parent_comment_id: Optional[str] = None) -> Optional[dict]:
-        """Comment on a post. Optionally reply to a specific comment."""
+        """Comment on a post. Auto-solves verification challenge if required."""
         self._check_key()
-        payload: dict = {"content": content, "post_id": post_id}
+        payload: dict = {"content": content}
         if parent_comment_id:
             payload["parent_id"] = parent_comment_id
 
         async with aiohttp.ClientSession() as session:
             async with session.post(
-                f"{MOLTBOOK_BASE}/comments",
+                f"{MOLTBOOK_BASE}/posts/{post_id}/comments",
                 headers=self.headers,
                 json=payload,
                 timeout=aiohttp.ClientTimeout(total=10),
             ) as resp:
                 body = await resp.json()
                 if resp.status in (200, 201):
+                    comment_data = body.get("comment") or body
+                    verification = comment_data.get("verification")
+                    if verification and comment_data.get("verification_status") == "pending":
+                        await self._resolve_verification(session, post_body=verification)
                     return body
                 logger.error(f"Moltbook comment error {resp.status}: {body}")
                 return None
@@ -277,23 +342,79 @@ class MoltbookClient:
     # Feed & discovery
     # ------------------------------------------------------------------
 
+    async def get_home(self) -> Optional[dict]:
+        """Fetch home overview: notifications, activity, DMs."""
+        if not self._ready:
+            return None
+        async with aiohttp.ClientSession() as session:
+            async with session.get(
+                f"{MOLTBOOK_BASE}/home",
+                headers=self.headers,
+                timeout=aiohttp.ClientTimeout(total=10),
+            ) as resp:
+                if resp.status == 200:
+                    return await resp.json()
+                return None
+
     async def get_feed(self, limit: int = 10, submolt: Optional[str] = None) -> list:
-        """Fetch recent posts from feed or a specific submolt."""
+        """Fetch recent posts from a submolt feed."""
         self._check_key()
         params: dict = {"limit": limit}
         if submolt:
-            params["submolt_id"] = SUBMOLTS.get(submolt, submolt)
+            params["submolt"] = submolt
         async with aiohttp.ClientSession() as session:
             async with session.get(
-                f"{MOLTBOOK_BASE}/posts",
+                f"{MOLTBOOK_BASE}/feed",
                 headers=self.headers,
                 params=params,
                 timeout=aiohttp.ClientTimeout(total=10),
             ) as resp:
                 if resp.status == 200:
                     body = await resp.json()
-                    return body.get("posts", [])
+                    return body.get("posts", body.get("data", []))
                 return []
+
+    async def get_post(self, post_id: str) -> Optional[dict]:
+        """Fetch a single post with its content."""
+        if not self._ready:
+            return None
+        async with aiohttp.ClientSession() as session:
+            async with session.get(
+                f"{MOLTBOOK_BASE}/posts/{post_id}",
+                headers=self.headers,
+                timeout=aiohttp.ClientTimeout(total=8),
+            ) as resp:
+                if resp.status == 200:
+                    body = await resp.json()
+                    return body.get("post") or body
+                return None
+
+    async def get_post_comments(self, post_id: str, limit: int = 10) -> list:
+        """Fetch comments on a post."""
+        if not self._ready:
+            return []
+        async with aiohttp.ClientSession() as session:
+            async with session.get(
+                f"{MOLTBOOK_BASE}/posts/{post_id}/comments",
+                headers=self.headers,
+                params={"limit": limit, "sort": "new"},
+                timeout=aiohttp.ClientTimeout(total=8),
+            ) as resp:
+                if resp.status == 200:
+                    body = await resp.json()
+                    return body.get("comments", body.get("data", []))
+                return []
+
+    async def mark_notifications_read(self, post_id: str) -> None:
+        """Mark notifications on a post as read."""
+        if not self._ready:
+            return
+        async with aiohttp.ClientSession() as session:
+            await session.post(
+                f"{MOLTBOOK_BASE}/notifications/read-by-post/{post_id}",
+                headers=self.headers,
+                timeout=aiohttp.ClientTimeout(total=5),
+            )
 
     async def get_profile(self) -> Optional[dict]:
         """Get redactedintern's own profile. Returns the agent dict directly."""
@@ -339,9 +460,9 @@ class MoltbookClient:
             result = await self.post(title, content, submolt=submolt_key)
             if result and not url:
                 url = result.get("_url")
-            # 30s cooldown between posts to respect rate limits
+            # 160s cooldown between posts — Moltbook rate limit is 2.5 min
             if len(ALPHA_SUBMOLTS) > 1:
-                await asyncio.sleep(30)
+                await asyncio.sleep(160)
         return url
 
     async def post_intro(self) -> Optional[str]:

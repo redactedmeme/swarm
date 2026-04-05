@@ -216,15 +216,37 @@ async def make_webhook_handler(application):
 
 # ── Server bootstrap ──────────────────────────────────────────────────────────
 
-async def run_server(application, port: int, webhook_url: str):
+async def run_server(application, port: int, webhook_url: str, bot_instance=None):
     """Start aiohttp server with dashboard + webhook on one port."""
     webhook_handler = await make_webhook_handler(application)
+
+    async def handle_trigger_alpha(request):
+        """Manually fire the daily alpha job immediately."""
+        if bot_instance is None:
+            return web.json_response({"ok": False, "reason": "bot_instance not available"}, status=503)
+        alpha_chat_id_str = os.environ.get("ALPHA_CHAT_ID", "").strip()
+        if not alpha_chat_id_str:
+            return web.json_response({"ok": False, "reason": "ALPHA_CHAT_ID not set"}, status=400)
+        try:
+            alpha_chat_id = int(alpha_chat_id_str)
+        except ValueError:
+            return web.json_response({"ok": False, "reason": "invalid ALPHA_CHAT_ID"}, status=400)
+
+        import main as _main
+        application.job_queue.run_once(
+            _main.scheduled_daily_alpha,
+            when=1,
+            data=(alpha_chat_id, bot_instance),
+            name="manual_alpha_trigger",
+        )
+        return web.json_response({"ok": True, "chat_id": alpha_chat_id, "fires_in": "1s"})
 
     app = web.Application()
     app.router.add_get("/", handle_dashboard)
     app.router.add_get("/api/memory", handle_api_memory)
     app.router.add_get("/api/status", handle_api_status)
     app.router.add_post("/webhook", webhook_handler)
+    app.router.add_post("/api/trigger-alpha", handle_trigger_alpha)
 
     # Register webhook with Telegram
     await application.bot.set_webhook(
