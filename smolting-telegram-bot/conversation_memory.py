@@ -4,11 +4,13 @@ Markdown conversation memory for the Telegram bot.
 Appends each user/bot exchange to memory.md inside the bot directory.
 """
 
+import os
 import threading
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
 
-MEMORY_FILE = Path(__file__).resolve().parent / "memory.md"
+# MEMORY_PATH env var lets Railway volume override the default container path
+MEMORY_FILE = Path(os.getenv("MEMORY_PATH", str(Path(__file__).resolve().parent / "memory.md")))
 MAX_ENTRIES = 500  # prune oldest entries beyond this
 _lock = threading.Lock()
 

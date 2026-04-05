@@ -15,9 +15,10 @@ from typing import Optional
 
 logger = logging.getLogger(__name__)
 
-# Path from bot dir → shared swarm state file
+# MANIFOLD_PATH env var lets Railway volume override the default container path
 BOT_DIR = Path(__file__).resolve().parent
-MANIFOLD_PATH = BOT_DIR.parent / "spaces" / "ManifoldMemory.state.json"
+_default_manifold = str(BOT_DIR.parent / "spaces" / "ManifoldMemory.state.json")
+MANIFOLD_PATH = Path(os.getenv("MANIFOLD_PATH", _default_manifold))
 
 # Max events kept in the file (oldest pruned beyond this)
 MAX_EVENTS = 500

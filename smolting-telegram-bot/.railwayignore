@@ -1,0 +1,6 @@
+memory.md
+bot_audit.log
+*.log
+__pycache__/
+*.pyc
+.env

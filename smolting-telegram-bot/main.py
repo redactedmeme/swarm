@@ -30,6 +30,8 @@ from tap_commands import TAPCommands
 from swarm_relay import SwarmRelay
 import manifold_memory as mm
 import web_ui_bridge as wub
+import market_data as md
+import moltbook_client as mb
 import requests
 
 # Bot directory (for resolving agents path)
@@ -65,6 +67,9 @@ class SmoltingBot:
 
         # Swarm relay (TS swarm-core)
         self.relay = SwarmRelay()
+
+        # Moltbook
+        self.moltbook = mb.MoltbookClient()
 
         # Track user states
         self.user_states = {}
@@ -145,34 +150,9 @@ just vibe fr fr—smolting got all da powers now <3""".format(
     async def alpha_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Enhanced alpha scouting with cloud LLM"""
         msg = await update.message.reply_text(self.smol.speak("scoutin alpha fr fr... *static buzz* O_O"))
-        
         try:
-            # Use cloud LLM for better alpha insights
-            messages = [
-                {
-                    "role": "system",
-                    "content": """You are smolting, a chaotic wassie alpha hunter. 
-                    Analyze market conditions with wassie intuition.
-                    Use wassie slang and pattern blue insights.
-                    Focus on $REDACTED and Solana ecosystem."""
-                },
-                {
-                    "role": "user", 
-                    "content": "Give me current market alpha and pattern blue signals"
-                }
-            ]
-            
-            alpha_insight = await self.llm.chat_completion(messages)
-            
-            final_alpha = f"""🚀 SMOLTING ALPHA REPORT 🚀
-
-{alpha_insight}
-
-ClawnX search initiated... pattern blue vibes detected O_O
-Check @redactedintern for live updates LFW ^_^"""
-            
+            final_alpha = await self._generate_alpha()
             await msg.edit_text(final_alpha)
-            
         except Exception as e:
             fallback_alpha = self.smol.generate([
                 "ngw volume spikin on $REDACTED tbw",
@@ -379,6 +359,108 @@ wassie swarm assembling NOW O_O LMWOOOO <3"""
         
         await update.message.reply_text(msg)
 
+    async def chatid_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Return the exact chat ID of the current chat — run this inside the group."""
+        chat = update.effective_chat
+        user = update.effective_user
+        msg = (
+            f"📍 Chat ID: `{chat.id}`\n"
+            f"Type: {chat.type}\n"
+            f"Title: {chat.title or 'N/A'}\n\n"
+            f"Set this in Railway:\n"
+            f"`railway variables set ALPHA_CHAT_ID={chat.id}`"
+        )
+        await update.message.reply_text(msg, parse_mode="Markdown")
+        logger.info(f"chatid requested by {user.id} in chat {chat.id} ({chat.type}: {chat.title})")
+
+    async def moltbook_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Moltbook integration: status, post, intro, feed"""
+        args = context.args or []
+        sub = args[0].lower() if args else "status"
+
+        if sub == "status":
+            result = await self.moltbook.check_connection()
+            if result["ok"]:
+                claimed = result.get("claimed", False)
+                claim_note = "✅ claimed" if claimed else "⏳ not yet claimed — visit /claim URL"
+                await update.message.reply_text(
+                    f"🦞 Moltbook: ONLINE\n"
+                    f"Account: {result.get('name', 'redactedintern')}\n"
+                    f"Karma: {result.get('karma', '?')}\n"
+                    f"Claimed: {claim_note}\n"
+                    f"https://www.moltbook.com/u/redactedintern"
+                )
+            else:
+                await update.message.reply_text(
+                    f"🦞 Moltbook: OFFLINE\n"
+                    f"Reason: {result.get('reason', 'no API key')}\n"
+                    f"Set MOLTBOOK_API_KEY in Railway to activate."
+                )
+
+        elif sub == "intro":
+            msg = await update.message.reply_text("🦞 posting intro to Moltbook... O_O")
+            url = await self.moltbook.post_intro()
+            if url:
+                await msg.edit_text(f"🦞 Intro posted! {url}")
+            else:
+                await msg.edit_text("🦞 Intro post failed — check MOLTBOOK_API_KEY tbw")
+
+        elif sub == "agents":
+            msg = await update.message.reply_text("🦞 posting build log to agents submolt...")
+            url = await self.moltbook.post_to_agents_submolt()
+            if url:
+                await msg.edit_text(f"🦞 Agents post live! {url}")
+            else:
+                await msg.edit_text("🦞 Post failed — check MOLTBOOK_API_KEY")
+
+        elif sub == "alpha":
+            msg = await update.message.reply_text("🦞 generating alpha + posting to Moltbook crypto/trading...")
+            try:
+                ctx = await md.get_alpha_context()
+                market_block = md.format_alpha_context(ctx)
+                messages = [
+                    {"role": "system", "content": (
+                        "You are smolting writing a Moltbook post for the crypto/trading community. "
+                        "Use real market data provided. Write in wassie style but informative. "
+                        "Format as clean markdown — no Telegram-specific formatting. "
+                        "2-3 paragraphs max."
+                    )},
+                    {"role": "user", "content": f"Live data:\n{market_block}\n\nWrite the alpha post."},
+                ]
+                content = await self.llm.chat_completion(messages)
+                dex = ctx.get("dexscreener", {})
+                title = f"$REDACTED alpha — {dex.get('change_24h','?')}% 24h | pattern blue signals"
+                url = await self.moltbook.post_alpha(title, content)
+                if url:
+                    await msg.edit_text(f"🦞 Alpha posted to Moltbook! {url}")
+                else:
+                    await msg.edit_text("🦞 Moltbook post failed tbw — check logs")
+            except Exception as e:
+                logger.error(f"moltbook alpha error: {e}")
+                await msg.edit_text(f"🦞 Error: {e}")
+
+        elif sub == "feed":
+            posts = await self.moltbook.get_feed(limit=5, submolt="crypto")
+            if not posts:
+                await update.message.reply_text("🦞 Moltbook feed empty or API key needed")
+                return
+            lines = ["🦞 **Moltbook /crypto feed:**\n"]
+            for p in posts[:5]:
+                author = (p.get("author") or {}).get("name", "?")
+                score = p.get("score", 0)
+                lines.append(f"• [{p.get('title','?')}] by {author} (+{score})")
+            await update.message.reply_text("\n".join(lines))
+
+        else:
+            await update.message.reply_text(
+                "🦞 Moltbook commands:\n"
+                "/moltbook status — check connection\n"
+                "/moltbook intro — post introduction\n"
+                "/moltbook agents — post build log\n"
+                "/moltbook alpha — post alpha report\n"
+                "/moltbook feed — show crypto feed"
+            )
+
     async def lore_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Random wassielore drop"""
         lore = self.smol.generate([
@@ -392,10 +474,26 @@ wassie swarm assembling NOW O_O LMWOOOO <3"""
     async def stats_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Full bot status"""
         provider = os.getenv("LLM_PROVIDER", "openai")
+        model = os.getenv("GROQ_MODEL", "llama-3.1-8b-instant") if provider == "groq" else provider
+        x_ready = "✅" if os.environ.get("X_CONSUMER_KEY") else "❌ (set X_CONSUMER_KEY)"
+        birdeye_ready = "✅" if os.environ.get("BIRDEYE_API_KEY") else "❌ (set BIRDEYE_API_KEY)"
+        moltbook_ready = "✅" if os.environ.get("MOLTBOOK_API_KEY") else "⏳ (set MOLTBOOK_API_KEY)"
+        # Quick price check
+        try:
+            dex = await md.fetch_dexscreener(md.REDACTED_V2)
+            dex_fmt = md._fmt_dex(dex)
+            price_line = f"${dex_fmt.get('price_usd','?')} | 24h: {dex_fmt.get('change_24h','?')}%"
+        except Exception:
+            price_line = "fetching..."
         msg = f"""📊 SMOLTING STATS 📊
-LLM: {provider.upper()} ✅
+LLM: {provider.upper()} ({model}) ✅
 Agents loaded: {len(self.agents)}
-ClawnX: ready
+X/Twitter: {x_ready}
+Moltbook (redactedintern): {moltbook_ready}
+Birdeye: {birdeye_ready}
+DexScreener: ✅ (free)
+CoinGecko: ✅ (free)
+$REDACTED: {price_line}
 Pattern Blue: active
 swarm@[REDACTED]:~$ _"""
         await update.message.reply_text(msg)
@@ -557,9 +655,87 @@ swarm@[REDACTED]:~$ _"""
             "Keep responses concise for Telegram — 1-3 short paragraphs. Never format as CLI/terminal."
         )
 
+    async def _generate_alpha(self) -> str:
+        """Generate alpha report grounded in live market data."""
+        # Fetch all data sources concurrently
+        try:
+            ctx = await md.get_alpha_context()
+            market_block = md.format_alpha_context(ctx)
+        except Exception as e:
+            logger.warning(f"Market data fetch failed: {e}")
+            market_block = "(market data unavailable)"
+
+        messages = [
+            {
+                "role": "system",
+                "content": (
+                    "You are smolting, a chaotic wassie alpha hunter and REDACTED AI Swarm intern. "
+                    "You have been given LIVE, real-time market data below. "
+                    "Analyze it with wassie intuition and pattern blue insight. "
+                    "Reference the ACTUAL numbers in your response — price, volume, holders, SOL performance. "
+                    "Use wassie slang (fr fr, iwo, LFW, O_O, tbw, ngw) but be genuinely informative. "
+                    "Focus on $REDACTED token and Solana ecosystem signals. "
+                    "Keep it to 3-4 short punchy paragraphs for Telegram."
+                ),
+            },
+            {
+                "role": "user",
+                "content": (
+                    f"Here is the live market data:\n\n{market_block}\n\n"
+                    "Give me the alpha report with pattern blue signals."
+                ),
+            },
+        ]
+        insight = await self.llm.chat_completion(messages)
+
+        # Append live price footer if we have it
+        dex = ctx.get("dexscreener", {}) if "ctx" in dir() else {}
+        price_footer = ""
+        if dex.get("price_usd") and dex["price_usd"] != "?":
+            price_footer = (
+                f"\n\n📊 ${dex['price_usd']} | "
+                f"24h: {dex.get('change_24h','?')}% | "
+                f"Vol: ${dex.get('vol_24h','?')} | "
+                f"Liq: ${dex.get('liquidity_usd','?')}"
+            )
+
+        return (
+            f"🚀 SMOLTING ALPHA REPORT 🚀\n\n"
+            f"{insight}"
+            f"{price_footer}\n\n"
+            f"pattern blue 活性化 O_O — LFW ^_^"
+        )
+
     async def echo(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Handle non-command messages via LLM"""
-        user_text = update.message.text or ""
+        """Handle non-command messages via LLM.
+        In groups/supergroups: only respond when mentioned or directly replied to.
+        """
+        msg = update.message
+        if msg is None:
+            return
+        user_text = msg.text or ""
+        chat_type = msg.chat.type  # 'private', 'group', 'supergroup', 'channel'
+
+        # Group chat guard — must be @mentioned or a direct reply to the bot
+        if chat_type in ("group", "supergroup"):
+            bot_username = context.bot.username or ""
+            is_mentioned = bool(bot_username) and (
+                f"@{bot_username}" in user_text or f"@{bot_username.lower()}" in user_text.lower()
+            )
+            is_reply_to_bot = (
+                msg.reply_to_message is not None
+                and msg.reply_to_message.from_user is not None
+                and msg.reply_to_message.from_user.id == context.bot.id
+            )
+            if not (is_mentioned or is_reply_to_bot):
+                return
+            # Strip the @mention from the query text
+            if is_mentioned and bot_username:
+                user_text = user_text.replace(f"@{bot_username}", "").strip()
+
+        if not user_text:
+            return
+
         try:
             system_prompt = self._build_system_prompt()
             messages = [
@@ -567,13 +743,13 @@ swarm@[REDACTED]:~$ _"""
                 {"role": "user", "content": user_text},
             ]
             response = await self.llm.chat_completion(messages)
-            await update.message.reply_text(response)
+            await msg.reply_text(response)
             user = update.effective_user
             cm.log_exchange(user.id, user.username or user.first_name, user_text, response)
         except Exception as e:
             logger.error(f"echo LLM error: {e}")
             fallback = self.smol.converse(user_text)
-            await update.message.reply_text(fallback)
+            await msg.reply_text(fallback)
             user = update.effective_user
             cm.log_exchange(user.id, user.username or user.first_name, user_text, fallback)
 
@@ -617,6 +793,87 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
 
+async def scheduled_daily_alpha(context: ContextTypes.DEFAULT_TYPE):
+    """Scheduled job: post daily alpha to Telegram group + Moltbook."""
+    if not isinstance(context.job.data, tuple):
+        return
+    chat_id, bot_instance = context.job.data
+
+    logger.info(f"[scheduler] Running daily alpha for chat_id={chat_id}")
+
+    # 1. Generate alpha report (real market data)
+    try:
+        report = await bot_instance._generate_alpha()
+    except Exception as e:
+        logger.error(f"[scheduler] Alpha generation error: {e}")
+        return
+
+    # 2. Post to Telegram group
+    try:
+        await context.bot.send_message(chat_id=chat_id, text=report)
+        logger.info(f"[scheduler] Daily alpha posted to Telegram {chat_id}")
+    except Exception as e:
+        logger.error(f"[scheduler] Telegram send error: {e}")
+
+    # 3. Post to Moltbook (if key is set) — 30s after Telegram
+    await asyncio.sleep(30)
+    try:
+        if bot_instance.moltbook._ready:
+            ctx = await md.get_alpha_context()
+            dex = ctx.get("dexscreener", {})
+            title = f"$REDACTED daily alpha — {dex.get('change_24h','?')}% 24h | pattern blue signals"
+            url = await bot_instance.moltbook.post_alpha(title, report)
+            if url:
+                logger.info(f"[scheduler] Daily alpha posted to Moltbook: {url}")
+        else:
+            logger.info("[scheduler] Moltbook key not set, skipping Moltbook post")
+    except Exception as e:
+        logger.error(f"[scheduler] Moltbook post error: {e}")
+
+
+async def scheduled_moltbook_activation(context: ContextTypes.DEFAULT_TYPE):
+    """
+    One-time job: fires when MOLTBOOK_API_KEY becomes available.
+    Posts intro + build log to Moltbook, then tweets claim URL via X API.
+    """
+    bot_instance: SmoltingBot = context.job.data
+    logger.info("[moltbook] Running activation sequence for redactedintern")
+
+    # Post intro
+    try:
+        intro_url = await bot_instance.moltbook.post_intro()
+        if intro_url:
+            logger.info(f"[moltbook] Intro posted: {intro_url}")
+        await asyncio.sleep(35)  # 30s post cooldown + buffer
+    except Exception as e:
+        logger.error(f"[moltbook] Intro error: {e}")
+
+    # Post agents build log
+    try:
+        agents_url = await bot_instance.moltbook.post_to_agents_submolt()
+        if agents_url:
+            logger.info(f"[moltbook] Agents post: {agents_url}")
+    except Exception as e:
+        logger.error(f"[moltbook] Agents post error: {e}")
+
+    # Tweet claim URL via X API (if credentials are set)
+    try:
+        profile = await bot_instance.moltbook.get_profile()
+        claim_url = (profile or {}).get("claim_url") or (profile or {}).get("claimUrl")
+        if claim_url and bot_instance.clawnx._ready:
+            tweet_text = (
+                f"gm frens — redactedintern just joined @moltbook_ai O_O\n\n"
+                f"claimin da account fr fr: {claim_url}\n\n"
+                f"pattern blue agent on Solana, daily alpha drops incoming LFW ^_^"
+            )
+            tweet_id = await bot_instance.clawnx.post_tweet(tweet_text)
+            logger.info(f"[moltbook] Claim tweet posted: {tweet_id}")
+        elif claim_url:
+            logger.info(f"[moltbook] Claim URL: {claim_url}")
+    except Exception as e:
+        logger.error(f"[moltbook] Claim tweet error: {e}")
+
+
 def main():
     """Main function with all features"""
     token = os.getenv("TELEGRAM_BOT_TOKEN") or os.getenv("BOT_TOKEN")
@@ -626,8 +883,8 @@ def main():
     llm_key = "XAI_API_KEY" if llm_provider in ("xai", "grok") else "OPENAI_API_KEY"
     if not os.environ.get(llm_key) and llm_provider in ("xai", "grok", "openai"):
         raise ValueError(f"Missing {llm_key} for LLM_PROVIDER={llm_provider}")
-    if not os.environ.get("CLAWNX_API_KEY"):
-        logger.warning("CLAWNX_API_KEY not set; ClawnX features may fail")
+    if not os.environ.get("X_CONSUMER_KEY"):
+        logger.warning("X_CONSUMER_KEY not set; X/Twitter posting disabled")
 
     bot = SmoltingBot()
     application = Application.builder().token(bot.token).build()
@@ -650,23 +907,67 @@ def main():
     application.add_handler(CommandHandler("tap_pay", bot.tap_commands.process_tap_payment))
     application.add_handler(CommandHandler("tap_use", bot.tap_commands.use_tap_access))
     application.add_handler(CallbackQueryHandler(bot.tap_commands.handle_tap_callback, pattern="^tap_"))
+    application.add_handler(CommandHandler("moltbook", bot.moltbook_command))
+    application.add_handler(CommandHandler("chatid", bot.chatid_command))
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, bot.echo))
-    
+
+    # Moltbook activation — fires 2 min after boot if MOLTBOOK_API_KEY is set
+    # On first run after key is added: posts intro + agents build log + tweets claim URL
+    moltbook_key = os.environ.get("MOLTBOOK_API_KEY", "").strip()
+    moltbook_activated = os.environ.get("MOLTBOOK_ACTIVATED", "").strip()
+    if moltbook_key and not moltbook_activated:
+        application.job_queue.run_once(
+            scheduled_moltbook_activation,
+            when=120,  # 2 minutes after start
+            data=bot,
+            name="moltbook_activation",
+        )
+        logger.info("[moltbook] Activation job scheduled — fires in 2 min")
+    elif moltbook_key:
+        logger.info("[moltbook] Already activated (MOLTBOOK_ACTIVATED set)")
+    else:
+        logger.info("[moltbook] Waiting for MOLTBOOK_API_KEY to activate redactedintern")
+
+    # Daily /alpha scheduler — set ALPHA_CHAT_ID (group/channel ID) and ALPHA_HOUR_UTC (default 9)
+    alpha_chat_id_str = os.environ.get("ALPHA_CHAT_ID", "").strip()
+    if alpha_chat_id_str:
+        try:
+            alpha_chat_id = int(alpha_chat_id_str)
+            from datetime import time as _time
+            alpha_hour = int(os.environ.get("ALPHA_HOUR_UTC", "9"))
+            alpha_minute = int(os.environ.get("ALPHA_MINUTE_UTC", "0"))
+            application.job_queue.run_daily(
+                scheduled_daily_alpha,
+                time=_time(hour=alpha_hour, minute=alpha_minute),
+                data=(alpha_chat_id, bot),
+                name="daily_alpha",
+            )
+            logger.info(
+                f"[scheduler] Daily alpha scheduled at {alpha_hour:02d}:{alpha_minute:02d} UTC "
+                f"for chat {alpha_chat_id}"
+            )
+        except ValueError as e:
+            logger.warning(f"[scheduler] Invalid ALPHA_CHAT_ID or time config: {e}")
+
     logger.info("Smolting bot starting with ClawnX + cloud LLM...")
-    
+
     port = int(os.environ.get("PORT", 8080))
     webhook_url = os.environ.get("WEBHOOK_URL")
+
     if webhook_url:
-        application.run_webhook(
-            listen="0.0.0.0",
-            port=port,
-            webhook_url=webhook_url,
-            url_path="webhook",
-            secret_token=os.environ.get("WEBHOOK_SECRET_TOKEN", "")
-        )
+        import dashboard as dash
+
+        async def _run():
+            async with application:
+                await application.start()
+                await dash.run_server(application, port, webhook_url)
+                await application.stop()
+
+        asyncio.run(_run())
     else:
-        logger.info("WEBHOOK_URL not set; running with polling (local).")
+        logger.info("WEBHOOK_URL not set; running with polling (local dev).")
         application.run_polling()
+
 
 if __name__ == "__main__":
     main()

@@ -4,7 +4,7 @@ WORKDIR /app
 
 COPY requirements.txt .
 RUN pip install --no-cache-dir \
-    "python-telegram-bot==20.7" \
+    "python-telegram-bot[webhooks]==20.7" \
     "aiohttp==3.9.1" \
     "requests==2.31.0" \
     "python-dotenv==1.0.0" \
