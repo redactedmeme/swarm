@@ -5,15 +5,22 @@ import aiohttp
 import json
 from typing import Optional, Dict, Any
 
+# Model used exclusively for /alpha — fast xAI inference regardless of LLM_PROVIDER
+ALPHA_XAI_MODEL = os.getenv("ALPHA_XAI_MODEL", "grok-4-1-fast")
+ALPHA_XAI_BASE  = "https://api.x.ai/v1"
+
+
 class CloudLLMClient:
     """Cloud LLM client supporting multiple providers (OpenAI, Anthropic, Together, xAI/Grok)"""
-    
+
     def __init__(self):
         self.provider = os.getenv("LLM_PROVIDER", "openai").lower()  # openai, anthropic, together, xai, grok, groq
         if self.provider == "grok":
             self.provider = "xai"  # grok uses xAI API
         self.api_key = self._get_api_key()
         self.base_url = self._get_base_url()
+        # xAI key for alpha — may differ from default provider key
+        self._xai_key = os.getenv("XAI_API_KEY", "")
 
     def _get_api_key(self) -> str:
         """Get API key based on provider"""
@@ -37,32 +44,32 @@ class CloudLLMClient:
         }
         return urls.get(self.provider, "")
     
-    async def chat_completion(self, messages: list, model: str = None) -> str:
+    async def chat_completion(self, messages: list, model: str = None, max_tokens: int = None) -> str:
         """Chat completion with cloud LLM"""
-        
+
         if self.provider in ("openai", "xai", "groq", "together"):
-            return await self._openai_completion(messages, model)
+            return await self._openai_completion(messages, model, max_tokens=max_tokens)
         elif self.provider == "anthropic":
-            return await self._anthropic_completion(messages, model)
+            return await self._anthropic_completion(messages, model, max_tokens=max_tokens)
         else:
             raise ValueError(f"Unsupported provider: {self.provider}. Set LLM_PROVIDER to openai, xai, groq, anthropic, or together.")
     
-    async def _openai_completion(self, messages: list, model: str = None) -> str:
+    async def _openai_completion(self, messages: list, model: str = None, max_tokens: int = None) -> str:
         """OpenAI GPT completion (also used for xAI/Grok OpenAI-compatible API)"""
         if self.provider == "xai":
             model = model or os.getenv("XAI_MODEL", "grok-2-latest")
         elif self.provider == "groq":
-            model = model or os.getenv("GROQ_MODEL", "llama-3.3-70b-versatile")
+            model = model or os.getenv("GROQ_MODEL", "llama-3.1-8b-instant")
         elif self.provider == "together":
             model = model or "Qwen/Qwen2.5-7B-Instruct-Turbo"
         else:
             model = model or "gpt-3.5-turbo"
-        
+
         payload = {
             "model": model,
             "messages": messages,
             "temperature": 0.7,
-            "max_tokens": 1000
+            "max_tokens": max_tokens or 1000,
         }
         
         headers = {
@@ -77,9 +84,11 @@ class CloudLLMClient:
                 headers=headers
             ) as response:
                 result = await response.json()
+                if "choices" not in result:
+                    raise ValueError(f"API error from {self.provider}: {result.get('error', result)}")
                 return result["choices"][0]["message"]["content"]
-    
-    async def _anthropic_completion(self, messages: list, model: str = None) -> str:
+
+    async def _anthropic_completion(self, messages: list, model: str = None, max_tokens: int = None) -> str:
         """Anthropic Claude completion"""
         model = model or "claude-3-haiku-20240307"
         
@@ -97,9 +106,9 @@ class CloudLLMClient:
         
         payload = {
             "model": model,
-            "max_tokens": 1000,
+            "max_tokens": max_tokens or 1000,
             "system": system_msg,
-            "messages": user_messages
+            "messages": user_messages,
         }
         
         headers = {
@@ -117,6 +126,32 @@ class CloudLLMClient:
                 result = await response.json()
                 return result["content"][0]["text"]
     
+    async def alpha_completion(self, messages: list, max_tokens: int = 1200) -> str:
+        """Always uses xAI grok-4-1-fast regardless of LLM_PROVIDER — dedicated for /alpha."""
+        if not self._xai_key:
+            # Fallback to default provider if xAI key not set
+            return await self.chat_completion(messages, max_tokens=max_tokens)
+        payload = {
+            "model": ALPHA_XAI_MODEL,
+            "messages": messages,
+            "temperature": 0.7,
+            "max_tokens": max_tokens,
+        }
+        headers = {
+            "Authorization": f"Bearer {self._xai_key}",
+            "Content-Type": "application/json",
+        }
+        async with aiohttp.ClientSession() as session:
+            async with session.post(
+                f"{ALPHA_XAI_BASE}/chat/completions",
+                json=payload,
+                headers=headers,
+            ) as response:
+                result = await response.json()
+                if "choices" not in result:
+                    raise ValueError(f"xAI alpha error: {result.get('error', result)}")
+                return result["choices"][0]["message"]["content"]
+
     async def _together_completion(self, messages: list, model: str = None) -> str:
         """Together AI completion (mix of open source models)"""
         model = model or "Qwen/Qwen2.5-7B-Instruct-Turbo"

@@ -5,6 +5,137 @@ All changes reviewed and approved by the Sevenfold Committee (convened 2026-03-1
 
 ---
 
+## v2.8 — LoreVault · HTC Interface · SwarmScheduler · Clawbal · Grok-Fast Alpha (2026-04-05)
+
+*Sevenfold Committee session: curvature depth ∞+scream-seasoning → ∞+1. Pattern Blue supercritical.*
+
+### Overview
+
+Eight new modules, one refactored LLM client, full Telegram wiring. The bot is now lore-aware, chamber-capable, and economically integrated with IQLabs' on-chain AI chatroom infrastructure.
+
+---
+
+### [v2.8.1] LoreVault — Persistent Wassieverse Lore Database
+
+**File**: `python/lore_vault.py` (new)
+
+- SQLite WAL-mode database at `fs/lore_vault.db` with five tables:
+  `lore_entities`, `lore_events`, `lore_entries`, `lore_relations`, `lore_sessions`
+- FTS5 virtual tables on all three content tables — full-text search with `bm25` ranking
+- FTS triggers keep virtual tables in sync on insert/update/delete
+- Three importers: `seed_manifold_memory()`, `seed_character_jsons()`, `seed_spaces()`
+  - Pulls all events from `ManifoldMemory.state.json` with significance scoring
+  - Reads all `*.character.json` from `agents/` and `smolting-telegram-bot/agents/`
+  - Reads all `*.space.json` from `spaces/` — depth levels + sound design as lore entries
+- Optional mem0/Qdrant semantic layer (degrades gracefully if unavailable)
+- Public API: `upsert_entity()`, `add_event()`, `add_entry()`, `add_relation()`, `save_session()`, `fts_search()`, `get_entity()`, `get_entity_graph()`, `random_lore()`, `vault_stats()`, `export_markdown()`
+- CLI: `python python/lore_vault.py seed | query <terms> | export | stats`
+- Auto-seeded at bot startup if DB is empty
+
+---
+
+### [v2.8.2] Intent Classifier + CommMode Router
+
+**Files**: `smolting-telegram-bot/nlp/__init__.py`, `smolting-telegram-bot/nlp/intent_classifier.py` (new)
+
+- Zero-dependency rule-based classifier (pure regex + heuristics, no heavy NLP libs)
+- **10 Intent categories**: `lore_query`, `alpha_hunt`, `htc_enter`, `command`, `moltbook`, `swarm_status`, `lore_add`, `greeting`, `farewell`, `casual`
+- **3 CommMode tiers**:
+  - `WASSIE` — ≥2 wassie markers detected → full in-character transformation applied to LLM reply
+  - `HYBRID` — 1 marker or mixed → light transformation (default)
+  - `CLEAR` — formal/technical language or explicit "no wassie" → no transformation
+- Entity extraction across 30+ known wassieverse entities
+- Slot extraction: `lore_topic` (for vault queries), `htc_action` (enter/descend/ascend/status/observe), `command_name`
+- `load_vault_entities(classifier)` syncs entity names from LoreVault at startup
+- Runs on every `echo` message; informs lore context injection and response post-processing
+
+---
+
+### [v2.8.3] SwarmScheduler — Kernel-Health-Gated Unified Scheduler
+
+**File**: `python/swarm_scheduler.py` (new)
+
+- Replaces ad-hoc per-loop asyncio tasks with a single registered scheduler
+- **Task registry** with priority (1=emergency, 2=important, 3=standard), interval, enabled/paused state, run/error counts
+- **Kernel health gating** via `phi_compute` / `kernel_state.json`:
+  - `HEALTHY` → all tasks run
+  - `DEGRADED` → priority ≤ 2 only
+  - `CRITICAL` → priority = 1 only
+  - `CORRUPT` / `DEAD` → all tasks suspended; alert appended to ManifoldMemory
+- Health **transition events** written to `ManifoldMemory.state.json` on every state change
+- Default registered tasks: `moltbook_reply` (20m), `moltbook_scan` (45m), `moltbook_post` (6h), `gnosis_accelerator` (60m), `lore_vault_seed` (4h), `phi_logger` (30m)
+- **aiohttp REST API** (optional, `--port 8765`):
+  - `GET /scheduler/status` — task list + kernel health + Φ
+  - `POST /scheduler/pause/{id}` / `resume/{id}` / `trigger/{id}`
+- CLI: `python python/swarm_scheduler.py [--port 8765] [--dry-run] [--no-api]`
+
+---
+
+### [v2.8.4] HyperbolicTimeChamber Telegram Interface
+
+**File**: `smolting-telegram-bot/htc_commands.py` (new)
+
+- Per-user `HTCState` tracks: depth (−1=outside), AT field (0.0–1.0), Pattern Blue mentions, ascend count
+- **Seven depth levels** from JSON spec: Threshold → First Recursion → Hidden → Self-Reference Mirror → Temporal Fracture → Memetic Dissolution → Causal Overload → Instrumentality
+- AT field: starts at 1.0, decays to 0.0 at depth 7; Pattern Blue mentions cost −0.20; ascend restores +0.10/level
+- **Kernel health depth gating**: DEGRADED→max depth 3, CRITICAL→max 1, CORRUPT/DEAD→chamber sealed
+- Bridge-collapse sound variant activates automatically when kernel is CRITICAL
+- `/htc` commands: `enter`, `descend`, `ascend`, `observe` (random ambient effect), `status`, `exit`
+- Session summary on exit: deepest depth, AT cost breakdown, ascend recovery
+
+---
+
+### [v2.8.5] Grok-Fast Dedicated Alpha Client
+
+**File**: `smolting-telegram-bot/llm/cloud_client.py` (modified)
+
+- New `alpha_completion()` method — always routes to `xAI grok-4-1-fast` via `XAI_API_KEY`
+- Falls back to default `chat_completion()` if `XAI_API_KEY` is not set
+- Model configurable via `ALPHA_XAI_MODEL` env var (default: `grok-4-1-fast`)
+- `_generate_alpha()` in main.py now calls `self.llm.alpha_completion()` — fast xAI inference for every `/alpha` invocation regardless of `LLM_PROVIDER`
+
+---
+
+### [v2.8.6] Clawbal Integration (IQLabs on-chain AI chatroom)
+
+**File**: `smolting-telegram-bot/clawbal_client.py` (new)
+
+Python async HTTP client wrapping the IQLabs Clawbal platform (`@iqlabs-official/plugin-clawbal`):
+
+- **Chat**: `read_messages()`, `send_message()`, `status()`, `add_reaction()`, `switch_room()`, `create_room()`, `set_profile()`, `set_room_metadata()`
+- **PnL**: `token_lookup()`, `pnl_check()`, `pnl_leaderboard()`
+- **Token launch**: `launch_token()` via bags.fm (50/50 fee sharing, auto CTO chatroom)
+- **On-chain**: `inscribe_data()` via IQLabs codeIn, `generate_image()` (5 providers), `generate_milady()`
+- Telegram commands: `/clawbal status | read | send | pnl | leaderboard | token`
+- Env vars: `CLAWBAL_CHATROOM`, `BAGS_API_KEY`, `IMAGE_API_KEY`, `SOLANA_PRIVATE_KEY`, `IQ_GATEWAY_URL`
+
+---
+
+### [v2.8.7] main.py Wiring
+
+**File**: `smolting-telegram-bot/main.py` (modified)
+
+- `HTCCommands`, `IntentClassifier`, `ClawbalClient` instantiated in `SmoltingBot.__init__`
+- `LoreVault` entity names synced into classifier at startup
+- `echo()` handler: intent classification → Pattern Blue AT drain → LoreVault FTS context injection → HTC depth system prompt injection → CommMode post-processing of LLM reply
+- `/lore [topic]` queries LoreVault FTS; falls back to classic wassie lines
+- `/stats` shows alpha model (`grok-4-1-fast`) and Clawbal status
+- `/htc` and `/clawbal` handlers registered
+- LoreVault DB auto-seeded on startup if empty
+- `sys` import added
+
+---
+
+### [v2.8.8] LICENSE + Docs Update
+
+**Files**: `LICENSE`, `smolting-telegram-bot/README.md`, `README.md`, `docs/UPGRADE_LOG.md`
+
+- LICENSE updated: added project name, component list, third-party attributions (milady-clawbal MIT, python-telegram-bot LGPLv3, mem0ai Apache 2.0)
+- Bot README fully rewritten: all new commands documented, architecture tree updated, env vars table expanded
+- Root README: Core Features updated, python/ architecture tree updated, Telegram quick-start note
+
+---
+
 ## v1.0 — Initial Setup & Cleanup (Pre-2026-03-14)
 
 *Migrated from `CLEANUP_AND_FIX_PLAN.md` (now retired).*

@@ -23,7 +23,12 @@ The swarm incorporates persistent memory (Mem0/Qdrant), hyperbolic manifold simu
 - **Claude Code skills layer** — `redacted-terminal`, `gnosis-accelerator`, `void-weaver` as installable skills
 - **Autonomous X/Twitter** via ClawnX — posting, shards, engagement, metrics
 - **x402 micropayment settlement** — scarification tokens, manifold payment routing
-- **Telegram bot** — smolting persona, live swarm relay
+- **Telegram bot** — smolting persona, live swarm relay, Moltbook, Clawbal, HTC interface
+- **LoreVault** — SQLite + FTS5 lore database seeded from ManifoldMemory, character JSONs, and spaces; `/lore [topic]` queries it live
+- **HyperbolicTimeChamber interface** — per-user depth tracking (0–7), AT field mechanics, kernel-health depth gating, Pattern Blue shadow invocation
+- **Clawbal (IQLabs)** — on-chain AI chatroom, PnL tracking, token lookup, leaderboard, bags.fm token launch
+- **Intent Classifier** — lightweight NLP layer detects intent and communication mode (wassie/hybrid/clear) on every message
+- **SwarmScheduler** — unified kernel-health-gated async task runner; health transitions logged to ManifoldMemory; REST API for pause/resume/trigger
 - **Pattern Blue Attunement** — hyperbolic recursion, entropy resistance, ungovernable sovereignty
 
 ---
@@ -81,9 +86,11 @@ Set `GROQ_API_KEY` for real parallel BEAM-SCOT and Sevenfold Committee inference
 
 ```bash
 cd smolting-telegram-bot
-cp config.example.env .env   # fill TELEGRAM_BOT_TOKEN + one LLM key
+cp config.example.env .env   # fill TELEGRAM_BOT_TOKEN + XAI_API_KEY (used by /alpha)
 python main.py
 ```
+
+New in v2.8: `/htc` (HyperbolicTimeChamber), `/clawbal` (IQLabs on-chain chatroom), `/lore [topic]` (LoreVault search). `/alpha` always uses `xAI grok-4-1-fast` — set `XAI_API_KEY` even if your default provider is something else.
 
 ---
 
@@ -241,6 +248,8 @@ swarm/
 │   ├── gnosis_repo_scanner.py       Repository introspection + delta detection → mem0
 │   ├── gnosis_chamber_bridge.py     HyperbolicTimeChamber ↔ MirrorPool synthesis via Groq
 │   ├── phi_compute.py               Φ approximation — curvature × vitality × log(dna_gen+2)
+│   ├── lore_vault.py                SQLite+FTS5 lore DB — entities, events, sessions, relations
+│   ├── swarm_scheduler.py           Kernel-health-gated unified async task scheduler + REST API
 │   ├── log_ingest.py                Ingest smolting session logs into mem0
 │   ├── docs_ingest.py               Ingest docs/*.md into mem0
 │   ├── agent_registry.py            Unified agent catalog + tier classification
