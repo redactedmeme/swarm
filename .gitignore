@@ -45,6 +45,20 @@ desktop.ini
 *.swp
 *.swo
 
+# ── Local machine scripts (contain hardcoded personal paths) ──────────────────
+*.ps1
+*.bat
+
+# ── Claude Code local config (machine-specific, contains personal paths) ───────
+.claude/settings.local.json
+
+# ── Bot runtime data (generated, may contain user conversations/IDs) ──────────
+smolting-telegram-bot/memory.md
+smolting-telegram-bot/learned_facts.json
+smolting-telegram-bot/moltbook_engaged.json
+smolting-telegram-bot/bot_audit.log
+smolting-telegram-bot/bot_audit.log.bak
+
 # ── Misc ──────────────────────────────────────────────────────────────────────
 *.tmp
 *.bak
