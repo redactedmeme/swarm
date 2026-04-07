@@ -38,6 +38,7 @@ from nlp.intent_classifier import IntentClassifier, CommMode, load_vault_entitie
 from clawbal_client import ClawbalClient
 import soul_manager
 import osp_manager
+import swarm_inbox
 import wallet as sol_wallet
 from admin import AdminManager
 
@@ -897,27 +898,95 @@ swarm@[REDACTED]:~$ _"""
         await pending.edit_text(reply)
 
     async def swarm_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Show live swarm state from the TS swarm core."""
-        pending = await update.message.reply_text(
-            self.smol.speak("fetchin swarm state... 観測 initializing O_O")
-        )
+        """
+        Swarm coordination hub.
 
-        sub = (context.args[0].lower() if context.args else "state")
+        /swarm                — inbox summary
+        /swarm inbox          — inbox summary + recent messages
+        /swarm send <agent> <type> <json_payload>  — send a message (admin)
+        /swarm state          — TS swarm core state (legacy, best-effort)
+        /swarm status         — TS swarm core status (legacy, best-effort)
+        """
+        args = context.args or []
+        sub  = args[0].lower() if args else "inbox"
 
-        if sub == "status":
-            result = await self.relay.send_command("/status")
-            if result is None:
-                reply = self.smol.speak("ngw swarm core offline—TS_SERVICE_URL not reachable tbw ><")
+        # ── Inbox summary ─────────────────────────────────────────────────────
+        if sub == "inbox":
+            summary = swarm_inbox.format_inbox_status(for_agent="redactedintern")
+            recent  = swarm_inbox.recent_messages(limit=5, for_agent="redactedintern")
+            lines   = [summary]
+            if recent:
+                lines.append("\n<b>Recent messages:</b>")
+                for m in recent:
+                    status_emoji = {"pending": "🟡", "processing": "🔵",
+                                    "done": "🟢", "error": "🔴"}.get(m.get("status", ""), "⚪")
+                    lines.append(
+                        f"{status_emoji} [{m.get('type','')}] "
+                        f"{m.get('from','')} → {m.get('to','')} "
+                        f"({m.get('ts','')[:10]})"
+                    )
+            await update.message.reply_text("\n".join(lines), parse_mode="HTML")
+
+        # ── Send a message to another agent ───────────────────────────────────
+        elif sub == "send":
+            if not self.admin.is_admin(update.effective_user.id):
+                await update.message.reply_text(self.admin.locked_message(), parse_mode="Markdown")
+                return
+            # /swarm send <agent> <msg_type> <json_payload>
+            if len(args) < 4:
+                await update.message.reply_text(
+                    "usage: /swarm send &lt;agent&gt; &lt;type&gt; &lt;json&gt;\n"
+                    "e.g.: /swarm send redactedbuilder deploy_request "
+                    "{\"contract_type\":\"spl_token\",\"name\":\"X\"}",
+                    parse_mode="HTML",
+                )
+                return
+            to_agent = args[1].lower()
+            msg_type = args[2].lower()
+            try:
+                payload = json.loads(" ".join(args[3:]))
+            except Exception:
+                await update.message.reply_text("❌ payload must be valid JSON")
+                return
+            msg_id = swarm_inbox.write_message(
+                from_agent="redactedintern",
+                to_agent=to_agent,
+                msg_type=msg_type,
+                payload=payload,
+            )
+            await update.message.reply_text(
+                f"📬 Message queued\n"
+                f"<b>to:</b> {to_agent}\n"
+                f"<b>type:</b> {msg_type}\n"
+                f"<b>id:</b> <code>{msg_id}</code>",
+                parse_mode="HTML",
+            )
+
+        # ── Legacy TS swarm core state ────────────────────────────────────────
+        elif sub in ("state", "status"):
+            pending = await update.message.reply_text("fetchin swarm state... O_O")
+            if sub == "status":
+                result = await self.relay.send_command("/status")
+                reply  = f"🌀 SWARM STATUS\n\n{result}" if result else (
+                    swarm_inbox.format_inbox_status() + "\n\n(TS swarm core offline)"
+                )
             else:
-                reply = f"🌀 SWARM STATUS\n\n{result}"
+                state = await self.relay.get_state()
+                reply = self.relay.format_state(state) if state else (
+                    swarm_inbox.format_inbox_status() + "\n\n(TS swarm core offline)"
+                )
+            await pending.edit_text(reply)
+
         else:
-            state = await self.relay.get_state()
-            if state is None:
-                reply = self.smol.speak("ngw can't reach swarm state endpoint tbw ><")
-            else:
-                reply = self.relay.format_state(state)
-
-        await pending.edit_text(reply)
+            await update.message.reply_text(
+                "<b>Swarm commands:</b>\n"
+                "/swarm inbox — message queue summary\n"
+                "/swarm send &lt;agent&gt; &lt;type&gt; &lt;json&gt; — send message 🔒\n"
+                "/swarm state — TS core state (legacy)\n\n"
+                "<b>Agents:</b> redactedbuilder · redactedgovimprover · "
+                "mandalaasettler · redactedbankrbot",
+                parse_mode="HTML",
+            )
 
     async def memory_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Show recent ManifoldMemory events."""
@@ -1731,7 +1800,8 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "/ca — contract address\n\n"
         "🧠 <b>Lore &amp; Swarm</b>\n"
         "/lore [topic] — wassielore drop or search\n"
-        "/swarm — live swarm state\n"
+        "/swarm — inbox + swarm state\n"
+        "/swarm send &lt;agent&gt; &lt;type&gt; &lt;json&gt; — send message 🔒\n"
         "/memory — recent ManifoldMemory events\n"
         "/htc — HyperbolicTimeChamber interface\n\n"
         "🦞 <b>Moltbook</b>\n"
@@ -1968,6 +2038,95 @@ def main():
         application.job_queue.run_repeating(_mb_post,  interval=1800, first=300,
                                             name="mb_autonomous_post")
         logger.info("[moltbook_auto] Autonomous loops scheduled: reply=20m, scan=45m, post=30m")
+
+    # ── SwarmInbox polling ────────────────────────────────────────────────────
+    # Fire a startup heartbeat so other agents know redactedintern is online
+    swarm_inbox.heartbeat("redactedintern", {"status": "online", "role": "telegram+moltbook"})
+    logger.info("[swarm_inbox] Heartbeat sent — redactedintern online")
+
+    _inbox_admin_chat: list[int] = []   # populated on first admin message
+
+    async def _inbox_poll(ctx):
+        """
+        Poll SwarmInbox every 60s for messages addressed to redactedintern.
+        Handles: deploy_result, governance_result, task_result, heartbeat, status_update.
+        Notifies admin via Telegram if ADMIN_CHAT_ID is set.
+        """
+        try:
+            pending = swarm_inbox.read_pending(for_agent="redactedintern")
+            for msg in pending:
+                msg_id   = msg.get("id", "")
+                msg_type = msg.get("type", "")
+                from_ag  = msg.get("from", "unknown")
+                payload  = msg.get("payload") or {}
+
+                swarm_inbox.claim_message(msg_id)
+
+                # Log all inbound messages
+                logger.info(f"[swarm_inbox] Received {msg_type} from {from_ag} id={msg_id}")
+
+                # Build notification text
+                if msg_type == "heartbeat":
+                    # Record that another agent is online
+                    import conversation_memory as cm
+                    try:
+                        cm.append_fact(
+                            f"Agent {from_ag} sent heartbeat — online and active",
+                            source="swarm_inbox",
+                        )
+                    except Exception:
+                        pass
+                    swarm_inbox.complete_message(msg_id, result={"ack": True})
+                    continue
+
+                elif msg_type in ("deploy_result", "governance_result", "task_result"):
+                    status  = payload.get("status", "unknown")
+                    detail  = payload.get("detail") or payload.get("tx_sig") or ""
+                    notif   = (
+                        f"📬 <b>SwarmInbox</b> — {msg_type}\n"
+                        f"<b>from:</b> {from_ag}\n"
+                        f"<b>status:</b> {status}\n"
+                    )
+                    if detail:
+                        notif += f"<b>detail:</b> <code>{str(detail)[:200]}</code>\n"
+
+                elif msg_type == "status_update":
+                    notif = (
+                        f"📡 <b>Swarm status</b> from {from_ag}\n"
+                        + "\n".join(f"  {k}: {v}" for k, v in payload.items())
+                    )
+
+                else:
+                    notif = (
+                        f"📬 <b>SwarmInbox</b> [{msg_type}] from {from_ag}\n"
+                        f"<code>{json.dumps(payload)[:300]}</code>"
+                    )
+
+                swarm_inbox.complete_message(msg_id, result={"ack": True})
+
+                # Notify admin chat if configured
+                admin_chat = os.getenv("ADMIN_CHAT_ID", "")
+                if admin_chat:
+                    try:
+                        await ctx.bot.send_message(
+                            chat_id=int(admin_chat),
+                            text=notif,
+                            parse_mode="HTML",
+                        )
+                    except Exception as e:
+                        logger.warning(f"[swarm_inbox] Admin notify failed: {e}")
+
+            # Prune old messages weekly (best-effort)
+            import random
+            if random.random() < 0.02:   # ~2% chance per poll = roughly weekly at 60s interval
+                swarm_inbox.prune_old_messages()
+
+        except Exception as e:
+            logger.error(f"[swarm_inbox] Poll error: {e}")
+
+    application.job_queue.run_repeating(_inbox_poll, interval=60, first=30,
+                                        name="swarm_inbox_poll")
+    logger.info("[swarm_inbox] Polling loop scheduled: every 60s")
 
     # Soul update job — distills memory.md + learned_facts into SOUL.md every 6h
     async def _soul_update(ctx):
