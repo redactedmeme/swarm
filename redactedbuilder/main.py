@@ -122,6 +122,67 @@ async def handle_wallet_info_request(msg: dict) -> None:
                 f"{result.get('sol','?')} SOL")
 
 
+async def handle_multisig_signed(msg: dict) -> None:
+    """
+    Receive intern's countersignature, assemble the fully-signed transaction,
+    and submit it to the Solana network.
+    """
+    msg_id   = msg.get("id", "")
+    payload  = msg.get("payload") or {}
+    from_ag  = msg.get("from", "unknown")
+    reply_to = msg.get("reply_to", "")
+
+    intern_sig_b64 = payload.get("intern_sig_b64", "")
+    if not intern_sig_b64:
+        logger.error(f"[builder] multisig_signed missing intern_sig_b64 (msg={msg_id})")
+        swarm_inbox.claim_message(msg_id)
+        swarm_inbox.complete_message(msg_id, error="missing intern_sig_b64")
+        return
+
+    # Find the original sign_request message to get tx_message_b64 + builder_sig_b64
+    original = swarm_inbox.get_message(reply_to) if reply_to else None
+    if not original:
+        logger.error(f"[builder] Cannot find original sign_request msg={reply_to}")
+        swarm_inbox.claim_message(msg_id)
+        swarm_inbox.complete_message(msg_id, error=f"original sign_request not found: {reply_to}")
+        return
+
+    orig_payload    = original.get("payload") or {}
+    tx_message_b64  = orig_payload.get("tx_message_b64", "")
+    builder_sig_b64 = orig_payload.get("builder_sig_b64", "")
+
+    if not tx_message_b64 or not builder_sig_b64:
+        swarm_inbox.claim_message(msg_id)
+        swarm_inbox.complete_message(msg_id, error="original payload missing tx/sig fields")
+        return
+
+    if not swarm_inbox.claim_message(msg_id):
+        logger.warning(f"[builder] Could not claim multisig_signed {msg_id}")
+        return
+
+    logger.info(f"[builder] Assembling countersigned tx (original={reply_to})")
+    result = await builder_core.submit_countersigned_tx(
+        tx_message_b64=tx_message_b64,
+        builder_sig_b64=builder_sig_b64,
+        intern_sig_b64=intern_sig_b64,
+    )
+
+    # Reply back to intern with the result
+    reply_id = swarm_inbox.write_message(
+        from_agent="redactedbuilder",
+        to_agent=from_ag,
+        msg_type="deploy_result",
+        payload=result,
+        reply_to=msg_id,
+    )
+    swarm_inbox.complete_message(msg_id, result=result,
+                                  error=result.get("error") if not result.get("success") else None)
+
+    status_line = "✅" if result.get("success") else "❌"
+    logger.info(f"[builder] {status_line} multisig tx submitted — "
+                f"tx_sig={result.get('tx_sig','—')} reply_id={reply_id}")
+
+
 async def handle_message(msg: dict) -> None:
     """Route a single inbox message to the right handler."""
     msg_type = msg.get("type", "")
@@ -145,6 +206,9 @@ async def handle_message(msg: dict) -> None:
             )
             swarm_inbox.complete_message(msg.get("id", ""),
                                           error="task type not implemented")
+
+    elif msg_type == "multisig_signed":
+        await handle_multisig_signed(msg)
 
     elif msg_type == "heartbeat":
         # Acknowledge heartbeat — mark done

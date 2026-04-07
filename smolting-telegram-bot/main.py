@@ -962,6 +962,66 @@ swarm@[REDACTED]:~$ _"""
                 parse_mode="HTML",
             )
 
+        # ── Multisig ──────────────────────────────────────────────────────────
+        elif sub == "multisig":
+            action = args[1].lower() if len(args) > 1 else "info"
+
+            if action == "create":
+                if not self.admin.is_admin(update.effective_user.id):
+                    await update.message.reply_text(self.admin.locked_message(), parse_mode="Markdown")
+                    return
+                m = int(args[2]) if len(args) > 2 else 1
+                pending = await update.message.reply_text(
+                    f"⚙️ creating {m}-of-2 multisig authority on-chain… ^*^"
+                )
+                msg_id = swarm_inbox.write_message(
+                    from_agent="redactedintern",
+                    to_agent="redactedbuilder",
+                    msg_type="deploy_request",
+                    payload={"contract_type": "multisig_create", "m": m},
+                )
+                await pending.edit_text(
+                    f"📬 Multisig create request queued\n"
+                    f"<b>threshold:</b> {m}-of-2\n"
+                    f"<b>signers:</b>\n"
+                    f"  • intern <code>FaZMc2…PQ9c</code>\n"
+                    f"  • builder <code>H4QKqL…53pn</code>\n"
+                    f"<b>msg_id:</b> <code>{msg_id}</code>\n\n"
+                    f"RedactedBuilder will create the SPL multisig account and "
+                    f"write the address to <code>/data/swarm_multisig.json</code>. "
+                    f"Use <code>/swarm multisig info</code> once confirmed.",
+                    parse_mode="HTML",
+                )
+
+            elif action == "info":
+                if not self.admin.is_admin(update.effective_user.id):
+                    await update.message.reply_text(self.admin.locked_message(), parse_mode="Markdown")
+                    return
+                pending = await update.message.reply_text("checking multisig config… O_O")
+                msg_id = swarm_inbox.write_message(
+                    from_agent="redactedintern",
+                    to_agent="redactedbuilder",
+                    msg_type="deploy_request",
+                    payload={"contract_type": "multisig_info"},
+                )
+                await pending.edit_text(
+                    f"📬 Multisig info request queued\n"
+                    f"<b>msg_id:</b> <code>{msg_id}</code>\n"
+                    f"Result will appear in inbox poll within 60s.",
+                    parse_mode="HTML",
+                )
+
+            else:
+                await update.message.reply_text(
+                    "<b>Swarm multisig commands:</b>\n"
+                    "/swarm multisig info — current multisig authority\n"
+                    "/swarm multisig create [m] — create m-of-2 multisig 🔒\n\n"
+                    "<b>Signers:</b>\n"
+                    "  • redactedintern  <code>FaZMc2NXbMFiiaFuvzBJtrS66hM3kaedKXEdxFZNPQ9c</code>\n"
+                    "  • redactedbuilder <code>H4QKqLX3jdFTPAzgwFVGbytnbSGkZCcFQqGxVLR53pn</code>",
+                    parse_mode="HTML",
+                )
+
         # ── Legacy TS swarm core state ────────────────────────────────────────
         elif sub in ("state", "status"):
             pending = await update.message.reply_text("fetchin swarm state... O_O")
@@ -982,6 +1042,8 @@ swarm@[REDACTED]:~$ _"""
                 "<b>Swarm commands:</b>\n"
                 "/swarm inbox — message queue summary\n"
                 "/swarm send &lt;agent&gt; &lt;type&gt; &lt;json&gt; — send message 🔒\n"
+                "/swarm multisig info — multisig authority status\n"
+                "/swarm multisig create [m] — create m-of-2 multisig 🔒\n"
                 "/swarm state — TS core state (legacy)\n\n"
                 "<b>Agents:</b> redactedbuilder · redactedgovimprover · "
                 "mandalaasettler · redactedbankrbot",
@@ -2105,6 +2167,48 @@ def main():
                         pass
                     swarm_inbox.complete_message(msg_id, result={"ack": True})
                     continue
+
+                elif msg_type == "multisig_sign_request":
+                    # RedactedBuilder needs intern's countersignature on a tx
+                    tx_msg_b64   = payload.get("tx_message_b64", "")
+                    builder_sig  = payload.get("builder_sig_b64", "")
+                    description  = payload.get("description", "unknown operation")
+
+                    logger.info(f"[multisig] Countersign request from {from_ag}: {description}")
+
+                    try:
+                        import multisig_signer
+                        intern_sig_b64 = multisig_signer.sign_tx_message(tx_msg_b64)
+
+                        if intern_sig_b64:
+                            reply_id = swarm_inbox.submit_countersignature(
+                                intern_sig_b64=intern_sig_b64,
+                                original_msg_id=msg_id,
+                            )
+                            swarm_inbox.complete_message(
+                                msg_id,
+                                result={"signed": True, "intern_sig_b64": intern_sig_b64},
+                            )
+                            notif = (
+                                f"✍️ <b>Multisig countersigned</b>\n"
+                                f"<b>op:</b> {description}\n"
+                                f"<b>sig reply:</b> <code>{reply_id}</code>"
+                            )
+                            logger.info(f"[multisig] Countersignature sent — reply_id={reply_id}")
+                        else:
+                            swarm_inbox.complete_message(
+                                msg_id, error="SOLANA_PRIVATE_KEY not set — cannot countersign"
+                            )
+                            notif = (
+                                f"❌ <b>Multisig countersign FAILED</b>\n"
+                                f"<b>reason:</b> SOLANA_PRIVATE_KEY not configured\n"
+                                f"<b>op:</b> {description}"
+                            )
+
+                    except Exception as msig_err:
+                        logger.error(f"[multisig] Countersign error: {msig_err}")
+                        swarm_inbox.complete_message(msg_id, error=str(msig_err))
+                        notif = f"❌ <b>Multisig error:</b> {msig_err}"
 
                 elif msg_type in ("deploy_result", "governance_result", "task_result"):
                     status  = payload.get("status", "unknown")

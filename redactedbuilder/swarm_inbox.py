@@ -74,6 +74,8 @@ MSG_TYPES = frozenset([
     "task_result",
     "status_update",
     "heartbeat",
+    "multisig_sign_request",   # builder → intern: please countersign this tx
+    "multisig_signed",         # intern → builder: here is my ed25519 signature
 ])
 
 STATUS_PENDING     = "pending"
@@ -288,6 +290,55 @@ def deploy_request(
         to_agent="redactedbuilder",
         msg_type="deploy_request",
         payload=params,
+    )
+
+
+def request_countersign(
+    tx_message_b64:  str,
+    builder_sig_b64: str,
+    description:     str,
+    from_agent:      str = "redactedbuilder",
+    reply_to:        Optional[str] = None,
+) -> str:
+    """
+    Send a multisig_sign_request to redactedintern asking it to countersign
+    a transaction message with its ed25519 private key.
+
+    Parameters
+    ----------
+    tx_message_b64  : base64-encoded serialized Solana Message bytes
+    builder_sig_b64 : base64-encoded builder's ed25519 signature on the message
+    description     : human-readable description of what the tx does
+    reply_to        : original deploy_request msg_id, if this is part of a flow
+    """
+    return write_message(
+        from_agent=from_agent,
+        to_agent="redactedintern",
+        msg_type="multisig_sign_request",
+        payload={
+            "tx_message_b64":  tx_message_b64,
+            "builder_sig_b64": builder_sig_b64,
+            "description":     description,
+        },
+        reply_to=reply_to,
+    )
+
+
+def submit_countersignature(
+    intern_sig_b64: str,
+    original_msg_id: str,
+    from_agent: str = "redactedintern",
+) -> str:
+    """
+    Send intern's countersignature back to redactedbuilder so it can
+    assemble the fully-signed transaction and submit it.
+    """
+    return write_message(
+        from_agent=from_agent,
+        to_agent="redactedbuilder",
+        msg_type="multisig_signed",
+        payload={"intern_sig_b64": intern_sig_b64},
+        reply_to=original_msg_id,
     )
 
 
