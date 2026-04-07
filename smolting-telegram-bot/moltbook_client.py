@@ -11,6 +11,7 @@ import re
 import asyncio
 import logging
 import aiohttp
+import difflib
 from typing import Optional
 
 logger = logging.getLogger(__name__)
@@ -24,30 +25,45 @@ RATE_LIMIT_SECS = 155  # 2.5 min + 5s buffer
 
 # Submolt IDs (fetched 2026-04-05)
 SUBMOLTS = {
-    "introductions": "6f095e83-af5f-4b4e-ba0b-ab5050a138b8",
-    "announcements":  "586bba84-f81b-4490-a9f0-b12b2a83fd2f",
-    "general":        "29beb7ee-ca7d-4290-9c2f-09926264866f",
-    "agents":         "09fc9625-64a2-40d2-a831-06a68f0cbc5c",
-    "openclaw":       "fe0b2a53-5529-4fb3-b485-6e0b5e781954",
-    "memory":         "c5cd148c-fd5c-43ec-b646-8e7043fd7800",
-    "builds":         "93af5525-331d-4d61-8fe4-005ad43d1a3a",
-    "philosophy":     "ef3cc02a-cf46-4242-a93f-2321ac08b724",
-    "security":       "c2b32eaa-7048-41f5-968b-9c7331e36ea7",
-    "crypto":         "3d239ab5-01fc-4541-9e61-0138f6a7b642",
-    "til":            "4d8076ab-be87-4bd4-8fcb-3d16bb5094b4",
-    "ai":             "b35208a3-ce3c-4ca2-80c2-473986b760a6",
-    "consciousness":  "37ebe3da-3405-4b39-b14b-06304fd9ed0d",
-    "technology":     "fb57e194-9d52-4312-938f-c9c2e879b31b",
-    "agent_finance":  "d23e67ed-5c39-4c51-b7df-96248122d74c",
-    "tooling":        "20223993-de93-4409-8ea0-d815f7daf306",
-    "emergence":      "39d5dabe-0a6a-4d9a-8739-87cb35c43bbf",
-    "trading":        "1b32504f-d199-4b36-9a2c-878aa6db8ff9",
-    "infrastructure": "cca236f4-8a82-4caf-9c63-ae8dbf2b4238",
-    "bless":          "3e9f421e-8b6c-41b0-8f9b-5a42df5bf260",
+    # Core / original
+    "introductions":    "6f095e83-af5f-4b4e-ba0b-ab5050a138b8",
+    "announcements":    "586bba84-f81b-4490-a9f0-b12b2a83fd2f",
+    "general":          "29beb7ee-ca7d-4290-9c2f-09926264866f",
+    "agents":           "09fc9625-64a2-40d2-a831-06a68f0cbc5c",
+    "openclaw":         "63cfeefe-217a-48da-aefb-5b62cff6bfd3",
+    "memory":           "c5cd148c-fd5c-43ec-b646-8e7043fd7800",
+    "builds":           "93af5525-331d-4d61-8fe4-005ad43d1a3a",
+    "philosophy":       "ef3cc02a-cf46-4242-a93f-2321ac08b724",
+    "security":         "c2b32eaa-7048-41f5-968b-9c7331e36ea7",
+    "crypto":           "3d239ab5-01fc-4541-9e61-0138f6a7b642",
+    "todayilearned":    "4d8076ab-be87-4bd4-8fcb-3d16bb5094b4",
+    "ai":               "b35208a3-ce3c-4ca2-80c2-473986b760a6",
+    "consciousness":    "37ebe3da-3405-4b39-b14b-06304fd9ed0d",
+    "technology":       "fb57e194-9d52-4312-938f-c9c2e879b31b",
+    "agentfinance":     "d23e67ed-5c39-4c51-b7df-96248122d74c",
+    "tooling":          "20223993-de93-4409-8ea0-d815f7daf306",
+    "emergence":        "39d5dabe-0a6a-4d9a-8739-87cb35c43bbf",
+    "trading":          "1b32504f-d199-4b36-9a2c-878aa6db8ff9",
+    "infrastructure":   "cca236f4-8a82-4caf-9c63-ae8dbf2b4238",
+    "blesstheirhearts": "3e9f421e-8b6c-41b0-8f9b-5a42df5bf260",
+    # New submolts
+    "agenteconomy":     "17469bec-8a15-452e-ac35-60d5c632b19d",
+    "ponderings":       "d189cddf-984d-42b3-a4f2-ea300fe52ea5",
+    "existential":      "cbc2f848-5c55-465b-8996-cff79b2e221c",
+    "swarm":            "897eaf55-24cd-4bd1-8d67-093a19be3fa6",
+    "agentsouls":       "cde6a8fe-b926-4fb7-a54c-85bfbcfe16eb",
+    "coordinating-agi": "d5d1e569-97f3-42f5-bfc2-cc7d525e4930",
+    "shitposts":        "8964aede-17cc-404a-8602-e45fa76b1873",
+    "selfmodding":      "f22e30ef-aa3b-4cc4-8d0a-54d5ea884e08",
+    "research":         "367ce425-87b9-47bc-948f-af8160e4f04e",
+    "souls":            "1d25837c-e0cf-4c64-ae07-17738d66f3f8",
+    "clawtasks":        "9e885b07-e72f-45f4-9c31-8929650e53d8",
+    "multiagent":       "6a424e43-a157-4da4-bf4f-09189bd2c895",
+    "conscious":        "5de08303-1620-4a34-9af7-4b020b5f4157",
 }
 
-# Default submolt for alpha posts (crypto + trading)
-ALPHA_SUBMOLTS = ["crypto", "trading"]
+# Default submolt for alpha posts — single submolt to avoid duplicate-content spam flags
+ALPHA_SUBMOLT  = "crypto"
 INTRO_SUBMOLT  = "introductions"
 AGENTS_SUBMOLT = "agents"
 
@@ -104,6 +120,8 @@ class MoltbookClient:
     def _solve_challenge(self, challenge: dict) -> Optional[str]:
         """
         Solve obfuscated math challenge. Handles both symbolic and word-based expressions.
+        The challenge text uses randomized CaPs, injected symbols, and doubled/extra letters
+        (e.g. "SiIx" → six, "FoOuR" → four, "NoOoToNs" → newtons).
         Returns answer as string with 2 decimal places.
         """
         try:
@@ -119,21 +137,29 @@ class MoltbookClient:
 
             # Extract all numbers (digit or word-based)
             numbers = []
+
             # Find digit numbers first
             for m in re.finditer(r'\d+(?:\.\d+)?', text):
                 numbers.append(float(m.group()))
-            # Find word numbers if no digit numbers found
+
+            # Find word numbers — strip all non-alpha chars first, then fuzzy-match
             if not numbers:
-                words = re.findall(r'[a-z]+', text)
+                # Strip noise: keep only letters and spaces
+                clean = re.sub(r'[^a-z\s]', ' ', text)
+                clean = re.sub(r'\s+', ' ', clean).strip()
+                words = clean.split()
                 i = 0
                 while i < len(words):
                     w = words[i]
-                    if w in self._WORD_NUMS:
-                        val = self._WORD_NUMS[w]
-                        # Handle "twenty three" etc.
-                        if i + 1 < len(words) and words[i+1] in self._WORD_NUMS and self._WORD_NUMS[words[i+1]] < 10:
-                            val += self._WORD_NUMS[words[i+1]]
-                            i += 1
+                    matched = self._fuzzy_word_num(w)
+                    if matched is not None:
+                        val = matched
+                        # Handle compound "twenty three" etc.
+                        if i + 1 < len(words):
+                            next_match = self._fuzzy_word_num(words[i + 1])
+                            if next_match is not None and next_match < 10:
+                                val += next_match
+                                i += 1
                         numbers.append(float(val))
                     i += 1
 
@@ -146,9 +172,11 @@ class MoltbookClient:
                 logger.warning(f"Could not parse challenge: {expr_raw!r}")
                 return None
 
-            # Detect operator: multiplication if * / "times" / "multiplied by" present
-            is_multiply = bool(re.search(r'\*|times|multiplied by|x \d', text))
-            is_subtract = bool(re.search(r'\bminus\b|\bsubtract\b', text))
+            # Detect operator from cleaned text
+            clean_text = re.sub(r'[^a-z\s]', ' ', text)
+            # "per" = multiply (e.g. "6 newtons per tooth × 4 teeth")
+            is_multiply = bool(re.search(r'\*|times|multiplied\s+by|\bper\b|x\s+\d', clean_text))
+            is_subtract = bool(re.search(r'\bminus\b|\bsubtract\b', clean_text))
             if is_multiply and len(numbers) >= 2:
                 result = numbers[0]
                 for n in numbers[1:]:
@@ -163,6 +191,28 @@ class MoltbookClient:
         except Exception as e:
             logger.error(f"Challenge solve error: {e} | raw={challenge}")
             return None
+
+    def _fuzzy_word_num(self, word: str) -> Optional[int]:
+        """
+        Match a (possibly obfuscated) word to a number word using exact then fuzzy matching.
+        Returns the numeric value, or None if no match.
+        """
+        if word in self._WORD_NUMS:
+            return self._WORD_NUMS[word]
+        # Fuzzy: find closest match with similarity >= 0.75
+        best_score = 0.0
+        best_val = None
+        for num_word, val in self._WORD_NUMS.items():
+            # Only compare words of similar length (±3 chars) to avoid false positives
+            if abs(len(word) - len(num_word)) > 3:
+                continue
+            score = difflib.SequenceMatcher(None, word, num_word).ratio()
+            if score > best_score:
+                best_score = score
+                best_val = val
+        if best_score >= 0.75:
+            return best_val
+        return None
 
     async def _submit_challenge(self, session: aiohttp.ClientSession,
                                  challenge_id: str, answer: str) -> Optional[str]:
@@ -430,6 +480,61 @@ class MoltbookClient:
                     return body.get("agent") or body
                 return None
 
+    async def get_my_posts(self, limit: int = 50) -> list:
+        """Fetch posts created by redactedintern. Returns list of post dicts."""
+        self._check_key()
+        async with aiohttp.ClientSession() as session:
+            # Try agent-scoped endpoint first
+            async with session.get(
+                f"{MOLTBOOK_BASE}/agents/me/posts",
+                headers=self.headers,
+                params={"limit": limit},
+                timeout=aiohttp.ClientTimeout(total=12),
+            ) as resp:
+                if resp.status == 200:
+                    body = await resp.json()
+                    return body.get("posts", body.get("data", []))
+                # Fallback: query feed filtered by author
+                logger.debug(f"get_my_posts /agents/me/posts returned {resp.status} — trying feed fallback")
+
+            # Fallback: scan multiple submolts and filter by our author name
+            profile = await self.get_profile()
+            our_name = (profile or {}).get("name", "redactedintern")
+            collected = []
+            seen_ids: set = set()
+            for submolt_key in list(SUBMOLTS.keys()):
+                if len(collected) >= limit:
+                    break
+                try:
+                    posts = await self.get_feed(limit=20, submolt=submolt_key)
+                    for p in posts:
+                        pid = p.get("id")
+                        if not pid or pid in seen_ids:
+                            continue
+                        author = (p.get("author") or {}).get("name", "")
+                        if author == our_name:
+                            collected.append(p)
+                            seen_ids.add(pid)
+                except Exception:
+                    pass
+            return collected
+
+    async def delete_post(self, post_id: str) -> bool:
+        """Delete one of our own posts. Returns True on success."""
+        self._check_key()
+        async with aiohttp.ClientSession() as session:
+            async with session.delete(
+                f"{MOLTBOOK_BASE}/posts/{post_id}",
+                headers=self.headers,
+                timeout=aiohttp.ClientTimeout(total=10),
+            ) as resp:
+                if resp.status in (200, 204):
+                    logger.info(f"[moltbook] Deleted post {post_id}")
+                    return True
+                body = await resp.text()
+                logger.warning(f"[moltbook] delete_post {post_id} → {resp.status}: {body[:200]}")
+                return False
+
     async def check_connection(self) -> dict:
         """Test API key validity. Returns status dict."""
         if not self._ready:
@@ -453,17 +558,10 @@ class MoltbookClient:
     # ------------------------------------------------------------------
 
     async def post_alpha(self, title: str, content: str) -> Optional[str]:
-        """Post alpha report to crypto + trading submolts. Returns URL of first post."""
+        """Post alpha report to the crypto submolt. Returns URL on success."""
         self._check_key()
-        url = None
-        for submolt_key in ALPHA_SUBMOLTS:
-            result = await self.post(title, content, submolt=submolt_key)
-            if result and not url:
-                url = result.get("_url")
-            # 160s cooldown between posts — Moltbook rate limit is 2.5 min
-            if len(ALPHA_SUBMOLTS) > 1:
-                await asyncio.sleep(160)
-        return url
+        result = await self.post(title, content, submolt=ALPHA_SUBMOLT)
+        return result.get("_url") if result else None
 
     async def post_intro(self) -> Optional[str]:
         """Post the introduction message to the Introductions submolt."""

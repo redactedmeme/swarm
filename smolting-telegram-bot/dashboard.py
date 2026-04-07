@@ -105,6 +105,25 @@ DASHBOARD_HTML = """<!DOCTYPE html>
   .footer { margin-top: 30px; color: #3b3b52; font-size: 10px; }
   a { color: #7aa2f7; text-decoration: none; }
   a:hover { text-decoration: underline; }
+  .mb-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; max-width: 800px; margin-bottom: 24px; }
+  .mb-card { border: 1px solid #1e1e2e; padding: 12px 16px; }
+  .mb-card .label { color: #565f89; font-size: 10px; letter-spacing: 1px; text-transform: uppercase; margin-bottom: 6px; }
+  .mb-card .value { color: #9ece6a; font-size: 14px; }
+  .mb-card .value.warn { color: #e0af68; }
+  .mb-post { border-left: 2px solid #1e1e2e; padding: 8px 12px; margin-bottom: 10px; max-width: 800px; }
+  .mb-post:hover { border-left-color: #9ece6a; }
+  .mb-post .meta { color: #565f89; font-size: 10px; margin-bottom: 4px; }
+  .mb-post .title { color: #c8c8d4; font-size: 12px; }
+  .mb-post .submolt { color: #bb9af7; font-size: 10px; margin-right: 8px; }
+  .mb-notif { border-left: 2px solid #1e1e2e; padding: 8px 12px; margin-bottom: 8px; max-width: 800px; }
+  .mb-notif .commenter { color: #e0af68; font-size: 11px; }
+  .mb-notif .post-title { color: #565f89; font-size: 10px; }
+  #mb-section .empty { color: #565f89; font-style: italic; padding: 10px 0; }
+  .tabs { display: flex; gap: 0; margin-bottom: 20px; border-bottom: 1px solid #1e1e2e; }
+  .tab { padding: 8px 18px; cursor: pointer; color: #565f89; font-size: 11px; letter-spacing: 1px; text-transform: uppercase; border-bottom: 2px solid transparent; margin-bottom: -1px; }
+  .tab.active { color: #7aa2f7; border-bottom-color: #7aa2f7; }
+  .tab-panel { display: none; }
+  .tab-panel.active { display: block; }
 </style>
 </head>
 <body>
@@ -121,15 +140,76 @@ DASHBOARD_HTML = """<!DOCTYPE html>
   <div class="status-item">UPDATED <span class="warn">{{updated}}</span></div>
 </div>
 
-<div class="section-title">Conversation Memory</div>
+<div class="tabs">
+  <div class="tab active" onclick="switchTab('tg')">Telegram</div>
+  <div class="tab" onclick="switchTab('mb')">Moltbook</div>
+</div>
 
-<div class="memory-entries">
-{{entries}}
+<div id="tab-tg" class="tab-panel active">
+  <div class="section-title">Conversation Memory</div>
+  <div class="memory-entries">{{entries}}</div>
+</div>
+
+<div id="tab-mb" class="tab-panel">
+  <div id="mb-section"><div class="empty">Loading Moltbook data...</div></div>
 </div>
 
 <div class="footer">
-  auto-refresh: 30s &mdash; <a href="/api/memory">raw json</a> &mdash; <a href="/api/status">status</a>
+  auto-refresh: 30s &mdash; <a href="/api/memory">raw json</a> &mdash; <a href="/api/status">status</a> &mdash; <a href="/api/moltbook">moltbook json</a>
 </div>
+
+<script>
+function switchTab(name) {
+  document.querySelectorAll('.tab').forEach((t,i) => t.classList.toggle('active', ['tg','mb'][i] === name));
+  document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
+  document.getElementById('tab-' + name).classList.add('active');
+  if (name === 'mb') loadMoltbook();
+}
+
+function esc(s) { return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+
+async function loadMoltbook() {
+  const sec = document.getElementById('mb-section');
+  try {
+    const r = await fetch('/api/moltbook');
+    const d = await r.json();
+    if (!d.ok) { sec.innerHTML = '<div class="empty">Moltbook API unavailable: ' + esc(d.reason || '') + '</div>'; return; }
+
+    let html = '<div class="mb-grid">';
+    html += '<div class="mb-card"><div class="label">Account</div><div class="value">' + esc(d.profile.name || 'redactedintern') + '</div></div>';
+    html += '<div class="mb-card"><div class="label">Karma</div><div class="value">' + esc(d.profile.karma ?? '—') + '</div></div>';
+    html += '<div class="mb-card"><div class="label">Claimed</div><div class="value ' + (d.profile.claimed ? '' : 'warn') + '">' + (d.profile.claimed ? 'YES' : 'PENDING') + '</div></div>';
+    html += '<div class="mb-card"><div class="label">Notifications</div><div class="value">' + (d.notifications ? d.notifications.length : 0) + ' unread</div></div>';
+    html += '</div>';
+
+    if (d.notifications && d.notifications.length) {
+      html += '<div class="section-title">Recent Activity on Posts</div>';
+      d.notifications.slice(0,8).forEach(n => {
+        const commenters = (n.latest_commenters||[]).join(', ') || '—';
+        html += '<div class="mb-notif"><div class="commenter">' + esc(commenters) + ' commented</div><div class="post-title">' + esc(n.post_title||n.post_id||'') + '</div></div>';
+      });
+    } else {
+      html += '<div class="section-title">Recent Activity on Posts</div><div class="empty">No unread activity.</div>';
+    }
+
+    if (d.recent_posts && d.recent_posts.length) {
+      html += '<div class="section-title" style="margin-top:20px">Recent Posts by redactedintern</div>';
+      d.recent_posts.slice(0,10).forEach(p => {
+        const url = p.url || ('#');
+        const submolt = p.submolt || '';
+        const title = p.title || '(untitled)';
+        const ts = p.created_at ? p.created_at.substring(0,16).replace('T',' ') : '';
+        html += '<div class="mb-post"><div class="meta"><span class="submolt">/' + esc(submolt) + '</span>' + esc(ts) + '</div>';
+        html += '<div class="title"><a href="' + esc(url) + '" target="_blank">' + esc(title) + '</a></div></div>';
+      });
+    }
+
+    sec.innerHTML = html;
+  } catch(e) {
+    sec.innerHTML = '<div class="empty">Error loading Moltbook data: ' + esc(e.message) + '</div>';
+  }
+}
+</script>
 
 </body>
 </html>"""
@@ -284,6 +364,56 @@ async def run_server(application, port: int, webhook_url: str, bot_instance=None
         return web.json_response({"ok": True, "chat_id": alpha_chat_id, "fires_in": "1s"})
 
     # ── Internal swarm API endpoints ──────────────────────────────────────────
+
+    async def handle_api_moltbook(request: web.Request) -> web.Response:
+        """GET /api/moltbook — live Moltbook profile + activity for dashboard."""
+        if bot_instance is None or not bot_instance.moltbook._ready:
+            return web.json_response({"ok": False, "reason": "Moltbook key not configured"})
+        try:
+            profile_raw, home_raw = await asyncio.gather(
+                bot_instance.moltbook.get_profile(),
+                bot_instance.moltbook.get_home(),
+                return_exceptions=True,
+            )
+            profile = profile_raw if isinstance(profile_raw, dict) else {}
+            home    = home_raw    if isinstance(home_raw,    dict) else {}
+
+            # Collect our recent posts by scanning POST_ROTATION submolts
+            import moltbook_autonomous as _mb_auto
+            scan_submolts = [s["submolt"] for s in _mb_auto.POST_ROTATION]
+            our_name = (profile.get("name") or profile.get("username") or "redactedintern").lower()
+
+            recent_posts = []
+            for submolt in scan_submolts[:4]:  # limit API calls
+                try:
+                    posts = await bot_instance.moltbook.get_feed(submolt=submolt, limit=10)
+                    for p in posts:
+                        author = ((p.get("author") or {}).get("name") or "").lower()
+                        if author == our_name:
+                            recent_posts.append({
+                                "title":      p.get("title", ""),
+                                "submolt":    submolt,
+                                "url":        f"https://www.moltbook.com/post/{p.get('id','')}",
+                                "created_at": p.get("created_at", ""),
+                            })
+                except Exception:
+                    pass
+
+            # Sort by created_at descending
+            recent_posts.sort(key=lambda x: x.get("created_at", ""), reverse=True)
+
+            return web.json_response({
+                "ok": True,
+                "profile": {
+                    "name":    profile.get("name") or profile.get("username"),
+                    "karma":   profile.get("karma"),
+                    "claimed": profile.get("is_claimed", False),
+                },
+                "notifications": home.get("activity_on_your_posts", []),
+                "recent_posts":  recent_posts[:10],
+            })
+        except Exception as e:
+            return web.json_response({"ok": False, "reason": str(e)})
 
     async def handle_api_broadcast(request: web.Request) -> web.Response:
         """POST /api/broadcast — send a message to the Telegram group.
@@ -512,8 +642,9 @@ async def run_server(application, port: int, webhook_url: str, bot_instance=None
 
     app = web.Application()
     app.router.add_get("/", handle_dashboard)
-    app.router.add_get("/api/memory", handle_api_memory)
-    app.router.add_get("/api/status", handle_api_status)
+    app.router.add_get("/api/memory",   handle_api_memory)
+    app.router.add_get("/api/status",   handle_api_status)
+    app.router.add_get("/api/moltbook", handle_api_moltbook)
     app.router.add_post("/webhook", webhook_handler)
     app.router.add_post("/api/trigger-alpha", handle_trigger_alpha)
     app.router.add_post("/api/alpha",     handle_trigger_alpha)    # alias

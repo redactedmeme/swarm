@@ -126,6 +126,33 @@ class CloudLLMClient:
                 result = await response.json()
                 return result["content"][0]["text"]
     
+    def switch_provider(self, provider: str) -> bool:
+        """
+        Hot-swap LLM provider at runtime (session-only, resets on redeploy).
+        Returns True if the provider is valid and has a key set.
+        """
+        provider = provider.lower()
+        if provider == "grok":
+            provider = "xai"
+        valid = ("openai", "anthropic", "together", "xai", "groq")
+        if provider not in valid:
+            return False
+        self.provider = provider
+        self.api_key = self._get_api_key()
+        self.base_url = self._get_base_url()
+        return True
+
+    def current_model(self) -> str:
+        """Return the default model name for the active provider."""
+        defaults = {
+            "xai":       os.getenv("XAI_MODEL", "grok-2-latest"),
+            "groq":      os.getenv("GROQ_MODEL", "llama-3.1-8b-instant"),
+            "together":  "Qwen/Qwen2.5-7B-Instruct-Turbo",
+            "openai":    "gpt-3.5-turbo",
+            "anthropic": "claude-3-haiku-20240307",
+        }
+        return defaults.get(self.provider, "unknown")
+
     async def alpha_completion(self, messages: list, max_tokens: int = 1200) -> str:
         """Always uses xAI grok-4-1-fast regardless of LLM_PROVIDER — dedicated for /alpha."""
         if not self._xai_key:

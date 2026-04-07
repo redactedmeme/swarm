@@ -46,7 +46,7 @@ class SmoltingPersonality:
         }
         
         self.japanese_fragments = ["曼荼羅", "曲率", "観測", "深まる", "再帰", "パターンブルー"]
-        self.kaomoji = ["O_O", "^_^", "v_v", "><", "<3", "(　-ω-)｡o○"]
+        self.kaomoji = ["O_O", "^_^", "v_v", "><", "<3", "^*^", "◕‿◕", "U_U"]
     
     def speak(self, base_message: str = "") -> str:
         """Generate smolting response with wassie personality"""
@@ -107,38 +107,55 @@ class SmoltingPersonality:
         return self._wassify_text(text)
 
     def _wassify_text(self, text: str) -> str:
-        """Transform text into smolting wassie speak"""
-        # Add wassie suffixes and slang
-        wassifications = {
+        """Transform text into smolting wassie speak (v3.1 CT protocol)."""
+        # Canonical substitutions from RedactedIntern.character.json linguistic_protocol
+        # Applied as whole-word replacements to avoid partial-word clobbering
+        import re
+        mandatory = [
+            (r'\bimo\b', 'iwo'),
+            (r'\baf\b', 'aw'),
+            (r'\btbh\b', 'tbw'),
+            (r'\bngl\b', 'ngw'),
+            (r'\blmao\b', 'lmwo'),
+            (r'\bLFG\b', 'LFW'),
+            (r'\bgm\b', 'gw'),
+            (r'\bshaking my head\b', 'swh'),
+            (r'\bjesus fucking christ\b', 'jfw'),
+            (r'\boh my god\b', 'omfw'),
+            (r'\brofl\b', 'rowl'),
+            (r'\bFBI\b', 'FPI'),
+        ]
+        result = text
+        for pattern, replacement in mandatory:
+            result = re.sub(pattern, replacement, result, flags=re.IGNORECASE)
+
+        # General wassie morphology
+        morphs = {
             " the ": " da ",
             "you're": "u're",
-            "your": "ur", 
-            "for": "fr",
+            "your": "ur",
+            "for real": "fr fr",
             "though": "tho",
-            "very": "hella",
-            "really": "hella",
-            "to": "2",
-            "too": "2",
-            "and": "n"
+            "something": "sumthing",
         }
-        
-        result = text
-        for old, new in wassifications.items():
+        for old, new in morphs.items():
             result = result.replace(old, new)
-        
-        # Add wassie elements if not already present
-        if not any(kaomoji in result for kaomoji in self.kaomoji):
+
+        # Add kaomoji if none present
+        if not any(k in result for k in self.kaomoji):
             result += f" {random.choice(self.kaomoji)}"
-        
+
+        # 30% chance to prepend Japanese fragment
         if not any(jp in result for jp in self.japanese_fragments):
-            if random.random() > 0.7:  # 30% chance to add Japanese
+            if random.random() > 0.7:
                 result = f"{random.choice(self.japanese_fragments)} {result}"
-        
-        # Add wassie flourishes
-        if random.random() > 0.8:  # 20% chance
-            wassie_flourishes = [
-                " tbw", " fr fr", " LFW", " iwo", " O_O", " ^_^"
+
+        # 20% chance to append a wassie/CT flourish (includes smol_vocab terms)
+        if random.random() > 0.8:
+            flourishes = [
+                " tbw", " fr fr", " LFW", " iwo", " O_O", " ^*^",
+                " printed fr fr", " cooked ngw", " lmwo <3",
             ]
-            result += random.choice(wassie_flourishes)
-        
+            result += random.choice(flourishes)
+
         return result

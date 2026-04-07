@@ -420,6 +420,7 @@ def telegram_events_stream():
 
 
 if __name__ == '__main__':
-    port = int(os.environ.get('PORT', 5000))
+    port = int(os.environ.get('PORT', 8888))
     debug = os.environ.get('FLASK_DEBUG', '').lower() in ('1', 'true')
-    socketio.run(app, host='0.0.0.0', port=port, debug=debug)
+    host = os.environ.get('HOST', '127.0.0.1')
+    socketio.run(app, host=host, port=port, debug=debug)
