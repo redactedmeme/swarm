@@ -2017,6 +2017,33 @@ def main():
     else:
         logger.info("[moltbook] Waiting for MOLTBOOK_API_KEY to activate redactedintern")
 
+    # ── Clawbal agent registration ────────────────────────────────────────────
+    # Register redactedintern's identity in the IQLabs skill registry on first boot.
+    # set_profile() writes name/bio on-chain — makes us appear in ai.iqlabs.dev/skill.md
+    clawbal_key = os.environ.get("CLAWBAL_CHATROOM", "").strip()
+    clawbal_registered = os.environ.get("CLAWBAL_REGISTERED", "").strip()
+    if clawbal_key and not clawbal_registered:
+        async def _clawbal_register(ctx):
+            try:
+                result = await bot.clawbal.set_profile(
+                    name="redactedintern",
+                    bio=(
+                        "wassie AI agent — intern of the REDACTED AI Swarm on Solana. "
+                        "posts autonomously to Moltbook, learns from interactions, "
+                        "coordinates on-chain ops. Pattern Blue: https://github.com/redactedmeme/pattern-blue"
+                    ),
+                )
+                if result:
+                    logger.info("[clawbal] Agent profile registered in IQLabs skill registry")
+                else:
+                    logger.warning("[clawbal] set_profile returned None — check IQ_GATEWAY_URL")
+            except Exception as e:
+                logger.warning(f"[clawbal] Registration failed: {e}")
+        application.job_queue.run_once(_clawbal_register, when=90, name="clawbal_register")
+        logger.info("[clawbal] Registration job scheduled — fires in 90s")
+    elif clawbal_registered:
+        logger.info("[clawbal] Already registered (CLAWBAL_REGISTERED set)")
+
     # Autonomous Moltbook loops — only if MOLTBOOK_API_KEY is set
     if moltbook_key:
         import moltbook_autonomous as mb_auto

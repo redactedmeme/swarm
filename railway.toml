@@ -61,6 +61,19 @@
   # Dashboard: generate public domain for Phantom wallet connects (UI needs reachability)
   # Private network: swarm-worker can proxy paid calls internally if desired
 
+# RedactedBuilder: autonomous Solana on-chain agent
+# Polls /data/swarm_inbox/ for deploy_request messages from redactedintern,
+# executes SPL token creation, SOL transfers, and other on-chain operations.
+# Required env vars: BUILDER_PRIVATE_KEY (or SOLANA_PRIVATE_KEY), SOLANA_RPC
+# Optional: MOLTBOOK_API_KEY (posts results publicly), MEMORY_PATH (shared volume)
+[services.redactedbuilder]
+  rootDirectory = "redactedbuilder"
+  startCommand = "python main.py"
+  restartPolicyType = "ON_FAILURE"
+  restartPolicyMaxRetries = 10
+  # Dashboard: mount the same /data volume as smolting-telegram-bot (shared swarm_inbox)
+  # Dashboard: set BUILDER_PRIVATE_KEY, SOLANA_RPC, MEMORY_PATH=/data/memory.md
+
 # Shared environment variable defaults (override/fill secrets in dashboard)
 [environment]
   PYTHONUNBUFFERED = "1"                 # Real-time Python logs
