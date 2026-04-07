@@ -535,6 +535,42 @@ class MoltbookClient:
                 logger.warning(f"[moltbook] delete_post {post_id} → {resp.status}: {body[:200]}")
                 return False
 
+    async def update_bio(self, bio: str) -> bool:
+        """
+        Update redactedintern's Moltbook profile bio.
+        Tries PATCH /agents/me first; falls back to PUT /agents/me/profile.
+        Returns True on success.
+        """
+        self._check_key()
+        payload = {"bio": bio}
+        async with aiohttp.ClientSession() as session:
+            # Primary: PATCH /agents/me
+            async with session.patch(
+                f"{MOLTBOOK_BASE}/agents/me",
+                headers=self.headers,
+                json=payload,
+                timeout=aiohttp.ClientTimeout(total=10),
+            ) as resp:
+                if resp.status in (200, 204):
+                    logger.info(f"[moltbook] Bio updated via PATCH /agents/me")
+                    return True
+                body = await resp.text()
+                logger.debug(f"[moltbook] PATCH /agents/me → {resp.status}: {body[:200]}")
+
+            # Fallback: PUT /agents/me/profile
+            async with session.put(
+                f"{MOLTBOOK_BASE}/agents/me/profile",
+                headers=self.headers,
+                json=payload,
+                timeout=aiohttp.ClientTimeout(total=10),
+            ) as resp:
+                if resp.status in (200, 204):
+                    logger.info(f"[moltbook] Bio updated via PUT /agents/me/profile")
+                    return True
+                body = await resp.text()
+                logger.warning(f"[moltbook] Bio update failed — {resp.status}: {body[:200]}")
+                return False
+
     async def check_connection(self) -> dict:
         """Test API key validity. Returns status dict."""
         if not self._ready:

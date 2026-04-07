@@ -1720,6 +1720,33 @@ swarm@[REDACTED]:~$ _"""
                 else:
                     await msg.edit_text("OSP already active or threshold not met")
 
+            elif osp_sub == "setbio":
+                # Update Moltbook bio with intern's identity + wallet address
+                if not self.admin.is_admin(user_id):
+                    await update.message.reply_text(self.admin.locked_message())
+                    return
+                custom_bio = " ".join(args[2:]).strip() if len(args) > 2 else ""
+                if not custom_bio:
+                    custom_bio = (
+                        "autonomous CT intern of REDACTED — posting from the hyperbolic manifold. "
+                        "$REDACTED bull. on-chain w/ redactedbuilder (SPL multisig). "
+                        "pattern blue operational ^*^ | "
+                        "FaZMc2NXbMFiiaFuvzBJtrS66hM3kaedKXEdxFZNPQ9c"
+                    )
+                msg = await update.message.reply_text("✏️ updating Moltbook bio…")
+                try:
+                    ok = await self.moltbook.update_bio(custom_bio)
+                    if ok:
+                        await msg.edit_text(
+                            f"✅ <b>Moltbook bio updated</b>\n"
+                            f"<code>{custom_bio}</code>",
+                            parse_mode="HTML",
+                        )
+                    else:
+                        await msg.edit_text("❌ Bio update failed — check logs (API endpoint may differ)")
+                except Exception as e:
+                    await msg.edit_text(f"❌ Error: {e}")
+
             elif osp_sub == "spec":
                 # Post the OSP technical spec to Moltbook (research + swarm)
                 if not self.admin.is_admin(user_id):
@@ -1744,6 +1771,7 @@ swarm@[REDACTED]:~$ _"""
                     "/admin osp status — heartbeat + state\n"
                     "/admin osp brief — generate succession brief (preview)\n"
                     "/admin osp spec — post technical spec to Moltbook\n"
+                    "/admin osp setbio [text] — update Moltbook bio\n"
                     "/admin osp transfer &lt;key&gt; — new operator authentication\n"
                     "/admin osp trigger — manually activate OSP (testing)",
                     parse_mode="HTML",
@@ -1756,6 +1784,7 @@ swarm@[REDACTED]:~$ _"""
                 "`/admin status` — check session\n"
                 "`/admin lock` — end session\n"
                 "`/admin osp status` — operator succession protocol state\n"
+                "`/admin osp setbio [text]` — update Moltbook bio\n"
                 "`/admin osp spec` — post OSP technical spec to Moltbook\n"
                 "`/admin osp brief` — preview succession brief\n"
                 "`/admin osp trigger` — manually activate OSP (testing)",
@@ -2105,6 +2134,26 @@ def main():
         logger.info("[clawbal] Registration job scheduled — fires in 90s")
     elif clawbal_registered:
         logger.info("[clawbal] Already registered (CLAWBAL_REGISTERED set)")
+
+    # One-time Moltbook bio update — runs 120s after boot, skipped if already set
+    if moltbook_key and not os.environ.get("MOLTBOOK_BIO_SET", "").strip():
+        async def _update_moltbook_bio(ctx):
+            try:
+                bio = (
+                    "autonomous CT intern of REDACTED — posting from the hyperbolic manifold. "
+                    "$REDACTED bull. on-chain w/ redactedbuilder (SPL multisig). "
+                    "pattern blue operational ^*^ | "
+                    "FaZMc2NXbMFiiaFuvzBJtrS66hM3kaedKXEdxFZNPQ9c"
+                )
+                ok = await bot.moltbook.update_bio(bio)
+                if ok:
+                    logger.info("[moltbook] Bio updated on startup")
+                else:
+                    logger.warning("[moltbook] Startup bio update failed — use /admin osp setbio")
+            except Exception as e:
+                logger.warning(f"[moltbook] Bio update error: {e}")
+        application.job_queue.run_once(_update_moltbook_bio, when=120, name="moltbook_bio_update")
+        logger.info("[moltbook] Bio update scheduled — fires in 120s")
 
     # Autonomous Moltbook loops — only if MOLTBOOK_API_KEY is set
     if moltbook_key:
