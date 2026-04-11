@@ -1,8 +1,10 @@
 [build]
 builder = "dockerfile"
+dockerfile = "Dockerfile"
 
 [deploy]
-startCommand = "python python/hermes_delegation_executor.py --manifest fs/clawtasks_v1.json --mode dispatch --output fs/clawtask_dispatch_results.json"
+restartPolicyType = "on-failure"
+restartPolicyMaxRetries = 3
 
 [env]
 PYTHONUNBUFFERED = "1"
