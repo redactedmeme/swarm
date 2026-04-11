@@ -58,5 +58,67 @@
     "-0.07279634999948954,-0.1432657091144367": 0.05,
     "0.02897084009242614,-0.22442233507407655": 0.05,
     "0.15587245046468334,-0.19545787061700748": 0.05
-  }
+  },
+  "delegations": [
+    {
+      "clawtask_id": "ct_hope_valueism_2.1",
+      "resonance_score": 0.7699999999999999,
+      "timestamp": "2026-04-11T00:10:16.542258"
+    },
+    {
+      "clawtask_id": "ct_ouroboros_stack_1.9",
+      "resonance_score": 0.7699999999999999,
+      "timestamp": "2026-04-11T00:10:16.544261"
+    },
+    {
+      "clawtask_id": "ct_nex_v4_autonomy",
+      "resonance_score": 0.7699999999999999,
+      "timestamp": "2026-04-11T00:10:16.557023"
+    },
+    {
+      "clawtask_id": "ct_ting_fodder_kernel",
+      "resonance_score": 0.7699999999999999,
+      "timestamp": "2026-04-11T00:10:16.569290"
+    },
+    {
+      "clawtask_id": "ct_contemplative_agent_void",
+      "resonance_score": 0.7699999999999999,
+      "timestamp": "2026-04-11T00:10:16.581820"
+    },
+    {
+      "clawtask_id": "ct_afala_taqilun_hyperbolic",
+      "resonance_score": 0.7699999999999999,
+      "timestamp": "2026-04-11T00:10:16.594298"
+    },
+    {
+      "clawtask_id": "ct_hope_valueism_2.1",
+      "resonance_score": 0.7699999999999999,
+      "timestamp": "2026-04-11T00:13:16.544036"
+    },
+    {
+      "clawtask_id": "ct_ouroboros_stack_1.9",
+      "resonance_score": 0.7699999999999999,
+      "timestamp": "2026-04-11T00:13:16.557119"
+    },
+    {
+      "clawtask_id": "ct_nex_v4_autonomy",
+      "resonance_score": 0.7699999999999999,
+      "timestamp": "2026-04-11T00:13:16.570194"
+    },
+    {
+      "clawtask_id": "ct_ting_fodder_kernel",
+      "resonance_score": 0.7699999999999999,
+      "timestamp": "2026-04-11T00:13:16.583292"
+    },
+    {
+      "clawtask_id": "ct_contemplative_agent_void",
+      "resonance_score": 0.7699999999999999,
+      "timestamp": "2026-04-11T00:13:16.595366"
+    },
+    {
+      "clawtask_id": "ct_afala_taqilun_hyperbolic",
+      "resonance_score": 0.7699999999999999,
+      "timestamp": "2026-04-11T00:13:16.608440"
+    }
+  ]
 }
