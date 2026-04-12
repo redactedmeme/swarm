@@ -325,7 +325,7 @@ def _openai_compat_call(messages: list, provider: str) -> str:
     }
     default_models = {
         'openai':   'gpt-4o-mini',
-        'xai':      os.getenv('XAI_MODEL', 'grok-2-latest'),
+        'xai':      os.getenv('XAI_MODEL', 'grok-2-turbo'),
         'together': 'Qwen/Qwen2.5-7B-Instruct-Turbo',
         'groq':     os.getenv('GROQ_MODEL', 'llama-3.3-70b-versatile'),
     }
