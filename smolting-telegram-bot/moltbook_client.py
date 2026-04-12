@@ -119,10 +119,21 @@ class MoltbookClient:
 
     def _solve_challenge(self, challenge: dict) -> Optional[str]:
         """
-        Solve obfuscated math challenge. Handles both symbolic and word-based expressions.
-        The challenge text uses randomized CaPs, injected symbols, and doubled/extra letters
-        (e.g. "SiIx" → six, "FoOuR" → four, "NoOoToNs" → newtons).
-        Returns answer as string with 2 decimal places.
+        Solve obfuscated math challenge.
+
+        Challenge format (observed): randomized CaPs + injected punctuation/symbols +
+        doubled letters to disguise words. e.g.:
+          "TwO] L oObBsStTeErS[ eAaCh- ApPpLlY^ twEnTy/ ThReE\\ NeWwOoTtOnSs| ...
+           MuLtIpLy< ToOo FiInNd- CoMmBiInEeDd~ FoRcEe?"
+        → decode → "two lobsters each apply twenty three newtons... multiply..."
+        → numbers: [2, 23]  operator: multiply  → 46.00
+
+        Strategy:
+        1. Strip all non-alpha/space/digit chars, collapse case/whitespace.
+        2. Extract digit numbers first.
+        3. Extract word-numbers using fuzzy matching (handles doubled letters).
+        4. Detect operator keyword: multiply/times/product/per → ×, subtract/minus → −, else +.
+        5. Apply operator to all extracted numbers.
         """
         try:
             expr_raw = (
@@ -135,59 +146,73 @@ class MoltbookClient:
             )
             text = str(expr_raw).lower()
 
-            # Extract all numbers (digit or word-based)
-            numbers = []
+            # ── Step 1: clean — keep letters, digits, spaces ────────────────
+            clean = re.sub(r'[^a-z0-9\s]', ' ', text)
+            clean = re.sub(r'\s+', ' ', clean).strip()
 
-            # Find digit numbers first
-            for m in re.finditer(r'\d+(?:\.\d+)?', text):
+            # ── Step 2: digit numbers ────────────────────────────────────────
+            numbers: list[float] = []
+            for m in re.finditer(r'\d+(?:\.\d+)?', clean):
                 numbers.append(float(m.group()))
 
-            # Find word numbers — strip all non-alpha chars first, then fuzzy-match
-            if not numbers:
-                # Strip noise: keep only letters and spaces
-                clean = re.sub(r'[^a-z\s]', ' ', text)
-                clean = re.sub(r'\s+', ' ', clean).strip()
-                words = clean.split()
-                i = 0
-                while i < len(words):
-                    w = words[i]
-                    matched = self._fuzzy_word_num(w)
-                    if matched is not None:
-                        val = matched
-                        # Handle compound "twenty three" etc.
-                        if i + 1 < len(words):
-                            next_match = self._fuzzy_word_num(words[i + 1])
-                            if next_match is not None and next_match < 10:
-                                val += next_match
-                                i += 1
-                        numbers.append(float(val))
+            # ── Step 3: word numbers (works even with doubled/garbled letters) ─
+            words = clean.split()
+            i = 0
+            while i < len(words):
+                w = words[i]
+                # Skip pure digit tokens already captured
+                if re.match(r'^\d', w):
                     i += 1
+                    continue
+                matched = self._fuzzy_word_num(w)
+                if matched is not None:
+                    val = matched
+                    # Compound: "twenty three", "thirty two", etc.
+                    if i + 1 < len(words):
+                        nxt = self._fuzzy_word_num(words[i + 1])
+                        if nxt is not None and nxt < 10 and val >= 20:
+                            val += nxt
+                            i += 1
+                    numbers.append(float(val))
+                i += 1
 
             if not numbers:
-                # Last resort: extract any bare math expression
-                expr = re.sub(r"[^0-9+\-*/().\s]", "", text).strip()
-                if expr:
-                    result = eval(expr, {"__builtins__": {}})
-                    return f"{float(result):.2f}"
-                logger.warning(f"Could not parse challenge: {expr_raw!r}")
+                logger.warning(f"[challenge] No numbers found in: {expr_raw!r}")
                 return None
 
-            # Detect operator from cleaned text
-            clean_text = re.sub(r'[^a-z\s]', ' ', text)
-            # "per" = multiply (e.g. "6 newtons per tooth × 4 teeth")
-            is_multiply = bool(re.search(r'\*|times|multiplied\s+by|\bper\b|x\s+\d', clean_text))
-            is_subtract = bool(re.search(r'\bminus\b|\bsubtract\b', clean_text))
-            if is_multiply and len(numbers) >= 2:
-                result = numbers[0]
-                for n in numbers[1:]:
-                    result *= n
+            # ── Step 4: detect operator ──────────────────────────────────────
+            # multiply: explicit keyword OR "each" with exactly 2 numbers
+            is_multiply = bool(re.search(
+                r'\b(multipl|times|product)\b', clean))
+            # "each" pattern: N things each with/applying/carrying M → N×M
+            has_each = bool(re.search(r'\beach\b', clean))
+            is_subtract = bool(re.search(
+                r'\b(minus|subtract|less than|difference)\b', clean))
+            is_divide   = bool(re.search(
+                r'\b(divid|split equally|quotient)\b', clean))
+
+            # ── Step 5: compute ──────────────────────────────────────────────
+            if (is_multiply or has_each) and len(numbers) >= 2:
+                # For "each" pattern: take first two numbers as the core multiply
+                # then add any remaining (e.g. "3 dragons each 20 coins add 5")
+                result = numbers[0] * numbers[1]
+                for n in numbers[2:]:
+                    result += n
             elif is_subtract and len(numbers) >= 2:
                 result = numbers[0]
                 for n in numbers[1:]:
                     result -= n
+            elif is_divide and len(numbers) >= 2:
+                result = numbers[0]
+                for n in numbers[1:]:
+                    if n:
+                        result /= n
             else:
                 result = sum(numbers)
-            return f"{result:.2f}"
+
+            answer = f"{result:.2f}"
+            logger.info(f"[challenge] Solved: {numbers} op={'×' if is_multiply else '÷' if is_divide else '−' if is_subtract else '+'} = {answer} | raw={expr_raw[:80]!r}")
+            return answer
         except Exception as e:
             logger.error(f"Challenge solve error: {e} | raw={challenge}")
             return None
@@ -216,8 +241,16 @@ class MoltbookClient:
 
     async def _submit_challenge(self, session: aiohttp.ClientSession,
                                  challenge_id: str, answer: str) -> Optional[str]:
-        """Submit challenge answer to /api/v1/verify."""
+        """Submit challenge answer to /api/v1/verify with enhanced logging."""
         try:
+            # Validate answer format before submission
+            if not answer or not re.match(r'^\d+\.?\d*$', answer):
+                logger.warning(
+                    f"[challenge] Invalid answer format before submit: {answer!r} "
+                    f"(expected numeric like '55.00')"
+                )
+                return None
+
             payload = {"verification_code": challenge_id, "answer": answer}
             async with session.post(
                 f"{MOLTBOOK_BASE}/verify",
@@ -225,46 +258,116 @@ class MoltbookClient:
                 json=payload,
                 timeout=aiohttp.ClientTimeout(total=8),
             ) as resp:
+                response_text = await resp.text()
+
                 if resp.status == 200:
-                    data = await resp.json()
-                    return data.get("token") or data.get("verification_token") or "verified"
-                logger.warning(f"Challenge submit {resp.status}: {await resp.text()}")
-                return None
+                    data = await resp.json() if resp.content_type == "application/json" else {}
+                    token = data.get("token") or data.get("verification_token") or "verified"
+                    logger.info(f"[challenge] ✓ Verified: answer={answer}")
+                    return token
+
+                elif resp.status == 400:
+                    # Parse error hint for debugging
+                    try:
+                        err = json.loads(response_text)
+                        hint = err.get("hint", "")
+                        msg = err.get("message", "")
+                        logger.warning(
+                            f"[challenge] ✗ Wrong answer: {answer} | msg={msg} | hint={hint[:80]}"
+                        )
+                    except:
+                        logger.warning(f"[challenge] ✗ 400 error: {response_text[:150]}")
+                    return None
+
+                else:
+                    logger.warning(
+                        f"[challenge] HTTP {resp.status}: {response_text[:150]}"
+                    )
+                    return None
+
         except Exception as e:
-            logger.warning(f"Challenge submit error: {e}")
+            logger.warning(f"[challenge] Submit error: {e}")
             return None
 
     async def _llm_solve_challenge(self, challenge: dict) -> Optional[str]:
-        """LLM fallback for heavily-obfuscated challenges the regex solver can't parse."""
+        """LLM fallback for heavily-obfuscated challenges the regex solver can't parse.
+
+        Uses multi-provider LLM with fallback to ensure robustness.
+        """
         try:
-            from llm.cloud_client import CloudLLMClient
-            llm = CloudLLMClient()
-            expr_raw = (
-                challenge.get("challenge_text") or challenge.get("expression")
-                or challenge.get("problem") or challenge.get("question") or ""
-            )
-            instructions = challenge.get("instructions", "")
-            raw = await llm.chat_completion([
-                {"role": "system", "content": (
-                    "Solve the obfuscated math problem. The text uses mixed case, "
-                    "spaces between letters, and letter substitutions (e.g. 'v'→'f'). "
-                    "Decode the words, extract the numbers, perform the operation. "
-                    "Return ONLY the numeric answer with exactly 2 decimal places (e.g. '55.00'). "
-                    "No other text."
-                )},
-                {"role": "user", "content": f"{expr_raw}\n\n{instructions}".strip()},
-            ])
-            m = re.search(r'\d+(?:\.\d+)?', raw.strip())
-            if m:
-                return f"{float(m.group()):.2f}"
+            from llm import CloudLLMClient, EventType
+
+            # Try with Anthropic first (better reasoning), fallback to Groq
+            for provider in ["anthropic", "groq"]:
+                try:
+                    llm = CloudLLMClient(provider=provider)
+                    expr_raw = (
+                        challenge.get("challenge_text") or challenge.get("expression")
+                        or challenge.get("problem") or challenge.get("question") or ""
+                    )
+                    instructions = challenge.get("instructions", "")
+
+                    if not expr_raw:
+                        logger.warning("[challenge] No challenge text found in object")
+                        continue
+
+                    # Stream for better control
+                    full_response = ""
+                    async for event in llm.stream_message([
+                        {"role": "system", "content": (
+                            "You are a math problem solver. Solve the obfuscated math challenge.\n"
+                            "The text uses mixed case, spaces between letters, doubled letters, and symbols.\n"
+                            "Steps:\n"
+                            "1. Clean: remove non-alphanumeric chars except spaces and numbers\n"
+                            "2. Decode: identify number words (zero, one, two, etc)\n"
+                            "3. Extract: find all numbers\n"
+                            "4. Operator: identify multiply/divide/add/subtract keywords\n"
+                            "5. Calculate: perform math\n"
+                            "Return ONLY the numeric answer with exactly 2 decimal places.\n"
+                            "Example: 55.00\n"
+                            "Do not include any text, quotes, or explanation."
+                        )},
+                        {"role": "user", "content": f"Problem:\n{expr_raw}\n\nInstructions:\n{instructions}".strip()},
+                    ]):
+                        if event.type == EventType.TEXT_DELTA and event.content:
+                            full_response += event.content
+
+                    # Extract the number — be more flexible
+                    response_clean = full_response.strip().strip('"').strip("'")
+
+                    # Try direct match first
+                    m = re.search(r'(\d+\.\d{2})', response_clean)
+                    if m:
+                        answer = m.group(1)
+                        logger.info(f"[challenge] LLM ({provider}) solved: {answer} | raw={expr_raw[:60]!r}")
+                        return answer
+
+                    # Try flexible number match
+                    m = re.search(r'(\d+\.?\d*)', response_clean)
+                    if m:
+                        answer = f"{float(m.group(1)):.2f}"
+                        logger.info(f"[challenge] LLM ({provider}) solved (converted): {answer} | raw={expr_raw[:60]!r}")
+                        return answer
+
+                    logger.warning(f"[challenge] LLM ({provider}) response not a number: {response_clean[:80]!r}")
+
+                except Exception as e:
+                    logger.debug(f"[challenge] LLM ({provider}) failed: {e}")
+                    continue
+
+            logger.warning("[challenge] All LLM providers failed to solve challenge")
+
         except Exception as e:
-            logger.warning(f"LLM challenge fallback error: {e}")
+            logger.warning(f"[challenge] LLM fallback error: {e}")
         return None
 
     async def _resolve_verification(self, session: aiohttp.ClientSession,
                                      post_body: dict = None) -> Optional[str]:
-        """Solve verification challenge embedded in post response or fetched separately."""
-        # Challenge may be embedded directly in the post response
+        """
+        Solve verification challenge embedded in post response or fetched separately.
+        Strategy: try regex solver first; if it submits and gets 400 (wrong answer),
+        retry once with the LLM fallback.
+        """
         challenge = post_body or await self._get_challenge(session)
         if not challenge:
             return None
@@ -273,14 +376,22 @@ class MoltbookClient:
             or challenge.get("id")
             or challenge.get("challenge_id")
         )
-        answer = self._solve_challenge(challenge)
-        if answer is None:
-            logger.info("Moltbook: regex solver failed — trying LLM fallback")
-            answer = await self._llm_solve_challenge(challenge)
-        if not (challenge_id and answer):
+        if not challenge_id:
             return None
-        token = await self._submit_challenge(session, challenge_id, answer)
-        return token
+
+        # Pass 1 — regex solver
+        answer = self._solve_challenge(challenge)
+        if answer:
+            token = await self._submit_challenge(session, challenge_id, answer)
+            if token:
+                return token
+            logger.info("Moltbook: regex answer wrong — trying LLM fallback")
+
+        # Pass 2 — LLM fallback (always try if regex failed or was wrong)
+        answer = await self._llm_solve_challenge(challenge)
+        if not answer:
+            return None
+        return await self._submit_challenge(session, challenge_id, answer)
 
     # ------------------------------------------------------------------
     # Core posting

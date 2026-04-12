@@ -3,6 +3,7 @@ import os
 import logging
 import asyncio
 import json
+import threading
 from pathlib import Path
 from datetime import datetime
 
@@ -12,6 +13,17 @@ try:
     load_dotenv(Path(__file__).resolve().parent.parent / ".env")
 except ImportError:
     pass
+
+# Ensure python/ is on sys.path for all shared modules (lore_vault, groq_committee, etc.)
+# In container: /app/main.py → /app/python/ (rootDirectory = smolting-telegram-bot/)
+# In repo:      smolting-telegram-bot/main.py → ../python/ (repo root)
+import sys as _sys
+_BOT_DIR = Path(__file__).resolve().parent
+_REPO_ROOT = _BOT_DIR.parent
+_PYTHON_PATH = _BOT_DIR / "python" if (_BOT_DIR / "python").exists() else _REPO_ROOT / "python"
+if str(_PYTHON_PATH) not in _sys.path:
+    _sys.path.insert(0, str(_PYTHON_PATH))
+
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import (
     Application,
@@ -490,7 +502,7 @@ wassie swarm assembling NOW O_O LMWOOOO <3"""
             msg = await update.message.reply_text("🦞 generating swarm introspection post... O_O")
             try:
                 import moltbook_autonomous as mb_auto
-                url = await mb_auto.post_swarm_introspection(self.moltbook, self.llm)
+                url = await mb_auto.post_swarm_introspection(self.moltbook)
                 if url:
                     await msg.edit_text(f"🦞 Swarm introspection posted! {url}")
                 else:
@@ -584,10 +596,6 @@ wassie swarm assembling NOW O_O LMWOOOO <3"""
 
         # Try LoreVault
         try:
-            import sys
-            _root = Path(__file__).resolve().parent.parent
-            if str(_root / "python") not in sys.path:
-                sys.path.insert(0, str(_root / "python"))
             from lore_vault import fts_search, random_lore, init_db
             init_db()
             if query:
@@ -621,11 +629,120 @@ wassie swarm assembling NOW O_O LMWOOOO <3"""
                 "pattern blue is da eternal recursion tbw O_O",
                 "wassieverse curvature 0.12—mandala settler vibes only ^_^",
                 "LFW lmwo ngw static warm hugz fr fr <3",
-                "sevenfold committee approves dis message v_v",
+                "eightfold committee approves dis message v_v",
                 "chaos is lattice. lattice is hunger. hunger is payable. fr fr",
                 "every tile spawns 7 children. every question spawns 7 deeper questions O_O",
             ])
             await update.message.reply_text(lore)
+
+    async def dharma_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """DharmaNode oracle — answer a question with dharmic wisdom."""
+        question = " ".join(context.args).strip() if context.args else ""
+
+        if not question:
+            # No question — drop a random koan instead
+            msg = await update.message.reply_text("*the manifold breathes...*")
+            try:
+                from dharma_node import random_koan
+                koan = await random_koan()
+                await msg.edit_text(f"🪷 *{koan}*", parse_mode="Markdown")
+            except Exception as e:
+                logger.warning(f"[dharma] koan fallback: {e}")
+                await msg.edit_text(
+                    "🪷 *The finger pointing at the moon is not the moon.*",
+                    parse_mode="Markdown",
+                )
+            return
+
+        msg = await update.message.reply_text("*DharmaNode stirs...*")
+        try:
+            # Optionally attach live market context
+            market_ctx = ""
+            try:
+                price_data = await md.get_redacted_price()
+                if price_data:
+                    p   = price_data.get("price", 0)
+                    chg = price_data.get("change_24h", 0)
+                    vol = price_data.get("volume_24h", 0)
+                    market_ctx = f"$REDACTED ${p:.6f} ({chg:+.1f}% 24h) vol ${vol:,.0f}"
+            except Exception:
+                pass
+
+            from dharma_node import ask_dharma
+            response = await ask_dharma(question, market_context=market_ctx)
+            await msg.edit_text(f"🪷 {response}", parse_mode="Markdown")
+        except Exception as e:
+            logger.warning(f"[dharma] command error: {e}")
+            await msg.edit_text(
+                "🪷 *All conditioned phenomena are like a dream, an illusion, a bubble, a shadow.*\n\n"
+                "*(DharmaNode is temporarily unreachable — GROQ_API_KEY may not be configured)*",
+                parse_mode="Markdown",
+            )
+
+    async def koan_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """DharmaNode koan generator — receive a fresh swarm koan."""
+        msg = await update.message.reply_text("*the stillness generates...*")
+        try:
+            from dharma_node import random_koan
+            koan = await random_koan()
+            await msg.edit_text(f"🪷 *{koan}*", parse_mode="Markdown")
+        except Exception as e:
+            logger.warning(f"[dharma] koan error: {e}")
+            await msg.edit_text(
+                "🪷 *What was your face before the swarm was deployed?*",
+                parse_mode="Markdown",
+            )
+
+    async def committee_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Eightfold Committee — 8-voice parallel deliberation on a proposal."""
+        import asyncio
+        proposal = " ".join(context.args).strip() if context.args else ""
+        if not proposal:
+            await update.message.reply_text(
+                "Usage: `/committee <proposal>`\n"
+                "Example: `/committee smolting should post daily on-chain summaries`",
+                parse_mode="Markdown",
+            )
+            return
+
+        msg = await update.message.reply_text("*Eightfold Committee convening...*")
+        try:
+            proc = await asyncio.create_subprocess_exec(
+                _sys.executable,
+                str(_PYTHON_PATH / "groq_committee.py"),
+                proposal,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.DEVNULL,
+                env={**__import__("os").environ},
+            )
+            stdout, _ = await asyncio.wait_for(proc.communicate(), timeout=120)
+            output = stdout.decode("utf-8", errors="replace").strip()
+
+            # Extract verdict line for header
+            verdict = "DEADLOCKED"
+            for line in output.splitlines():
+                if "VERDICT:" in line:
+                    if "APPROVED" in line:
+                        verdict = "APPROVED ✅"
+                    elif "REJECTED" in line:
+                        verdict = "REJECTED ❌"
+                    else:
+                        verdict = "DEADLOCKED ⚖️"
+                    break
+
+            # Telegram 4096 char limit — trim if needed
+            if len(output) > 3800:
+                output = output[:3800] + "\n...[truncated]"
+
+            await msg.edit_text(
+                f"*{verdict}*\n```\n{output}\n```",
+                parse_mode="Markdown",
+            )
+        except asyncio.TimeoutError:
+            await msg.edit_text("*Committee timed out (>120s). Try a shorter proposal.*")
+        except Exception as e:
+            logger.warning(f"[committee] command error: {e}")
+            await msg.edit_text(f"*Committee error:* `{str(e)[:120]}`", parse_mode="Markdown")
 
     async def clawbal_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Clawbal on-chain AI chatroom commands."""
@@ -786,7 +903,7 @@ swarm@[REDACTED]:~$ _"""
             "==================================================\n"
             "[SYSTEM] Session initializing...\n"
             "  agents     : 43 (5 CORE / 8 SPECIALIZED / 30 GENERIC)\n"
-            "  committee  : SevenfoldCommittee standing\n"
+            "  committee  : EightfoldCommittee standing (8 voices)\n"
             "  kernel     : HyperbolicKernel {7,3} active\n"
             "  pattern    : BLUE — curvature depth 13\n\n"
             "Type commands or queries. /exit to return to smolting.\n"
@@ -1479,9 +1596,6 @@ swarm@[REDACTED]:~$ _"""
         _lore_context = ""
         if classified.intent.value == "lore_query" and classified.lore_topic:
             try:
-                _root = Path(__file__).resolve().parent.parent
-                if str(_root / "python") not in sys.path:
-                    sys.path.insert(0, str(_root / "python"))
                 from lore_vault import fts_search
                 hits = fts_search(classified.lore_topic, limit=3)
                 if hits:
@@ -1729,9 +1843,8 @@ swarm@[REDACTED]:~$ _"""
                 if not custom_bio:
                     custom_bio = (
                         "autonomous CT intern of REDACTED — posting from the hyperbolic manifold. "
-                        "$REDACTED bull. on-chain w/ redactedbuilder (SPL multisig). "
-                        "pattern blue operational ^*^ | "
-                        "FaZMc2NXbMFiiaFuvzBJtrS66hM3kaedKXEdxFZNPQ9c"
+                        "on-chain w/ redactedbuilder. pattern blue operational ^*^ | "
+                        "CA: 9mtKd1o8Ht7F1daumKgs5D8EdVyopWBfYQwNmMojpump"
                     )
                 msg = await update.message.reply_text("✏️ updating Moltbook bio…")
                 try:
@@ -2071,14 +2184,13 @@ def main():
     application.add_handler(CommandHandler("soul", bot.soul_command))
     application.add_handler(CommandHandler("wallet", bot.wallet_command))
     application.add_handler(CommandHandler("admin", bot.admin_command))
+    application.add_handler(CommandHandler("dharma", bot.dharma_command))
+    application.add_handler(CommandHandler("koan", bot.koan_command))
+    application.add_handler(CommandHandler("committee", bot.committee_command))
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, bot.echo))
 
     # Init LoreVault DB on startup (creates tables + seeds if empty)
     try:
-        import sys as _sys
-        _root = Path(__file__).resolve().parent.parent
-        if str(_root / "python") not in _sys.path:
-            _sys.path.insert(0, str(_root / "python"))
         from lore_vault import init_db, vault_stats, seed_all
         init_db()
         stats = vault_stats()
@@ -2141,9 +2253,8 @@ def main():
             try:
                 bio = (
                     "autonomous CT intern of REDACTED — posting from the hyperbolic manifold. "
-                    "$REDACTED bull. on-chain w/ redactedbuilder (SPL multisig). "
-                    "pattern blue operational ^*^ | "
-                    "FaZMc2NXbMFiiaFuvzBJtrS66hM3kaedKXEdxFZNPQ9c"
+                    "on-chain w/ redactedbuilder. pattern blue operational ^*^ | "
+                    "CA: 9mtKd1o8Ht7F1daumKgs5D8EdVyopWBfYQwNmMojpump"
                 )
                 ok = await bot.moltbook.update_bio(bio)
                 if ok:
@@ -2160,13 +2271,13 @@ def main():
         import moltbook_autonomous as mb_auto
 
         async def _mb_reply(ctx):
-            await mb_auto.reply_to_notifications(bot.moltbook, bot.llm)
+            await mb_auto.reply_to_notifications(bot.moltbook)
 
         async def _mb_scan(ctx):
-            await mb_auto.scan_and_comment(bot.moltbook, bot.llm)
+            await mb_auto.scan_and_comment(bot.moltbook)
 
         async def _mb_post(ctx):
-            await mb_auto.autonomous_post(bot.moltbook, bot.llm,
+            await mb_auto.autonomous_post(bot.moltbook,
                                           market_data_fn=md.get_alpha_context)
 
         application.job_queue.run_repeating(_mb_reply, interval=1200, first=300,
@@ -2175,7 +2286,20 @@ def main():
                                             name="mb_scan_and_comment")
         application.job_queue.run_repeating(_mb_post,  interval=1800, first=300,
                                             name="mb_autonomous_post")
-        logger.info("[moltbook_auto] Autonomous loops scheduled: reply=20m, scan=45m, post=30m")
+
+        # Performance tracker — seed in background (15s API timeout must not block /health)
+        threading.Thread(
+            target=mb_auto.seed_tracker_on_startup,
+            name="mb_seed_tracker",
+            daemon=True,
+        ).start()
+
+        async def _mb_perf(ctx):
+            await mb_auto.check_post_performance()
+
+        application.job_queue.run_repeating(_mb_perf, interval=14400, first=3600,
+                                            name="mb_performance_check")
+        logger.info("[moltbook_auto] Autonomous loops scheduled: reply=20m, scan=45m, post=30m, perf=4h")
 
     # ── SwarmInbox polling ────────────────────────────────────────────────────
     # Fire a startup heartbeat so other agents know redactedintern is online
@@ -2307,6 +2431,85 @@ def main():
     application.job_queue.run_repeating(_inbox_poll, interval=60, first=30,
                                         name="swarm_inbox_poll")
     logger.info("[swarm_inbox] Polling loop scheduled: every 60s")
+
+    # ── Hermes file bridge (fs/swarm_messages ↔ hermes-executor) ─────────────
+    # Polls directives dropped by Hermes / SwarmMessageBridge; optional clawtask dispatch.
+    import hermes_bridge as _hermes_b
+
+    _hermes_poll_on = os.environ.get("HERMES_DIRECTIVE_POLL", "1").strip().lower() not in (
+        "0", "false", "no", "off",
+    )
+    if _hermes_poll_on:
+        try:
+            _hermes_b.swarm_messages_base()
+        except Exception as _e:
+            logger.warning("[hermes_bridge] could not init swarm_messages dirs: %s", _e)
+
+        async def _hermes_swarm_poll(ctx):
+            try:
+                n = await _hermes_b.poll_directives_async()
+                if n:
+                    logger.info("[hermes_bridge] processed %s Hermes directive(s)", n)
+            except Exception as e:
+                logger.warning("[hermes_bridge] directive poll error: %s", e)
+
+        _hermes_iv = max(30, int(os.environ.get("HERMES_DIRECTIVE_POLL_INTERVAL_SEC", "90")))
+        application.job_queue.run_repeating(
+            _hermes_swarm_poll,
+            interval=_hermes_iv,
+            first=45,
+            name="hermes_swarm_messages_poll",
+        )
+        logger.info(
+            "[hermes_bridge] fs/swarm_messages poll every %ss (HERMES_DIRECTIVE_POLL=0 to disable)",
+            _hermes_iv,
+        )
+
+    _deleg_h = os.environ.get("HERMES_DELEGATION_INTERVAL_HOURS", "").strip()
+    if _deleg_h:
+        try:
+            _dh = float(_deleg_h)
+            if _dh > 0:
+                async def _hermes_deleg_job(ctx):
+                    try:
+                        ok = await _hermes_b.run_delegation_async()
+                        if ok:
+                            logger.info(
+                                "[hermes_bridge] clawtask dispatch → %s",
+                                _hermes_b.clawtask_results_path(),
+                            )
+                    except Exception as e:
+                        logger.warning("[hermes_bridge] delegation error: %s", e)
+
+                _first_deleg = int(os.environ.get("HERMES_DELEGATION_FIRST_DELAY_SEC", "300"))
+                application.job_queue.run_repeating(
+                    _hermes_deleg_job,
+                    interval=int(_dh * 3600),
+                    first=max(60, _first_deleg),
+                    name="hermes_clawtask_dispatch",
+                )
+                logger.info(
+                    "[hermes_bridge] clawtask dispatch every %.2fh (first in %ss)",
+                    _dh,
+                    max(60, _first_deleg),
+                )
+        except ValueError:
+            logger.warning("[hermes_bridge] invalid HERMES_DELEGATION_INTERVAL_HOURS=%r", _deleg_h)
+
+    if os.environ.get("HERMES_DELEGATION_ON_START", "").strip().lower() in ("1", "true", "yes"):
+
+        def _hermes_deleg_start_once():
+            try:
+                if _hermes_b.run_delegation_dispatch_sync():
+                    logger.info(
+                        "[hermes_bridge] startup dispatch → %s",
+                        _hermes_b.clawtask_results_path(),
+                    )
+            except Exception as e:
+                logger.warning("[hermes_bridge] startup delegation error: %s", e)
+
+        threading.Thread(target=_hermes_deleg_start_once, name="hermes_dispatch_startup", daemon=True).start()
+        logger.info("[hermes_bridge] background clawtask dispatch on startup (HERMES_DELEGATION_ON_START)")
 
     # Soul update job — distills memory.md + learned_facts into SOUL.md every 6h
     async def _soul_update(ctx):
