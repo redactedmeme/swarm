@@ -64,7 +64,7 @@ def _llm(system: str, user: str) -> str:
         }
         models = {
             "openai":   "gpt-4o-mini",
-            "xai":      os.getenv("XAI_MODEL", "grok-2-turbo"),
+            "xai":      os.getenv("XAI_MODEL", "grok-2-1212-fast"),
             "together": "Qwen/Qwen2.5-7B-Instruct-Turbo",
         }
         resp = requests.post(

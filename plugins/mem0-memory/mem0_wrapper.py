@@ -64,7 +64,7 @@ def _build_config() -> Dict:
         llm_config = {
             "provider": "openai",
             "config": {
-                "model": os.getenv("XAI_MODEL", "grok-2-turbo"),
+                "model": os.getenv("XAI_MODEL", "grok-2-1212-fast"),
                 "api_key": os.getenv("XAI_API_KEY"),
                 "openai_base_url": "https://api.x.ai/v1",
             },
