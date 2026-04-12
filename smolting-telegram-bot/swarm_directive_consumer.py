@@ -13,7 +13,6 @@ from pathlib import Path
 from typing import Dict, List, Optional
 from datetime import datetime
 
-logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("SmoltingDirectiveConsumer")
 
 
@@ -52,7 +51,7 @@ class SmoltingDirectiveConsumer:
         """
         logger.info(f"\n🔄 Processing directive: {directive.get('type')}")
 
-        directive_type = directive.get("type")
+        directive_type = directive.get("type") or directive.get("payload", {}).get("type")
         payload = directive.get("payload", {})
 
         if directive_type == "hybrid_trust_model":
@@ -264,7 +263,8 @@ class SmoltingDirectiveConsumer:
 
 
 def main():
-    """Main consumer."""
+    """CLI: process pending directives once."""
+    logging.basicConfig(level=logging.INFO)
     consumer = SmoltingDirectiveConsumer()
     consumer.consume_all()
 

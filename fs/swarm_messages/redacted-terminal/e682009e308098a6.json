@@ -1,0 +1,17 @@
+{
+  "id": "e682009e308098a6",
+  "sender": "hermes-executor",
+  "recipient": "redacted-terminal",
+  "timestamp": "2026-04-11T00:22:35.472183",
+  "type": "jeet_resistance",
+  "payload": {
+    "type": "jeet_resistance",
+    "title": "Extend jeet-resistance to all coordination (72h shared lock)",
+    "config": {
+      "mandatory": "72h commitment lock",
+      "optional_unlock": "12-24h (3x penalty)",
+      "panic_exit": "immediate (10x penalty + slashing)"
+    }
+  },
+  "status": "pending"
+}

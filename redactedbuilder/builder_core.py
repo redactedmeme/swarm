@@ -17,6 +17,7 @@ Environment variables:
                         Falls back to SOLANA_PRIVATE_KEY if not set.
 """
 
+import asyncio
 import base64
 import json
 import logging
@@ -24,6 +25,8 @@ import os
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
+
+import aiohttp
 
 logger = logging.getLogger(__name__)
 
@@ -603,6 +606,216 @@ async def submit_countersigned_tx(
         return {"success": False, "error": str(e)}
 
 
+# ── Jupiter swap (buy token with SOL) ────────────────────────────────────────
+
+JUPITER_QUOTE_URL = "https://quote-api.jup.ag/v6/quote"
+JUPITER_SWAP_URL  = "https://quote-api.jup.ag/v6/swap"
+WSOL_MINT         = "So11111111111111111111111111111111111111112"
+
+_JUP_HEADERS = {"Content-Type": "application/json", "Accept": "application/json"}
+
+
+async def _get_helius_priority_fee(
+    account_keys: list,
+    priority_level: str = "High",
+) -> int:
+    """
+    Fetch priority fee estimate from Helius RPC (getPriorityFeeEstimate).
+
+    Parameters
+    ----------
+    account_keys   : list of base58 pubkey strings involved in the tx
+    priority_level : one of Min | Low | Medium | High | VeryHigh | UnsafeMax
+
+    Returns
+    -------
+    microlamports per compute unit (int).
+    Falls back to 50_000 if Helius is unavailable or RPC is not Helius.
+    """
+    payload = {
+        "jsonrpc": "2.0",
+        "id": 1,
+        "method": "getPriorityFeeEstimate",
+        "params": [{
+            "accountKeys": account_keys,
+            "options": {"priorityLevel": priority_level},
+        }],
+    }
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.post(
+                _RPC,
+                json=payload,
+                headers={"Content-Type": "application/json"},
+                timeout=aiohttp.ClientTimeout(total=5),
+            ) as resp:
+                data = await resp.json()
+                fee = data.get("result", {}).get("priorityFeeEstimate")
+                if fee is not None:
+                    micro = int(fee)
+                    logger.info(f"[builder] Helius priority fee ({priority_level}): {micro} µL/CU")
+                    return micro
+                logger.warning(f"[builder] Helius fee estimate missing from response: {data}")
+    except Exception as e:
+        logger.warning(f"[builder] Helius priority fee fetch failed: {e}")
+    return 50_000  # fallback: roughly medium-priority
+
+
+async def quote_buy(
+    output_mint: str,
+    amount_sol: float,
+    slippage_bps: int = 300,
+) -> dict:
+    """
+    Fetch a Jupiter quote for buying output_mint with SOL.
+
+    Returns
+    -------
+    {success, input_amount_sol, output_amount, output_mint, price_impact_pct,
+     route_label, quote_response (raw), error}
+    """
+    lamports = int(amount_sol * 1_000_000_000)
+    params = {
+        "inputMint":   WSOL_MINT,
+        "outputMint":  output_mint,
+        "amount":      str(lamports),
+        "slippageBps": str(slippage_bps),
+        "onlyDirectRoutes": "false",
+    }
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.get(
+                JUPITER_QUOTE_URL,
+                params=params,
+                headers=_JUP_HEADERS,
+                timeout=aiohttp.ClientTimeout(total=10),
+            ) as resp:
+                if resp.status != 200:
+                    text = await resp.text()
+                    return {"success": False, "error": f"Jupiter quote {resp.status}: {text[:200]}"}
+                quote = await resp.json()
+
+        out_amount  = int(quote.get("outAmount", 0))
+        impact      = float(quote.get("priceImpactPct", 0))
+        route_label = quote.get("routePlan", [{}])[0].get("swapInfo", {}).get("label", "unknown")
+
+        return {
+            "success":          True,
+            "input_amount_sol": amount_sol,
+            "input_lamports":   lamports,
+            "output_amount_raw": out_amount,
+            "output_mint":      output_mint,
+            "price_impact_pct": round(impact, 4),
+            "route":            route_label,
+            "quote_response":   quote,
+            "error":            None,
+        }
+
+    except Exception as e:
+        logger.error(f"[builder] quote_buy error: {e}")
+        return {"success": False, "error": str(e)}
+
+
+async def buy_token(
+    output_mint:  str,
+    amount_sol:   float,
+    slippage_bps: int = 300,
+) -> dict:
+    """
+    Buy output_mint token by swapping SOL via Jupiter aggregator.
+
+    Flow:
+      1. Get quote from Jupiter v6
+      2. Get swap transaction (versioned)
+      3. Sign with builder keypair
+      4. Submit to Solana
+
+    Parameters
+    ----------
+    output_mint  : base58 mint address of token to buy
+    amount_sol   : SOL amount to spend (e.g. 0.01)
+    slippage_bps : slippage tolerance in basis points (default 300 = 3%)
+
+    Returns
+    -------
+    {success, tx_sig, input_amount_sol, output_amount_raw, output_mint,
+     price_impact_pct, solscan_url, error}
+    """
+    kp = _get_keypair()
+    if not kp:
+        return {"success": False, "error": "no keypair configured"}
+
+    # 1. Get quote
+    q = await quote_buy(output_mint, amount_sol, slippage_bps)
+    if not q["success"]:
+        return q
+    quote_response = q["quote_response"]
+
+    # 2. Get priority fee from Helius, then build swap payload
+    helius_fee = await _get_helius_priority_fee(
+        account_keys=[str(kp.pubkey()), output_mint, WSOL_MINT],
+        priority_level="High",
+    )
+    swap_payload = {
+        "quoteResponse":                quote_response,
+        "userPublicKey":                str(kp.pubkey()),
+        "wrapAndUnwrapSol":             True,
+        "dynamicComputeUnitLimit":      True,
+        "computeUnitPriceMicroLamports": helius_fee,
+    }
+
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.post(
+                JUPITER_SWAP_URL,
+                json=swap_payload,
+                headers=_JUP_HEADERS,
+                timeout=aiohttp.ClientTimeout(total=15),
+            ) as resp:
+                if resp.status != 200:
+                    text = await resp.text()
+                    return {"success": False, "error": f"Jupiter swap {resp.status}: {text[:200]}"}
+                swap_data = await resp.json()
+
+        swap_tx_b64 = swap_data.get("swapTransaction")
+        if not swap_tx_b64:
+            return {"success": False, "error": "Jupiter returned no swapTransaction"}
+
+        # 3. Deserialize, sign, and send versioned transaction
+        from solders.transaction import VersionedTransaction
+        from solana.rpc.async_api import AsyncClient
+        from solana.rpc.types import TxOpts
+        from solana.rpc.commitment import Confirmed
+
+        raw_bytes   = base64.b64decode(swap_tx_b64)
+        vtx         = VersionedTransaction.from_bytes(raw_bytes)
+        signed_vtx  = VersionedTransaction(vtx.message, [kp])
+
+        async with AsyncClient(_RPC) as client:
+            resp = await client.send_raw_transaction(
+                bytes(signed_vtx),
+                opts=TxOpts(skip_confirmation=False, preflight_commitment=Confirmed),
+            )
+            tx_sig = str(resp.value)
+
+        logger.info(f"[builder] Buy {amount_sol} SOL → {output_mint[:12]}… tx={tx_sig}")
+
+        return {
+            "success":           True,
+            "tx_sig":            tx_sig,
+            "input_amount_sol":  amount_sol,
+            "output_amount_raw": q["output_amount_raw"],
+            "output_mint":       output_mint,
+            "price_impact_pct":  q["price_impact_pct"],
+            "solscan_url":       f"https://solscan.io/tx/{tx_sig}",
+            "error":             None,
+        }
+
+    except Exception as e:
+        logger.error(f"[builder] buy_token error: {e}")
+        return {"success": False, "error": str(e)}
+
+
 # ── Dispatch ──────────────────────────────────────────────────────────────────
 
 async def execute(contract_type: str, params: dict) -> dict:
@@ -656,10 +869,22 @@ async def execute(contract_type: str, params: dict) -> dict:
         )
     elif ct == "multisig_info":
         return await get_multisig_info()
+    elif ct == "buy":
+        return await buy_token(
+            output_mint  = params["mint"],
+            amount_sol   = float(params["amount_sol"]),
+            slippage_bps = int(params.get("slippage_bps", 300)),
+        )
+    elif ct == "quote":
+        return await quote_buy(
+            output_mint  = params["mint"],
+            amount_sol   = float(params["amount_sol"]),
+            slippage_bps = int(params.get("slippage_bps", 300)),
+        )
     else:
         return {
             "success": False,
             "error":   f"unknown contract_type: {ct}. supported: "
                        "spl_token, spl_token_multisig, transfer, transfer_token, "
-                       "wallet_info, multisig_create, multisig_info",
+                       "wallet_info, multisig_create, multisig_info, buy, quote",
         }

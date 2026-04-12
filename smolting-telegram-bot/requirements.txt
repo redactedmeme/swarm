@@ -7,3 +7,5 @@ pydantic==2.5.0
 openai==1.6.1  # ← For OpenAI/GPT models
 anthropic==0.8.1  # ← For Claude models
 tweepy==4.14.0    # ← X API v2 client (x_client.py)
+PyYAML>=6.0       # ← agents/skills SKILL.md frontmatter (swarm_skills.py)
+# Optional stdio MCP for Cursor: pip install "mcp>=1.14"  →  swarm_mcp_stdio.py

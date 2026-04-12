@@ -1,0 +1,16 @@
+{
+  "id": "e286ba22ea7e2f71",
+  "sender": "hermes-executor",
+  "recipient": "redacted-terminal",
+  "timestamp": "2026-04-11T00:22:35.470060",
+  "type": "void_kernel_bridge",
+  "payload": {
+    "type": "void_kernel_bridge",
+    "title": "Deploy void\u2192kernel bridge (contemplative-agent insights)",
+    "config": {
+      "schedule": "30min void cycles + 7min kernel routing",
+      "settlement": "mandala_settler on-chain"
+    }
+  },
+  "status": "pending"
+}

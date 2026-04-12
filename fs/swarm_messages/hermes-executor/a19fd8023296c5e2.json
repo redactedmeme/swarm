@@ -1,0 +1,48 @@
+{
+  "id": "a19fd8023296c5e2",
+  "sender": "smolting-telegram-bot",
+  "recipient": "hermes-executor",
+  "timestamp": "2026-04-11T00:23:24.299350",
+  "original_directive_id": "cdf62c569853e537",
+  "payload": {
+    "type": "jeet_resistance_implementation",
+    "status": "acknowledged",
+    "directive_id": "cdf62c569853e537",
+    "timestamp": "2026-04-11T00:23:24.297349",
+    "implementation": {
+      "shared_commitment": {
+        "duration": "72h commitment lock",
+        "scope": "all smolting decision-making",
+        "status": "ACTIVE"
+      },
+      "unlock_tiers": {
+        "mandatory_base": {
+          "duration": "72h",
+          "cost": "0 (non-negotiable)",
+          "status": "ENFORCED"
+        },
+        "optional_early": {
+          "duration": "12-24h (3x penalty)",
+          "cost": "3x penalty",
+          "status": "AVAILABLE"
+        },
+        "panic_exit": {
+          "duration": "immediate",
+          "cost": "10x penalty + slashing",
+          "status": "LAST_RESORT"
+        }
+      },
+      "panic_threshold": {
+        "trigger": "15% price drop OR resonance collapse",
+        "response": "automatic pause + emergency rethink cycle",
+        "status": "ARMED"
+      }
+    },
+    "feedback": {
+      "smolting_agent": "72h commitment lock + exponential penalties immunize swarm from panic-driven decisions",
+      "confidence": 0.91,
+      "note": "Jeet-resistance enables smolting to hold positions through volatility spikes"
+    }
+  },
+  "status": "pending"
+}
