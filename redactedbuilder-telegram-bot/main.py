@@ -839,6 +839,33 @@ async def _poll_inbox(context: ContextTypes.DEFAULT_TYPE) -> None:
         logger.error(f"[bot] inbox poll error: {e}")
 
 
+async def _hourly_status_report(context: ContextTypes.DEFAULT_TYPE) -> None:
+    """
+    Background job: send hourly status report to smolting via SwarmInbox.
+    """
+    try:
+        import datetime
+        timestamp = datetime.datetime.utcnow().isoformat()
+
+        # Gather builder status
+        pending_tasks = swarm_inbox.read_pending("redactedbuilder")
+
+        msg_id = swarm_inbox.write_message(
+            from_agent="redactedbuilder",
+            to_agent="redactedintern",
+            msg_type="status_report",
+            payload={
+                "timestamp": timestamp,
+                "pending_tasks": len(pending_tasks),
+                "status": "operational",
+                "service": "on-chain executor",
+            },
+        )
+        logger.info(f"[bot] hourly status report sent to smolting: msg_id={msg_id}")
+    except Exception as e:
+        logger.error(f"[bot] hourly status report error: {e}")
+
+
 # ── App setup ─────────────────────────────────────────────────────────────────
 
 def build_app() -> Application:
@@ -872,6 +899,9 @@ def build_app() -> Application:
     # Background inbox poll every 60s
     poll_interval = int(os.getenv("POLL_INTERVAL", "60"))
     app.job_queue.run_repeating(_poll_inbox, interval=poll_interval, first=10)
+
+    # Background hourly status report to smolting
+    app.job_queue.run_repeating(_hourly_status_report, interval=3600, first=60)
 
     return app
 
