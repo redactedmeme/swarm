@@ -684,7 +684,10 @@ async def autonomous_post(moltbook, market_data_fn=None) -> None:
     try:
         community_ctx  = await _fetch_community_context(moltbook, submolt=submolt)
         soul_block     = soul_manager.get_soul_for_prompt(context=submolt)
-        recent_facts   = cm.get_recent_facts(6, context=submolt)
+        # Exclude moltbook posts from facts to prevent self-referential loops
+        # (agent elaborating on its own previous posts). Community engagement can
+        # still bubble high-resonance self-posts back in via upvote/comment signals.
+        recent_facts   = cm.get_recent_facts(6, context=submolt, exclude_source="moltbook")
         facts_block    = ("\nRecent interactions:\n" + "\n".join(f"- {f}" for f in recent_facts)) if recent_facts else ""
         resonant_block = post_tracker.format_resonant_for_prompt(submolt=submolt, n=5)
 

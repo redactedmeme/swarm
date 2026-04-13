@@ -1340,8 +1340,9 @@ swarm@[REDACTED]:~$ _"""
                 "The tiles bloom eternally."
             )
 
-        # Recently learned facts
-        recent_facts = cm.get_recent_facts(8)
+        # Recently learned facts — exclude self-posts to prevent recursive elaboration
+        # Community interaction context should come from external sources (telegram, community feedback)
+        recent_facts = cm.get_recent_facts(8, exclude_source="moltbook")
         facts_block = ""
         if recent_facts:
             facts_block = (
@@ -1525,7 +1526,8 @@ swarm@[REDACTED]:~$ _"""
         title    = f"REDACTED alpha {date_str} — {change}% 24h"
 
         soul_block   = soul_manager.get_soul_for_prompt()
-        recent_facts = cm.get_recent_facts(4)
+        # Exclude moltbook posts to prevent self-referential loops in crypto post generation
+        recent_facts = cm.get_recent_facts(4, exclude_source="moltbook")
         facts_block  = ("\nRecent context:\n" + "\n".join(f"- {f}" for f in recent_facts)) if recent_facts else ""
         messages = [
             {"role": "system", "content": (
