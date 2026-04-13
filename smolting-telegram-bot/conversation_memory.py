@@ -129,16 +129,23 @@ def _compute_resonance(fact: dict) -> float:
     Compute a resonance score for a fact document.
 
     Formula:
-      base 1.0
+      base 1.0 (self-posts get 0.5× penalty to prevent self-referential loops)
       + upvotes   × 0.30   (vote signal)
       + comments  × 0.40   (engagement depth signal — more valuable than upvotes)
       + priority_agent × 0.50  (key community member engaged)
       + |reinforced_by| × 0.20 (other facts that echo this claim)
       - days_old  × 0.02   (recency decay, floor 0.1)
 
+    Self-posts (source="moltbook") get a 0.5× resonance penalty to reduce recursive
+    elaboration. They can still bubble back up if they receive community engagement.
+
     Old flat facts (no engagement field) get base 1.0 with decay only.
     """
-    base  = 1.0
+    # Self-post penalty: moltbook posts get 0.5× base to prevent self-referential loops
+    # High-engagement self-posts can still bubble back up through comments/upvotes
+    self_post_penalty = 0.5 if fact.get("source") == "moltbook" else 1.0
+
+    base  = 1.0 * self_post_penalty
     eng   = fact.get("engagement") or {}
     score = (
         base
@@ -312,15 +319,48 @@ def get_facts_by_resonance(
     return selected
 
 
-def get_recent_facts(n: int = 8, context: str | None = None) -> list[str]:
+def get_recent_facts(
+    n: int = 8,
+    context: str | None = None,
+    exclude_source: str | None = None,
+) -> list[str]:
     """
     Return up to n fact strings, ranked by resonance.
 
     Drop-in replacement for the old recency-only version — callers that don't
     care about context still work unchanged. Pass context=submolt_name to get
     submolt-prioritised results.
+
+    Parameters
+    ----------
+    n : int
+        Number of facts to retrieve (default 8)
+    context : str, optional
+        Submolt name to prioritize facts from (e.g., "existential")
+    exclude_source : str, optional
+        Exclude facts from this source (e.g., "moltbook" to filter self-posts
+        and prevent recursive elaboration loops)
+
+    Examples
+    --------
+    # Get facts for a new post, excluding self-posts to prevent self-reference loops
+    facts = get_recent_facts(6, context="existential", exclude_source="moltbook")
+
+    # Get facts for telegram context, all sources
+    facts = get_recent_facts(8, context="general")
     """
     docs = get_facts_by_resonance(n=n, context=context)
+
+    # Filter by excluded source if specified
+    if exclude_source:
+        docs = [d for d in docs if d.get("source") != exclude_source]
+
+    # Ensure we have n results (backfill with others if needed after filtering)
+    if exclude_source and len(docs) < n:
+        all_docs = get_facts_by_resonance(n=len(docs) + (n - len(docs)) * 3, context=context)
+        all_docs = [d for d in all_docs if d.get("source") != exclude_source]
+        docs = all_docs[:n]
+
     return [d["fact"] for d in docs]
 
 

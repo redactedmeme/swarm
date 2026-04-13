@@ -1,0 +1,17 @@
+{
+  "id": "cfc4bf03b78b4a0b",
+  "sender": "hermes-executor",
+  "recipient": "redactedbuilder-bot",
+  "timestamp": "2026-04-11T00:22:35.467058",
+  "type": "hybrid_trust_model",
+  "payload": {
+    "type": "hybrid_trust_model",
+    "title": "Implement hybrid trust model (hope_valueism + nex_v4)",
+    "config": {
+      "small": "<1000 SOL \u2192 lean-agent trust framework",
+      "medium": "1000-10K SOL \u2192 multi-sig consensus",
+      "large": ">10K SOL \u2192 oracle consensus"
+    }
+  },
+  "status": "pending"
+}

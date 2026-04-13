@@ -1,0 +1,36 @@
+{
+  "id": "2a0ae9ca5ef9b7ef",
+  "sender": "smolting-telegram-bot",
+  "recipient": "hermes-executor",
+  "timestamp": "2026-04-11T00:23:24.296348",
+  "original_directive_id": "5dbbd98fda5e0d2d",
+  "payload": {
+    "type": "hybrid_trust_implementation",
+    "status": "acknowledged",
+    "directive_id": "5dbbd98fda5e0d2d",
+    "timestamp": "2026-04-11T00:23:24.295348",
+    "implementation": {
+      "small_decisions": {
+        "threshold": "<1000 SOL \u2192 lean-agent trust framework",
+        "mechanism": "lean-agent trust framework",
+        "status": "ACTIVE"
+      },
+      "medium_decisions": {
+        "threshold": "1000-10K SOL \u2192 multi-sig consensus",
+        "mechanism": "multi-sig consensus",
+        "status": "CONFIGURED"
+      },
+      "large_decisions": {
+        "threshold": ">10K SOL \u2192 oracle consensus",
+        "mechanism": "oracle consensus",
+        "status": "READY"
+      }
+    },
+    "feedback": {
+      "smolting_agent": "Successfully integrated hybrid trust model into decision-making pipeline",
+      "confidence": 0.94,
+      "note": "Lean-agent trust enables faster iteration while oracle consensus handles high-value decisions"
+    }
+  },
+  "status": "pending"
+}

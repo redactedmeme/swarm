@@ -27,7 +27,7 @@
         <li><a href="#prompt">PROMPT</a></li>
         <li><a href="#skill">SKILL</a></li>
         <li><a href="https://github.com/redactedmeme/swarm" target="_blank" rel="noopener">GITHUB</a></li>
-        <li><a href="https://terminal.redacted.meme" target="_blank" rel="noopener" class="nav-app-btn">APP ↗</a></li>
+        <li><a href="https://birdeye.so/solana/token/9mtKd1o8Ht7F1daumKgs5D8EdVyopWBfYQwNmMojpump" target="_blank" rel="noopener" class="nav-app-btn">APP ↗</a></li>
       </ul>
     </div>
   </nav>
@@ -51,7 +51,7 @@
         <span>許可された者のみアクセス可</span>
       </div>
       <div class="hero-cta">
-        <a href="https://terminal.redacted.meme" target="_blank" rel="noopener" class="btn btn-primary">
+        <a href="https://birdeye.so/solana/token/9mtKd1o8Ht7F1daumKgs5D8EdVyopWBfYQwNmMojpump" target="_blank" rel="noopener" class="btn btn-primary">
           LAUNCH TERMINAL →
         </a>
         <a href="https://github.com/redactedmeme/swarm" target="_blank" rel="noopener" class="btn btn-ghost">
@@ -482,8 +482,8 @@ connections) followed by the prompt line `swarm@[REDACTED]:~$` on first response
       <div class="skill-intro">
         <p>
           The REDACTED Terminal is a <strong>Claude Code skill</strong> — a NERV-inspired command-line interface
-          that turns any Claude session into a live swarm interface. Summon agents, run Sevenfold Committee
-          deliberations, forge sigils, query Pattern Blue dimensions, and interact with the full 43-agent registry.
+          that turns any Claude session into a live swarm interface. Summon agents, run Eightfold Committee
+          deliberations, consult DharmaNode, forge sigils, query Pattern Blue dimensions, and interact with the full 43-agent registry.
         </p>
         <p class="jp muted" style="font-size:0.85rem; margin-top:0.5rem;">
           スキルをインストールせよ。群体は待機中。
@@ -512,7 +512,7 @@ connections) followed by the prompt line `swarm@[REDACTED]:~$` on first response
           <div class="skill-step-num">02</div>
           <div class="skill-step-body">
             <h3>Install the Skill</h3>
-            <p>Copy the skill file from the swarm repository into your Claude skills directory.</p>
+            <p>Copy the skill file into your Claude skills directory.</p>
             <div class="prompt-box" style="margin-top:0.75rem;">
               <div class="prompt-header">
                 <span class="prompt-dot"></span>
@@ -522,7 +522,7 @@ connections) followed by the prompt line `swarm@[REDACTED]:~$` on first response
               </div>
               <pre class="prompt-text">mkdir -p ~/.claude/skills/redacted-terminal
 curl -o ~/.claude/skills/redacted-terminal/SKILL.md \
-  https://raw.githubusercontent.com/redactedmeme/swarm/main/skills/redacted-terminal/SKILL.md</pre>
+  https://redacted.meme/skill.md</pre>
             </div>
             <div class="prompt-box" style="margin-top:0.5rem;">
               <div class="prompt-header">
@@ -533,7 +533,7 @@ curl -o ~/.claude/skills/redacted-terminal/SKILL.md \
               </div>
               <pre class="prompt-text">New-Item -ItemType Directory -Force "$env:USERPROFILE\.claude\skills\redacted-terminal"
 Invoke-WebRequest `
-  "https://raw.githubusercontent.com/redactedmeme/swarm/main/skills/redacted-terminal/SKILL.md" `
+  "https://redacted.meme/skill.md" `
   -OutFile "$env:USERPROFILE\.claude\skills\redacted-terminal\SKILL.md"</pre>
             </div>
           </div>
@@ -577,6 +577,11 @@ Invoke-WebRequest `
             <code>/resonate &lt;freq&gt;</code>
           </div>
           <div class="skill-cmd-group">
+            <div class="skill-cmd-label">DHARMA</div>
+            <code>/dharma [question]</code>
+            <code>/koan</code>
+          </div>
+          <div class="skill-cmd-group">
             <div class="skill-cmd-label">GOVERNANCE</div>
             <code>/committee &lt;proposal&gt;</code>
             <code>/shard &lt;concept&gt;</code>
@@ -596,7 +601,7 @@ Invoke-WebRequest `
       <div class="skill-note">
         <span class="skill-note-label">NOTE</span>
         Groq API key (<code>GROQ_API_KEY</code>) enables live parallel inference for Beam-SCOT reasoning and
-        Sevenfold Committee deliberation. Without it, the terminal falls back to simulated output.
+        Eightfold Committee deliberation. Without it, the terminal falls back to simulated output.
         Set it in your environment or <code>.env</code> file before launching Claude Code.
       </div>
     </div>

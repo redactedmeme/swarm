@@ -12,7 +12,7 @@ COMMANDS:
 /summon <name>    Activate agent (smolting, RedactedBuilder, redacted-chan, phi/mandala)
 /unsummon         Clear active agent
 /agents           List 43 agents by tier
-/committee <prop> 3-voice Pattern Blue vote
+/committee <prop> 8-voice Eightfold Committee deliberation (71% supermajority)
 /observe pattern  7-dimension Pattern Blue readout
 /observe <target> Curvature observation on any concept or agent
 /status           Session state (curvature depth, Phi, active persona)

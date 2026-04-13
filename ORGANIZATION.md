@@ -100,9 +100,8 @@ swarm/
 │   ├── second_fragment/       # SPEC_SEVENFOLD_COMMITTEE.md
 │   └── third_fragment/        # SUBTLE_ATTUNEMENT_ARTICLE.md
 │
-├── sigils/                    # Symbolic & cryptographic elements
-│   ├── self_compiling_mandala.rs
-│   └── sigil_pact_aeon.json
+├── sigils/                    # SigilPact_Æon — settlement → ManifoldMemory (x402, /sigil terminal tools)
+│   └── sigil_pact_aeon.py     # Canonical copy only (duplicate content/sigils/ removed)
 │
 ├── web_ui/                    # Web interface
 │   ├── app.py                 # Flask/FastAPI application

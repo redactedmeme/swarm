@@ -9,7 +9,9 @@ RUN pip install --no-cache-dir \
     "requests==2.31.0" \
     "python-dotenv==1.0.0" \
     "pyyaml>=6.0" \
-    "APScheduler>=3.10"
+    "APScheduler>=3.10" \
+    "openai>=1.6.1" \
+    "groq>=0.4.0"
 
 COPY . .
 

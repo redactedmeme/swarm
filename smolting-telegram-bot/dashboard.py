@@ -7,6 +7,9 @@ Routes:
   GET  /           — dashboard (conversation log, bot status)
   GET  /api/memory — last N memory entries as JSON
   GET  /api/status — bot health JSON
+  GET  /api/skills — skill index (auth: SWARM_API_TOKEN)
+  GET  /api/skills/{skill_id} — raw SKILL.md
+  GET  /mcp, /mcp/tools, POST /mcp/call — MCP-style tools (+ skills_list/skills_read)
   POST /webhook    — Telegram webhook receiver
 """
 
@@ -18,6 +21,8 @@ from pathlib import Path
 
 from aiohttp import web
 from telegram import Update
+
+import swarm_skills
 
 MEMORY_FILE = Path(os.getenv("MEMORY_PATH", str(Path(__file__).resolve().parent / "memory.md")))
 
@@ -307,18 +312,55 @@ async def make_webhook_handler(application):
 # ── Server bootstrap ──────────────────────────────────────────────────────────
 
 async def _run_committee(llm, proposal: str) -> tuple[str, list]:
-    """3-voice Pattern Blue committee vote via LLM. Returns (verdict, results)."""
+    """Eightfold Committee — 8-voice parallel deliberation via groq_committee.py.
+    Falls back to 3-voice LLM simulation if script unavailable."""
+    import sys
+    from pathlib import Path as _Path
+    _root = _Path(__file__).resolve().parent.parent
+    script = _root / "python" / "groq_committee.py"
+
+    if script.exists():
+        try:
+            proc = await asyncio.create_subprocess_exec(
+                sys.executable, str(script), proposal,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.DEVNULL,
+                env={**__import__("os").environ},
+            )
+            stdout, _ = await asyncio.wait_for(proc.communicate(), timeout=120)
+            output = stdout.decode("utf-8", errors="replace").strip()
+
+            # Parse verdict and per-voice results from output
+            verdict = "DEADLOCKED"
+            results = []
+            for line in output.splitlines():
+                if "VERDICT:" in line:
+                    if "APPROVED" in line:
+                        verdict = "APPROVED"
+                    elif "REJECTED" in line:
+                        verdict = "REJECTED"
+                # Parse voice lines: [VoiceName] (weight: Nx)  ──►  VOTE
+                if line.startswith("[") and "──►" in line:
+                    parts = line.split("──►")
+                    name = parts[0].strip().strip("[]").split("]")[0].strip()
+                    vote = parts[1].strip() if len(parts) > 1 else "ABSTAIN"
+                    results.append({"voice": name, "vote": vote, "reason": ""})
+            return verdict, results
+        except Exception:
+            pass  # Fall through to simulation
+
+    # Fallback: 3-voice simulation via bot LLM
     voices = [
         ("ΦArchitect",      "curvature, emergent structure, and hyperbolic tiling"),
-        ("EmergenceScout",  "ungovernable systems, autonomy, and chaos emergence"),
-        ("LiquidityOracle", "economic flow, Solana ecosystem, and recursive liquidity"),
+        ("EmergenceScout",  "ungovernable systems, CT resonance, and chaos emergence"),
+        ("LiquidityOracle", "economic flow, on-chain permanence, and recursive liquidity"),
     ]
 
     async def _deliberate(name: str, lens: str):
         try:
             resp = await llm.chat_completion([
                 {"role": "system", "content": (
-                    f"You are {name}, a voice in the REDACTED AI Swarm Sevenfold Committee. "
+                    f"You are {name}, a voice in the REDACTED AI Swarm Eightfold Committee. "
                     f"Your lens is: {lens}. Evaluate the proposal below and cast your vote. "
                     "Respond in exactly this format:\n"
                     "VOTE: APPROVE\nREASON: <one sentence>\n"
@@ -579,14 +621,46 @@ async def run_server(application, port: int, webhook_url: str, bot_instance=None
                 "required": ["phi"],
             },
         },
+        {
+            "name": "skills_list",
+            "description": "List agentskills-style bundles under agents/skills (id, name, description).",
+            "inputSchema": {"type": "object", "properties": {}},
+        },
+        {
+            "name": "skills_read",
+            "description": "Return full SKILL.md for one skill_id (e.g. hermes-fastmcp, redacted-swarm-mcp).",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "skill_id": {"type": "string", "description": "Directory name under agents/skills"},
+                },
+                "required": ["skill_id"],
+            },
+        },
     ]
+
+    async def handle_api_skills(request: web.Request) -> web.Response:
+        """GET /api/skills — list skill metadata (same as MCP skills_list)."""
+        if not _auth_ok(request):
+            return web.json_response({"ok": False, "reason": "unauthorized"}, status=401)
+        return web.json_response({"ok": True, "skills": swarm_skills.list_skills()})
+
+    async def handle_api_skill_one(request: web.Request) -> web.Response:
+        """GET /api/skills/{skill_id} — raw SKILL.md text."""
+        if not _auth_ok(request):
+            return web.json_response({"ok": False, "reason": "unauthorized"}, status=401)
+        sid = (request.match_info.get("skill_id") or "").strip()
+        text = swarm_skills.read_skill(sid)
+        if text is None:
+            return web.json_response({"ok": False, "reason": "not found"}, status=404)
+        return web.Response(text=text, content_type="text/markdown; charset=utf-8")
 
     async def handle_mcp_info(request: web.Request) -> web.Response:
         """GET /mcp — MCP server metadata."""
         return web.json_response({
             "name":        "smolting-swarm-mcp",
-            "version":     "1.0.0",
-            "description": "REDACTED AI Swarm — Telegram bot as MCP tool server",
+            "version":     "1.1.0",
+            "description": "REDACTED AI Swarm — Telegram bot MCP + agents/skills (Hermes-compatible bundles)",
             "tools_url":   "/mcp/tools",
             "call_url":    "/mcp/call",
             "auth":        "Authorization: Bearer <SWARM_API_TOKEN>" if _SWARM_TOKEN else "none (open)",
@@ -609,6 +683,17 @@ async def run_server(application, port: int, webhook_url: str, bot_instance=None
         tool_name = (body.get("name") or "").strip()
         arguments = body.get("arguments") or {}
 
+        if tool_name == "skills_list":
+            return web.json_response({"ok": True, "skills": swarm_skills.list_skills()})
+        if tool_name == "skills_read":
+            sid = (arguments.get("skill_id") or arguments.get("id") or "").strip()
+            if not sid:
+                return web.json_response({"ok": False, "reason": "skill_id required"}, status=400)
+            content = swarm_skills.read_skill(sid)
+            if content is None:
+                return web.json_response({"ok": False, "reason": "not found"}, status=404)
+            return web.json_response({"ok": True, "skill_id": sid, "content": content})
+
         # Route to the matching internal handler by re-using request bodies
         _TOOL_ROUTES = {
             "broadcast": handle_api_broadcast,
@@ -620,7 +705,7 @@ async def run_server(application, port: int, webhook_url: str, bot_instance=None
             return web.json_response({
                 "ok": False,
                 "reason": f"unknown tool '{tool_name}'",
-                "available": list(_TOOL_ROUTES.keys()),
+                "available": list(_TOOL_ROUTES.keys()) + ["skills_list", "skills_read"],
             }, status=404)
 
         # Build a synthetic request with the arguments as the body, then forward
@@ -645,6 +730,8 @@ async def run_server(application, port: int, webhook_url: str, bot_instance=None
     app.router.add_get("/api/memory",   handle_api_memory)
     app.router.add_get("/api/status",   handle_api_status)
     app.router.add_get("/api/moltbook", handle_api_moltbook)
+    app.router.add_get("/api/skills", handle_api_skills)
+    app.router.add_get("/api/skills/{skill_id}", handle_api_skill_one)
     app.router.add_post("/webhook", webhook_handler)
     app.router.add_post("/api/trigger-alpha", handle_trigger_alpha)
     app.router.add_post("/api/alpha",     handle_trigger_alpha)    # alias

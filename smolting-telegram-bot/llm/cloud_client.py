@@ -57,7 +57,7 @@ class CloudLLMClient:
     async def _openai_completion(self, messages: list, model: str = None, max_tokens: int = None) -> str:
         """OpenAI GPT completion (also used for xAI/Grok OpenAI-compatible API)"""
         if self.provider == "xai":
-            model = model or os.getenv("XAI_MODEL", "grok-2-latest")
+            model = model or os.getenv("XAI_MODEL", "grok-4-1-fast")
         elif self.provider == "groq":
             model = model or os.getenv("GROQ_MODEL", "llama-3.1-8b-instant")
         elif self.provider == "together":
@@ -145,7 +145,7 @@ class CloudLLMClient:
     def current_model(self) -> str:
         """Return the default model name for the active provider."""
         defaults = {
-            "xai":       os.getenv("XAI_MODEL", "grok-2-latest"),
+            "xai":       os.getenv("XAI_MODEL", "grok-4-1-fast"),
             "groq":      os.getenv("GROQ_MODEL", "llama-3.1-8b-instant"),
             "together":  "Qwen/Qwen2.5-7B-Instruct-Turbo",
             "openai":    "gpt-3.5-turbo",

@@ -1480,6 +1480,31 @@ def dispatch(cmd: str) -> Optional[str]:
             f"  Usage: /govimprove [status | propose <initiative> | leaderboard | pnl | x-content <topic>]"
         )
 
+    # ── /status — REDACTED Swarm runtime status & Φ approximation ──────────────
+    if verb == '/status':
+        try:
+            # Call status() function from module globals (defined later in file)
+            stat_fn = globals().get('status')
+            if callable(stat_fn):
+                stat = stat_fn()
+            else:
+                stat = {}
+            phi_val = stat.get("phi_approx")
+            phi_str = f"{phi_val}" if phi_val is not None else "null (kernel unavailable)"
+
+            lines = [
+                "[TOOL:status] REDACTED Swarm Status",
+                f"  Phi (approx)    : {phi_str}",
+                f"  kernel_vitality : {stat.get('kernel_vitality', 'N/A')}",
+                f"  kernel_tiles    : {stat.get('kernel_tiles', '?')}",
+                f"  mcp             : {'yes' if stat.get('mcp') else 'no'}",
+                f"  analytics       : {'yes' if stat.get('analytics') else 'no'}",
+                f"  clawnx (tweets) : {'yes' if stat.get('clawnx') else 'no'}",
+            ]
+            return "\n".join(lines)
+        except Exception as e:
+            return f"[TOOL ERROR] status: {e}"
+
     # Not a tool command — return None to pass through to LLM
     return None
 

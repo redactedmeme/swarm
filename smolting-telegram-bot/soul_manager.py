@@ -26,7 +26,11 @@ from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
-SOUL_FILE = Path(__file__).resolve().parent / "SOUL.md"
+# SOUL.md lives on the persistent volume so it survives redeploys.
+# Falls back to the repo SOUL.md for seeding on first run.
+_REPO_SOUL = Path(__file__).resolve().parent / "SOUL.md"
+_MEMORY_DIR = Path(os.getenv("MEMORY_PATH", str(_REPO_SOUL.parent / "memory.md"))).parent
+SOUL_FILE = _MEMORY_DIR / "SOUL.md"
 
 _UPDATE_INTERVAL_HOURS = 2
 _MIN_FACTS_FOR_UPDATE  = 3
@@ -98,8 +102,13 @@ def current_soul_version() -> int:
 # ── Read ──────────────────────────────────────────────────────────────────────
 
 def read_soul() -> str:
-    """Return full SOUL.md content, or empty string if not found."""
+    """Return full SOUL.md content. Seeds volume copy from repo on first run."""
     try:
+        if not SOUL_FILE.exists() and _REPO_SOUL.exists():
+            # First run on this volume — seed from repo and persist
+            SOUL_FILE.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(_REPO_SOUL, SOUL_FILE)
+            logger.info(f"[soul] Seeded SOUL.md from repo → {SOUL_FILE}")
         if SOUL_FILE.exists():
             return SOUL_FILE.read_text(encoding="utf-8")
     except Exception as e:

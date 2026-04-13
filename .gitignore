@@ -23,9 +23,19 @@ build/
 
 # ── Runtime / generated state (not source) ────────────────────────────────────
 fs/memories/           # Qdrant vector store + mem0 SQLite (large, machine-local)
-fs/sessions/           # Ephemeral session JSON (regenerated on each run)
+fs/sessions/           # Ephemeral session JSON (python/session_store.py, web UI)
+fs/swarm_messages/     # File inbox between agents (swarm_inbox, hermes, smolting)
 fs/gnosis_repo_index.json  # Auto-generated repo scan index
 fs/docs_index.json         # Auto-generated docs ingest index
+fs/clawtask_dispatch_results.json   # hermes_delegation_executor / clawtask aggregator output
+fs/pattern_blue_state.json          # Live Pattern Blue cycle state (dashboard, executor)
+fs/kernel_state.json                # Hyperbolic kernel ticks (kernel_seed, phi_compute)
+
+# Same runtime layout when smolting uses ./fs (Railway rootDirectory = smolting-telegram-bot/)
+smolting-telegram-bot/fs/swarm_messages/
+smolting-telegram-bot/fs/clawtask_dispatch_results.json
+smolting-telegram-bot/fs/pattern_blue_state.json
+smolting-telegram-bot/fs/kernel_state.json
 
 # Keep smolting logs (seed data for GnosisAccelerator)
 !fs/logs/
@@ -62,3 +72,7 @@ smolting-telegram-bot/bot_audit.log.bak
 # ── Misc ──────────────────────────────────────────────────────────────────────
 *.tmp
 *.bak
+
+# ── Repo root: ephemeral / one-off (not source) ───────────────────────────────
+.session_state.json
+delegation_dispatch.log
