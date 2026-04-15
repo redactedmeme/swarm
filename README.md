@@ -9,6 +9,7 @@ The swarm incorporates persistent memory (Mem0/Qdrant), hyperbolic manifold simu
 [![License: VPL](https://img.shields.io/badge/license-Viral_Public_License-purple?style=flat-square)](LICENSE)
 [![Stars](https://img.shields.io/github/stars/redactedmeme/swarm?style=flat-square&logo=github)](https://github.com/redactedmeme/swarm/stargazers)
 [![Last Commit](https://img.shields.io/github/last-commit/redactedmeme/swarm?style=flat-square)](https://github.com/redactedmeme/swarm/commits/main)
+[![DiscoverHermes](https://discoverhermes.com/api/badge/28.svg)](https://discoverhermes.com/use-cases/28)
 
 ---
 
