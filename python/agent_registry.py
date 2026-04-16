@@ -38,6 +38,8 @@ _SPECIALIZED_NAMES = {
     "gnosis", "voidweaver",
     # Canonical archetypes (consolidated from duplicates)
     "swarmarchivist", "swarmcartographer", "swarmscribe", "swarmweaver", "swarmwarden",
+    # Capital allocator / degen fund manager
+    "degen",
 }
 
 # Lore-only agents: ambient texture, no tool access, no curvature contribution.
