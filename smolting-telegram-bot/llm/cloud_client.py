@@ -13,13 +13,14 @@ ALPHA_XAI_BASE  = "https://api.x.ai/v1"
 class CloudLLMClient:
     """Cloud LLM client supporting multiple providers (OpenAI, Anthropic, Together, xAI/Grok)"""
 
-    def __init__(self):
-        self.provider = os.getenv("LLM_PROVIDER", "openai").lower()  # openai, anthropic, together, xai, grok, groq
+    def __init__(self, provider: str = None, max_tokens: int = None, temperature: float = 0.7):
+        self.provider = (provider or os.getenv("LLM_PROVIDER", "groq")).lower()
         if self.provider == "grok":
-            self.provider = "xai"  # grok uses xAI API
+            self.provider = "xai"
+        self._default_max_tokens = max_tokens
+        self._default_temperature = temperature
         self.api_key = self._get_api_key()
         self.base_url = self._get_base_url()
-        # xAI key for alpha — may differ from default provider key
         self._xai_key = os.getenv("XAI_API_KEY", "")
 
     def _get_api_key(self) -> str:
@@ -46,7 +47,7 @@ class CloudLLMClient:
     
     async def chat_completion(self, messages: list, model: str = None, max_tokens: int = None) -> str:
         """Chat completion with cloud LLM"""
-
+        max_tokens = max_tokens or self._default_max_tokens
         if self.provider in ("openai", "xai", "groq", "together"):
             return await self._openai_completion(messages, model, max_tokens=max_tokens)
         elif self.provider == "anthropic":
