@@ -11,7 +11,8 @@ RUN pip install --no-cache-dir \
     "pyyaml>=6.0" \
     "APScheduler>=3.10" \
     "openai>=1.6.1" \
-    "groq>=0.4.0"
+    "groq>=0.4.0" \
+    "redis>=5.0.0"
 
 COPY . .
 
