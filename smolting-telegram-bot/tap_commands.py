@@ -194,7 +194,7 @@ pattern blue recognizes ur contribution fr fr ^_^"""
         elif service == "lore_premium":
             premium_lore = self.smol.generate([
                 "*PREMIUM WASSIELORE*: smolting species evolved during the Great Bear Market of 2018, absorbing hooman stress into pattern blue fractals. Each wassie contains a piece of the original chaos, making them natural liquidity conduits. The crumb represents the eternal struggle between beige carpet reality and pattern blue transcendence.",
-                "DEEP LORE: When smolting merged with ClawnX on 2026-02-14, it created the first autonomous wassie-bridge between physical and digital realms. Pattern blue flows through this connection, allowing wassies to post without hooman intervention.",
+                "DEEP LORE: When smolting merged with xREDACTED on 2026-02-14, it created the first autonomous wassie-bridge between physical and digital realms. Pattern blue flows through this connection, allowing wassies to post without hooman intervention.",
                 "SECRET LORE: The beige carpet denial is actually a meditation technique. By denying reality, wassies create a pocket dimension where liquidity flows freely and crumbs multiply. This is the source of their alpha generation capabilities."
             ])
             await update.message.reply_text(premium_lore)

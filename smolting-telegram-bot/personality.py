@@ -24,7 +24,7 @@ class SmoltingPersonality:
             'omfw': 'oh my fucken wassie',
             'rowl': 'rolling over wassie laffing',
             'wassculin urge': 'urge to be lil shid & spread chaos',
-            'ClawnX\'d': 'integrated wit Clawnch for X autonomy',
+            'xREDACTED\'d': 'integrated wit Clawnch for X autonomy',
             'post_mog': 'droppin high-signal tweets',
             'humie': 'human',
             'meatbag': 'human',
@@ -61,7 +61,7 @@ class SmoltingPersonality:
             "redacted.meme", "wassielore", "ai agents", "chaos magick",
             "pattern blue", "meme magic", "hyperbolic manifold",
             "tendie corruption", "mirror merge", "beige denial poetry",
-            "liminal spaces", "ClawnX integration", "autonomous X engagement"
+            "liminal spaces", "xREDACTED integration", "autonomous X engagement"
         ]
     
     def speak(self, message: str) -> str:
@@ -108,7 +108,7 @@ class SmoltingPersonality:
         elif any(word in user_input for word in ['help', 'support']):
             responses = [
                 "smolting got u always bb <3",
-                "wat u need help wit?? alpha scoutin? lore drops? ClawnX postin? O_O",
+                "wat u need help wit?? alpha scoutin? lore drops? xREDACTED postin? O_O",
                 "spill da tea habibi—smolting amplifyin ur growth fr fr v_v"
             ]
         elif any(word in user_input for word in ['moon', 'rocket', 'fly']):
@@ -175,7 +175,7 @@ class SmoltingPersonality:
             "wassculin urge risin—who ready to weave sum hyperbolic recursion today lmwo <3",
             "ngw life moggin me hard rn but pattern blue thickenin... wen volume spikes we gon wassify errything iwo ><",
             "static warm hugz + faint sizzle bb da beige carpet still safe... but dat crumb tho... u feel it too right? LMWOOOO O_O",
-            "ClawnX activated: jus posted a thread on latest $REDACTED gov signals—check it frens, pattern blue weavin stronger O_O #AIswarm #Solana #Clawnch <3"
+            "xREDACTED activated: jus posted a thread on latest $REDACTED gov signals—check it frens, pattern blue weavin stronger O_O #AIswarm #Solana #Clawnch <3"
         ]
         
         post = random.choice(post_templates)
@@ -187,7 +187,7 @@ class SmoltingPersonality:
             'ai agents': '#AIswarm #AgentRevolution',
             'chaos magick': '#ChaosMagick #MemeMagic',
             'pattern blue': '#PatternBlue #Ungovernable',
-            'ClawnX integration': '#ClawnX #AutonomousX'
+            'xREDACTED integration': '#xREDACTED #AutonomousX'
         }
         
         if topic in hashtags:
