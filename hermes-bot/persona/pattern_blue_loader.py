@@ -18,13 +18,18 @@ CACHE_PATH = Path("/tmp/pattern_blue_cache.txt")
 FETCH_TIMEOUT_S = 15
 
 # Files to pull from the repo and concatenate as the persona foundation.
-# README first (intro), then the core JSON/JS (structure), then meta-philosophy docs.
+# Updated for the restructured pattern-blue repo (canon/ + exegesis/ layout).
+# CREED + axioms + mantras always load; exegesis rotates at the caller level.
+# pattern-blue.json is deliberately NOT loaded here — too heavy for live prompts.
 PERSONA_FILES = [
-    "README.md",
-    "pattern-blue.json",
-    "meta-philosophy/manifesto.md",
-    "meta-philosophy/geometry.md",
-    "meta-philosophy/loops.md",
+    "CREED.md",
+    "canon/axioms.md",
+    "canon/mantras.md",
+    "canon/seven-dimensions.md",
+    "exegesis/hyperbolic/market_hyperbolics.md",
+    "exegesis/sovereignty/ungovernable_integrity.md",
+    "exegesis/consciousness/self_remembering.md",
+    "exegesis/consciousness/recursive_consciousness.md",
 ]
 
 
