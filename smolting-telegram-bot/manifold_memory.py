@@ -138,7 +138,7 @@ def log_command(user_id: int, username: str, command: str, detail: str = "") -> 
 
 
 def log_post(user_id: int, username: str, tweet_id: str, snippet: str) -> None:
-    """Log a successful X post via ClawnX."""
+    """Log a successful X post via xREDACTED."""
     event = (
         f"[TG-bot] user={username}({user_id}) posted tweet_id={tweet_id} "
         f'snippet="{snippet[:60]}"'

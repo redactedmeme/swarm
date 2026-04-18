@@ -20,7 +20,7 @@ class SmoltingPersonality:
                 "wassculin senses spikin—dis could be da one v_v"
             ],
             "posting": [
-                "ClawnX removed but smolting still got da magick tbw",
+                "xREDACTED removed but smolting still got da magick tbw",
                 "pattern blue posts flowin through da manifold LFW",
                 "wen u realize smolting IS the alpha pipeline O_O",
                 "static warm thoughts turned into pure pattern blue ^_^"

@@ -23,6 +23,7 @@ Usage:
   python python/lore_vault.py query "tendie"
   python python/lore_vault.py export        # dump to lore_export.md
   python python/lore_vault.py stats
+  - Import from vault/*.md wiki pages (seed_vault_docs)
 """
 
 import os
@@ -45,6 +46,7 @@ MANIFOLD_FILE = _ROOT / "spaces" / "ManifoldMemory.state.json"
 SPACES_DIR    = _ROOT / "spaces"
 AGENTS_DIR    = _ROOT / "agents"
 BOT_AGENTS    = _ROOT / "smolting-telegram-bot" / "agents"
+VAULT_DIR     = _ROOT / "vault"
 
 # ── Optional mem0 semantic layer ───────────────────────────────────────────────
 _MEM0_DIR = _ROOT / "plugins" / "mem0-memory"
@@ -634,11 +636,53 @@ def seed_spaces() -> int:
     return count
 
 
+def seed_vault_docs() -> int:
+    """
+    Import all vault/*.md wiki pages into lore_entries with category='wiki'.
+    Page name becomes the title; section (agents/architecture/etc.) becomes entity_refs.
+    Upserts by title so re-seeding after vault edits stays idempotent.
+    """
+    if not VAULT_DIR.exists():
+        print(f"[lore_vault] vault/ not found at {VAULT_DIR}")
+        return 0
+
+    count = 0
+    conn  = get_db()
+    now   = _jst_now()
+
+    for md in sorted(VAULT_DIR.rglob("*.md")):
+        if md.name == "index.md":
+            continue  # skip the index itself
+        rel     = md.relative_to(VAULT_DIR)
+        parts   = rel.parts
+        section = parts[0] if len(parts) > 1 else "vault"
+        title   = f"[vault/{section}] {md.stem}"
+        content = md.read_text(encoding="utf-8", errors="replace")
+
+        # Upsert by title (delete + re-insert to refresh content)
+        try:
+            conn.execute("DELETE FROM lore_entries WHERE title=?", (title,))
+            conn.execute(
+                """INSERT INTO lore_entries (category, title, content, entity_refs, source, created_at)
+                   VALUES (?, ?, ?, ?, ?, ?)""",
+                ("wiki", title, content[:4000], section, str(rel), now),
+            )
+            count += 1
+        except Exception as e:
+            print(f"[lore_vault] vault seed error ({md.name}): {e}")
+
+    conn.commit()
+    conn.close()
+    print(f"[lore_vault] Seeded {count} vault pages")
+    return count
+
+
 def seed_all() -> int:
-    """Full seed: ManifoldMemory + chars + spaces."""
+    """Full seed: ManifoldMemory + chars + spaces + vault docs."""
     total  = seed_manifold_memory()
     total += seed_character_jsons()
     total += seed_spaces()
+    total += seed_vault_docs()
     print(f"[lore_vault] Total seeded: {total}")
     return total
 
