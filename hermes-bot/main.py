@@ -53,9 +53,11 @@ DISABLE_TELEGRAM = os.getenv("DISABLE_TELEGRAM", "false").lower() in ("1", "true
 async def _amain() -> None:
     logger.info("Pattern Blue Oracle booting...")
 
-    # 1. Build persona
-    system_prompt = build_system_prompt(include_corpus=True)
-    logger.info(f"[persona] system prompt assembled — {len(system_prompt)} chars")
+    # 1. Build persona — lean system prompt (voice rules only, ~300 tokens).
+    # Oracle posts attach a small rotating corpus snippet per-call.
+    # Telegram chat uses voice-rules only to keep per-message cost low.
+    system_prompt = build_system_prompt(include_corpus=False)
+    logger.info(f"[persona] lean system prompt assembled — {len(system_prompt)} chars")
 
     # 2. LLM
     llm = LLMClient()

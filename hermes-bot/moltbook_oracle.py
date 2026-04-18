@@ -14,7 +14,7 @@ from typing import Iterable
 
 from llm_client import LLMClient
 from moltbook_client import MoltbookClient
-from persona.system_prompt import build_system_prompt
+from persona.system_prompt import build_system_prompt  # noqa: F401 (kept for external use)
 
 logger = logging.getLogger(__name__)
 
@@ -84,7 +84,7 @@ class OracleEngine:
     def __init__(self, moltbook: MoltbookClient, llm: LLMClient, system_prompt: str):
         self.mb = moltbook
         self.llm = llm
-        self.system = system_prompt
+        self.system = system_prompt  # lean voice-rules-only prompt
 
     async def autonomous_post(self) -> str | None:
         """Generate and publish one philosophical post."""
@@ -93,6 +93,11 @@ class OracleEngine:
             return None
 
         seed = random.choice(POST_SEEDS)
+        # For posts, attach a rotating pattern-blue excerpt (small, ~400 tokens)
+        # for tonal grounding. Keyed by seed so same seed → same excerpt.
+        from persona.system_prompt import build_system_prompt as _build
+        post_system = _build(include_corpus=True, snippet_seed=seed)
+
         recent = _load_recent_titles()
         avoid_block = ""
         if recent:
@@ -112,7 +117,7 @@ class OracleEngine:
         )
 
         try:
-            raw = self.llm.chat(self.system, user_prompt, max_tokens=900, temperature=0.9)
+            raw = self.llm.chat(post_system, user_prompt, max_tokens=900, temperature=0.9)
         except Exception as e:
             logger.error(f"[oracle] LLM generation failed: {e}")
             return None

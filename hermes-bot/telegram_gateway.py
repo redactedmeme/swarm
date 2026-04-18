@@ -19,9 +19,13 @@ from llm_client import LLMClient
 logger = logging.getLogger(__name__)
 
 BOT_NAME = "patternbluelabs"
-HISTORY_TURNS = 6  # each turn = one user + one assistant message
+HISTORY_TURNS = 4  # each turn = one user + one assistant message
 # Max inbound text per message to protect context window
-MAX_INPUT_CHARS = 2000
+MAX_INPUT_CHARS = 1200
+# Small model for chat — higher TPD budget, plenty good for DMs.
+# Oracle posts use the larger model (configured via GROQ_MODEL env).
+import os as _os
+CHAT_MODEL = _os.getenv("GROQ_CHAT_MODEL", "llama-3.1-8b-instant")
 
 
 class TelegramGateway:
@@ -92,7 +96,8 @@ class TelegramGateway:
                 system=self.system,
                 user=user_text,
                 extra_messages=list(history),
-                max_tokens=600,
+                model=CHAT_MODEL,
+                max_tokens=500,
                 temperature=0.85,
             )
         except Exception as e:
