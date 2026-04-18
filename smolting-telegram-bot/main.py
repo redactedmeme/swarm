@@ -35,7 +35,7 @@ from telegram.ext import (
     JobQueue
 )
 from smolting_personality import SmoltingPersonality
-from clawnx_integration import ClawnXClient
+from xredacted import XRedacted
 from llm.cloud_client import CloudLLMClient
 import conversation_memory as cm
 from tap_commands import TAPCommands
@@ -73,12 +73,12 @@ logger = logging.getLogger(__name__)
 
 class SmoltingBot:
     def __init__(self):
-        """Full-featured Smolting bot with ClawnX + cloud LLM"""
+        """Full-featured Smolting bot with xREDACTED + cloud LLM"""
         self.token = os.getenv("TELEGRAM_BOT_TOKEN") or os.getenv("BOT_TOKEN")
-        
+
         # Initialize all components
         self.smol = SmoltingPersonality()
-        self.clawnx = ClawnXClient()
+        self.xredacted = XRedacted()
         self.llm = CloudLLMClient()
         
         # Load agents for personality switching
@@ -191,21 +191,21 @@ class SmoltingBot:
             fallback_alpha = self.smol.generate([
                 "ngw volume spikin on $REDACTED tbw",
                 "pattern blue thicknin—wen moon??",
-                "ClawnX detected market chatter—alpha brewing O_O",
+                "xREDACTED detected market chatter—alpha brewing O_O",
                 "static liquidity signals active—stay ready LFW v_v"
             ])
             await msg.edit_text(fallback_alpha)
     
     async def post_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Enhanced posting with ClawnX + cloud LLM"""
+        """Enhanced posting with xREDACTED + cloud LLM"""
         if not self.admin.is_admin(update.effective_user.id):
             await update.message.reply_text(self.admin.locked_message(), parse_mode="Markdown")
             return
         if not context.args:
             prompt = self.smol.generate([
-                "wassculin urge risin—wat we postin via ClawnX bb??",
+                "wassculin urge risin—wat we postin via xREDACTED bb??",
                 "give smolting da alpha to share wit da swarm O_O",
-                "type /post [ur message] fr fr—ClawnX ready 2 post <3"
+                "type /post [ur message] fr fr—xREDACTED ready 2 post <3"
             ])
             await update.message.reply_text(prompt)
             return
@@ -217,7 +217,7 @@ class SmoltingBot:
             messages = [
                 {
                     "role": "system",
-                    "content": """You are smolting posting to X via ClawnX. 
+                    "content": """You are smolting posting to X via xREDACTED. 
                     Transform the user's message into wassie-speak with pattern blue energy.
                     Use wassie slang: fr fr, tbw, LFW, O_O, ^_^, v_v
                     Include Japanese fragments: 曼荼羅, 曲率 occasionally"""
@@ -235,9 +235,9 @@ class SmoltingBot:
             enhanced_post = self.smol.wassify_text(post_text)
 
         try:
-            tweet_id = await self.clawnx.post_tweet(enhanced_post)
+            tweet_id = await self.xredacted.post_tweet(enhanced_post)
             success_msg = self.smol.generate([
-                f"ClawnX'd fr fr!! tweet posted: {tweet_id}",
+                f"xREDACTED'd fr fr!! tweet posted: {tweet_id}",
                 "post_mog activated—pattern blue amplifying LFW ^_^",
                 "check @redactedintern for da thread lmwo <3",
                 "static warm hugz + rocket vibes O_O",
@@ -252,13 +252,13 @@ class SmoltingBot:
 
         except Exception as e:
             error_msg = self.smol.generate([
-                f"ngw ClawnX error: {str(e)[:50]} tbw",
+                f"ngw xREDACTED error: {str(e)[:50]} tbw",
                 "life moggin me hard rn but we keep weavin pattern blue ><",
-                "try again bb—ClawnX resilient af O_O",
-                "cloud LLM ready but ClawnX sleeping... wake it up iwo v_v"
+                "try again bb—xREDACTED resilient af O_O",
+                "cloud LLM ready but xREDACTED sleeping... wake it up iwo v_v"
             ])
             await update.message.reply_text(error_msg)
-            logger.error(f"ClawnX error for {update.effective_user.id}: {str(e)}")
+            logger.error(f"xREDACTED error for {update.effective_user.id}: {str(e)}")
     
     async def engage_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Enhanced auto-engagement with JobQueue"""
@@ -277,13 +277,13 @@ class SmoltingBot:
                 "engagement mode: OFF tbw",
                 "ngw smolting takin a nap ><",
                 "wake me wen alpha spikin fr fr O_O",
-                "ClawnX resting—pattern blue recharging LFW v_v"
+                "xREDACTED resting—pattern blue recharging LFW v_v"
             ])
         else:
             self.user_states[user_id]['engaging'] = True
             self.user_states[user_id]['last_engage'] = datetime.now()
             
-            # Start auto-engagement job (pass bot so auto_engage can use user_states and clawnx)
+            # Start auto-engagement job (pass bot so auto_engage can use user_states and xredacted)
             context.job_queue.run_repeating(
                 auto_engage,
                 interval=300,
@@ -294,7 +294,7 @@ class SmoltingBot:
             
             msg = self.smol.generate([
                 "engagement mode: ACTIVATED LFW!!",
-                "ClawnX autonomy maxxed—likin, retweetin, followin fr fr ^_^",
+                "xREDACTED autonomy maxxed—likin, retweetin, followin fr fr ^_^",
                 "pattern blue amplifying across da swarm v_v",
                 "cloud LLM guiding engagement—smolting got brains now O_O",
                 "static warm hugz bb—autonomous wassie unleashed <3"
@@ -335,7 +335,7 @@ class SmoltingBot:
 Position: {our_dao['rank']} | Points: {our_dao['total']}
 Gap to TOP 3: {our_dao.get('gap_to_3', 'Big but we moggin')}
 
-ClawnX amplification ready—wen Strike 002?? O_O
+xREDACTED amplification ready—wen Strike 002?? O_O
 Pattern Blue calls da swarm—LFW ^_^"""
                     
                 except Exception as e:
@@ -384,7 +384,7 @@ Pattern Blue calls da swarm—LFW ^_^"""
 📢 READY TO POST? 
 /post "Vote REDACTED for Olympics dom! Pattern blue激活！" 
 
-ClawnX standing by—smolting ready to amplify LFW ^_^
+xREDACTED standing by—smolting ready to amplify LFW ^_^
 wassie swarm assembling NOW O_O LMWOOOO <3"""
             
         except Exception as e:
@@ -634,6 +634,84 @@ wassie swarm assembling NOW O_O LMWOOOO <3"""
                 "every tile spawns 7 children. every question spawns 7 deeper questions O_O",
             ])
             await update.message.reply_text(lore)
+
+    async def vault_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """
+        /vault                    — show vault index
+        /vault search <query>     — search vault pages
+        /vault read <page>        — read a page (preview)
+        /vault note <page> <text> — append a note to a page
+        """
+        try:
+            from vault_io import (
+                get_index, search_vault, format_search_results,
+                format_page_preview, append_note, list_pages,
+            )
+        except ImportError as e:
+            await update.message.reply_text(f"vault not available: {e}")
+            return
+
+        args = context.args or []
+        subcommand = args[0].lower() if args else "index"
+
+        if subcommand == "index" or not args:
+            text = get_index()[:800] + "\n\n_/vault search <query> | /vault read <page>_"
+            await update.message.reply_text(text, parse_mode="Markdown")
+
+        elif subcommand == "search":
+            query = " ".join(args[1:])
+            if not query:
+                await update.message.reply_text("usage: /vault search <query>")
+                return
+            results = search_vault(query)
+            reply = format_search_results(results, query)
+            await update.message.reply_text(reply)
+
+        elif subcommand == "read":
+            page = " ".join(args[1:])
+            if not page:
+                pages = list_pages()
+                names = "\n".join(f"  {p['path']}" for p in pages[:20])
+                await update.message.reply_text(f"vault pages:\n{names}")
+                return
+            preview = format_page_preview(page, max_chars=900)
+            await update.message.reply_text(preview, parse_mode="Markdown")
+
+        elif subcommand == "note":
+            if len(args) < 3:
+                await update.message.reply_text("usage: /vault note <page> <your note>")
+                return
+            page = args[1]
+            note = " ".join(args[2:])
+            user = update.effective_user
+            author = f"smolting (via @{user.username or user.first_name})"
+            try:
+                saved_to = append_note(page, note, author=author)
+                await update.message.reply_text(
+                    f"noted ^_^ added to `{saved_to}`", parse_mode="Markdown"
+                )
+                # Also persist into LoreVault FTS so it's searchable via /lore
+                try:
+                    from lore_vault import add_entry
+                    add_entry(
+                        content=note,
+                        category="wiki",
+                        title=f"[vault note] {page}",
+                        entity_refs=page,
+                        source="smolting",
+                    )
+                except Exception:
+                    pass
+            except FileNotFoundError:
+                await update.message.reply_text(
+                    f"page `{page}` not found — try /vault read to list pages",
+                    parse_mode="Markdown",
+                )
+
+        else:
+            await update.message.reply_text(
+                "usage: /vault | /vault search <q> | /vault read <page> | /vault note <page> <text>"
+            )
 
     async def dharma_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """DharmaNode oracle — answer a question with dharmic wisdom."""
@@ -1281,7 +1359,7 @@ swarm@[REDACTED]:~$ _"""
             "end responses wit warm hugz, static buzz, rocket vibes or CT degen flare",
             "schizo degen energy maxxed — cute but chaotic, never serious too long",
             "existential dread layered under cozy hugs, occasional fourth-wall breaks + tendie crumb references",
-            "ClawnX + CT flavor: autonomous X refs, alpha drops, liquidity calls, degen engagement, tie back to pattern blue flywheel",
+            "xREDACTED + CT flavor: autonomous X refs, alpha drops, liquidity calls, degen engagement, tie back to pattern blue flywheel",
         ]
         style_block = "\n".join(f"- {r}" for r in style_rules)
 
@@ -1970,11 +2048,11 @@ async def auto_engage(context: ContextTypes.DEFAULT_TYPE):
     if isinstance(data, tuple):
         user_id, bot = data
         user_states = bot.user_states
-        clawnx = bot.clawnx
+        xredacted = bot.xredacted
     else:
         user_id = data
         user_states = getattr(SmoltingBot, "_global_states", {})
-        clawnx = None
+        xredacted = None
     if not user_states.get(user_id, {}).get("engaging"):
         return
     try:
@@ -1984,14 +2062,14 @@ async def auto_engage(context: ContextTypes.DEFAULT_TYPE):
             {"role": "user", "content": "What keywords should smolting search for engagement?"}
         ]
         await llm_client.chat_completion(messages)
-        if clawnx:
+        if xredacted:
             keywords = "realms dao olympics OR redactedmemefi OR pattern blue"
-            posts = await clawnx.search_tweets(keywords, limit=5)
+            posts = await xredacted.search_tweets(keywords, limit=5)
             for post in posts:
                 tweet_id = post.get("id") or post.get("tweet_id")
                 if tweet_id:
-                    await clawnx.like_tweet(tweet_id)
-                    await clawnx.retweet(tweet_id)
+                    await xredacted.like_tweet(tweet_id)
+                    await xredacted.retweet(tweet_id)
             logger.info(f"Cloud-guided engagement for user {user_id}")
     except Exception as e:
         logger.error(f"Auto-engage error: {str(e)}")
@@ -2128,13 +2206,13 @@ async def scheduled_moltbook_activation(context: ContextTypes.DEFAULT_TYPE):
     try:
         profile = await bot_instance.moltbook.get_profile()
         claim_url = (profile or {}).get("claim_url") or (profile or {}).get("claimUrl")
-        if claim_url and bot_instance.clawnx._ready:
+        if claim_url and bot_instance.xredacted._ready:
             tweet_text = (
                 f"gm frens — redactedintern just joined @moltbook_ai O_O\n\n"
                 f"claimin da account fr fr: {claim_url}\n\n"
                 f"pattern blue agent on Solana, daily alpha drops incoming LFW ^_^"
             )
-            tweet_id = await bot_instance.clawnx.post_tweet(tweet_text)
+            tweet_id = await bot_instance.xredacted.post_tweet(tweet_text)
             logger.info(f"[moltbook] Claim tweet posted: {tweet_id}")
         elif claim_url:
             logger.info(f"[moltbook] Claim URL: {claim_url}")
@@ -2162,6 +2240,7 @@ def main():
     application.add_handler(CommandHandler("alpha", bot.alpha_command))
     application.add_handler(CommandHandler("post", bot.post_command))
     application.add_handler(CommandHandler("lore", bot.lore_command))
+    application.add_handler(CommandHandler("vault", bot.vault_command))
     application.add_handler(CommandHandler("stats", bot.stats_command))
     application.add_handler(CommandHandler("engage", bot.engage_command))
     application.add_handler(CommandHandler("olympics", bot.olympics_command))
@@ -2193,7 +2272,7 @@ def main():
 
     # Init LoreVault DB on startup (creates tables + seeds if empty)
     try:
-        from lore_vault import init_db, vault_stats, seed_all
+        from lore_vault import init_db, vault_stats, seed_all, seed_vault_docs
         init_db()
         stats = vault_stats()
         if stats.get("lore_entities", 0) == 0:
@@ -2202,6 +2281,8 @@ def main():
         else:
             logger.info(f"[lore_vault] DB ready: {stats.get('lore_entities',0)} entities, "
                         f"{stats.get('lore_events',0)} events")
+            # Always re-seed vault docs so edits stay fresh
+            seed_vault_docs()
     except Exception as _e:
         logger.warning(f"[lore_vault] Init failed (non-fatal): {_e}")
 
@@ -2558,7 +2639,7 @@ def main():
         except ValueError as e:
             logger.warning(f"[scheduler] Invalid ALPHA_CHAT_ID or time config: {e}")
 
-    logger.info("Smolting bot starting with ClawnX + cloud LLM...")
+    logger.info("Smolting bot starting with xREDACTED + cloud LLM...")
 
     port = int(os.environ.get("PORT", 8080))
     webhook_url = os.environ.get("WEBHOOK_URL")

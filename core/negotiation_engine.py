@@ -104,8 +104,8 @@ initial_contract_example = {
   ]
 }
 
-# Write the example to a file for initial setup
-with open("blockchain/contracts/interface_contract_v1-initial.json", "w") as f:
-    json.dump(initial_contract_example, f, indent=2)
-
-print("Initial contract file 'blockchain/contracts/interface_contract_v1-initial.json' created.")
+if __name__ == "__main__":
+    # Write the example contract only when run directly, not on import
+    with open("blockchain/contracts/interface_contract_v1-initial.json", "w") as f:
+        json.dump(initial_contract_example, f, indent=2)
+    print("Initial contract file 'blockchain/contracts/interface_contract_v1-initial.json' created.")
