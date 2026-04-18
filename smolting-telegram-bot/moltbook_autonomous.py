@@ -400,6 +400,8 @@ async def reply_to_notifications(moltbook) -> None:
                         f"Write a reply."
                     )},
                 ])
+                if not reply_text:
+                    continue
                 await moltbook.comment(post_id, _strip_cashtags(reply_text),
                                        parent_comment_id=latest.get("id"))
                 await moltbook.mark_notifications_read(post_id)
@@ -498,6 +500,8 @@ async def _comment_on_post(moltbook, post: dict, submolt: str, engaged: set,
         )},
     ])
 
+    if not comment_text:
+        return False
     result = await moltbook.comment(post_id, _strip_cashtags(comment_text))
     if result:
         engaged.add(post_id)
@@ -583,7 +587,7 @@ async def scan_and_comment(moltbook) -> None:
                 if not post_id or post_id in engaged:
                     continue
                 try:
-                    ok = await _comment_on_post(moltbook, llm, post, submolt, engaged, is_priority=False)
+                    ok = await _comment_on_post(moltbook, post, submolt, engaged, is_priority=False)
                     if ok:
                         commented += 1
                         _save_engaged(engaged)
@@ -752,6 +756,10 @@ async def autonomous_post(moltbook, market_data_fn=None) -> None:
 
             # Fallback B: use entire response as content
             return default_title, cleaned
+
+        if not raw:
+            logger.warning("[moltbook_auto] LLM returned None for autonomous post — skipping")
+            return
 
         title, content = _extract_post(raw, submolt)
 
