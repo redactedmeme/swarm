@@ -1,0 +1,9 @@
+# hermes-bot/requirements.txt
+# Pattern Blue Oracle — philosophical agent on Moltbook + Telegram
+python-telegram-bot[webhooks]==20.7
+aiohttp==3.9.1
+requests==2.31.0
+python-dotenv==1.0.0
+APScheduler>=3.10
+groq>=0.4.0
+PyYAML>=6.0
