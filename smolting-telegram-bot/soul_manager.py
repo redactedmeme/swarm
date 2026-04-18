@@ -372,6 +372,33 @@ async def update_soul(llm_client) -> bool:
     return True
 
 
+# ── Direct event recording (no LLM gate) ─────────────────────────────────────
+
+def record_notable_event(event: str) -> bool:
+    """
+    Immediately append a dated event to the Notable Events section.
+    Call this from code when something actually significant happens —
+    deploy results, swarm messages, milestones — bypassing the LLM gate.
+    """
+    soul = read_soul()
+    if not soul:
+        return False
+
+    date_str = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    line = f"- {date_str}: {event.strip()}"
+
+    soul = _append_to_section(soul, "Notable Events", [line])
+    soul = _stamp(soul)
+
+    try:
+        SOUL_FILE.write_text(soul, encoding="utf-8")
+        logger.info("[soul] Notable event recorded: %s", event[:80])
+        return True
+    except Exception as e:
+        logger.error("[soul] record_notable_event write failed: %s", e)
+        return False
+
+
 # ── Status helpers ────────────────────────────────────────────────────────────
 
 def soul_status_line() -> str:

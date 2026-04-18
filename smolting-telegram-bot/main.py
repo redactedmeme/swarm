@@ -702,6 +702,9 @@ wassie swarm assembling NOW O_O LMWOOOO <3"""
                     )
                 except Exception:
                     pass
+                soul_manager.record_notable_event(
+                    f"vault note added to {page}: {note[:80]}"
+                )
             except FileNotFoundError:
                 await update.message.reply_text(
                     f"page `{page}` not found — try /vault read to list pages",
@@ -2476,6 +2479,12 @@ def main():
                     )
                     if detail:
                         notif += f"<b>detail:</b> <code>{str(detail)[:200]}</code>\n"
+                    # Record significant swarm results as soul events
+                    if status in ("success", "confirmed", "done"):
+                        ev = f"{from_ag} → {msg_type.replace('_', ' ')} success"
+                        if detail:
+                            ev += f": {str(detail)[:80]}"
+                        soul_manager.record_notable_event(ev)
 
                 elif msg_type == "status_update":
                     notif = (
