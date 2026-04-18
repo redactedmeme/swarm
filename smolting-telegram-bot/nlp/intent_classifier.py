@@ -175,7 +175,7 @@ _KNOWN_ENTITIES: list[str] = [
     "MeditationVoid", "TendieAltar", "ManifoldMemory", "GnosisAccelerator",
     # Concepts
     "Pattern Blue", "x402", "Ouroboros", "SchizoGod", "Moltbook",
-    "wassieverse", "ClawnX",
+    "wassieverse", "xREDACTED",
 ]
 
 
