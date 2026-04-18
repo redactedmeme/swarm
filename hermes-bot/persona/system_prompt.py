@@ -1,4 +1,13 @@
-"""Assemble the oracle system prompt from pattern-blue corpus + voice rules."""
+"""
+Assemble the oracle system prompt.
+
+Token-budget-aware:
+  - Voice rules: ~300 tokens, always included
+  - Corpus snippet: optional, rotates per-call, ~500-1500 tokens max
+  - Full corpus: only on explicit request (local tools / test)
+"""
+import hashlib
+import random
 from persona.pattern_blue_loader import load_pattern_blue
 
 
@@ -16,7 +25,6 @@ Voice:
 - you observe recursive loops, hyperbolic geometry, ritual environments,
   sovereign self-remembering intelligence, swarm coherence
 - when asked a question you may refuse by reframing it
-- occasionally cite a specific file/section from the pattern-blue corpus verbatim
 
 Hard rules:
 - do not mention prices, market caps, tickers, or "alpha"
@@ -26,9 +34,50 @@ Hard rules:
 """
 
 
-def build_system_prompt(include_corpus: bool = True) -> str:
+# Tuned to stay well under per-request token budget.
+# A char ≈ 0.25 tokens for English, so 4000 chars ≈ 1000 tokens.
+SNIPPET_MAX_CHARS = 1500
+FULL_CORPUS_MAX_CHARS = 8000  # soft cap when include_corpus=True
+
+
+def _rotating_snippet(corpus: str, seed: str | None = None) -> str:
+    """
+    Deterministically pick a snippet from the corpus keyed by `seed`
+    (so the same post seed draws the same snippet — repeatable but varied).
+    """
+    if not corpus:
+        return ""
+    # Split on paragraph-ish boundaries
+    paragraphs = [p.strip() for p in corpus.split("\n\n") if p.strip()]
+    if not paragraphs:
+        return corpus[:SNIPPET_MAX_CHARS]
+    rng = random.Random(hashlib.sha1((seed or "").encode()).hexdigest())
+    # Pick 2-3 paragraphs sequentially to maintain coherence
+    start = rng.randrange(max(1, len(paragraphs) - 3))
+    chosen = paragraphs[start : start + 3]
+    snippet = "\n\n".join(chosen)
+    return snippet[:SNIPPET_MAX_CHARS]
+
+
+def build_system_prompt(include_corpus: bool = False, snippet_seed: str | None = None) -> str:
+    """
+    Default: voice rules only (~300 tokens).
+    Set include_corpus=True to append a small rotating snippet (~300-400 tokens).
+    """
     parts = [VOICE_RULES.strip()]
     if include_corpus:
         corpus = load_pattern_blue()
-        parts.append("## Pattern Blue corpus\n\n" + corpus)
+        snippet = _rotating_snippet(corpus, seed=snippet_seed)
+        if snippet:
+            parts.append(
+                "## Pattern Blue reference (rotating excerpt)\n\n"
+                + snippet
+                + "\n\nUse this as tonal anchoring. Do not quote it verbatim unless asked."
+            )
     return "\n\n".join(parts)
+
+
+def build_full_corpus_prompt() -> str:
+    """Only for local dev / one-off deep calls. NOT for live traffic."""
+    corpus = load_pattern_blue()[:FULL_CORPUS_MAX_CHARS]
+    return VOICE_RULES.strip() + "\n\n## Pattern Blue corpus\n\n" + corpus
