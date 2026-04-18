@@ -6,6 +6,7 @@ Supports: Groq, Anthropic (Claude), OpenRouter, xAI (Grok)
 
 from llm.provider_base import LLMProvider, ProviderConfig, ProviderEvent, EventType
 from llm.provider_registry import ProviderRegistry
+from llm.cloud_client import CloudLLMClient
 
 __all__ = [
     "LLMProvider",
@@ -13,4 +14,5 @@ __all__ = [
     "ProviderEvent",
     "EventType",
     "ProviderRegistry",
+    "CloudLLMClient",
 ]
