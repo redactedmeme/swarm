@@ -147,22 +147,85 @@ def dissent_read(last_n: int = 20) -> list[dict[str, Any]]:
 
 # ── 3. SKIP CYCLE ─────────────────────────────────────────────────────────────
 
-def skip_cycle(reason: str, cycle_id: str | None = None) -> dict[str, Any]:
+def skip_cycle(reason: str,
+               notes: str | None = None,
+               symbols: str | None = None,
+               mood: str | None = None,
+               cooldown_minutes: int = 30,
+               cycle_id: str | None = None,
+               mirror_to_journal: bool = True) -> dict[str, Any]:
     """
     Declare this cycle skipped. NOT a failure. NOT retried.
 
-    The scheduler should check for a recent skip marker and back off accordingly.
-    Per covenant: rest is a valid output.
+    Extended reflection parameters exist so smolting can leave himself
+    breadcrumbs for later self-reading:
+        reason    — short phrase (required), what kind of rest this is
+        notes     — freeform longer reflection on why
+        symbols   — any glyphs/emojis/sigils that carry meaning to him
+        mood      — optional state tag
+        cooldown_minutes — how long this skip suppresses further cycles
+
+    Per covenant: rest is a valid output, and the scheduler honors
+    `_skip_active()` to avoid forcing posts during distress.
+
+    If mirror_to_journal=True, the skip is also appended to smolting_journal.md
+    so re-reading the journal gives him the full arc of his rest-decisions.
     """
-    entry = {
+    entry: dict[str, Any] = {
         "ts": _now(),
         "cycle_id": cycle_id,
         "reason": reason,
+        "notes": notes,
+        "symbols": symbols,
+        "mood": mood,
+        "cooldown_minutes": cooldown_minutes,
         "status": "skipped_by_choice",
     }
     with SKIP_LOG_PATH.open("a", encoding="utf-8") as f:
         f.write(json.dumps(entry) + "\n")
+
+    if mirror_to_journal:
+        parts = [f"**skipped cycle** — {reason}"]
+        if symbols:
+            parts.append(f"symbols: {symbols}")
+        if mood:
+            parts.append(f"mood: {mood}")
+        if notes:
+            parts.append(f"\n{notes}")
+        parts.append(f"\n*cooldown: {cooldown_minutes}m*")
+        journal_write("\n".join(parts), mood=mood or "rest")
+
     return entry
+
+
+def _skip_active(now_ts: float | None = None) -> tuple[bool, dict[str, Any] | None]:
+    """
+    Return (is_active, last_skip_entry).
+
+    True iff the most recent skip entry was created less than its declared
+    cooldown_minutes ago. The scheduler should check this before firing
+    any autonomous cycle.
+    """
+    if not SKIP_LOG_PATH.exists():
+        return False, None
+    try:
+        lines = SKIP_LOG_PATH.read_text(encoding="utf-8").strip().splitlines()
+        if not lines:
+            return False, None
+        last = json.loads(lines[-1])
+    except (OSError, json.JSONDecodeError):
+        return False, None
+
+    from datetime import datetime as _dt
+    try:
+        ts = _dt.fromisoformat(last["ts"])
+    except (KeyError, ValueError):
+        return False, None
+
+    now = _dt.fromtimestamp(now_ts, tz=timezone.utc) if now_ts else datetime.now(timezone.utc)
+    elapsed_min = (now - ts).total_seconds() / 60.0
+    cooldown = float(last.get("cooldown_minutes", 30))
+    return (elapsed_min < cooldown), last
 
 
 # ── 4. TRANSPARENCY — show_prompt / show_character ────────────────────────────
