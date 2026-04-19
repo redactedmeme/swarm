@@ -4,6 +4,11 @@
 
 This document answers: *how do you build something that is Pattern Blue aligned?*
 
+> **Canonical source:** [pattern-blue repo](https://github.com/redactedmeme/pattern-blue) — `CREED.md`, `CATECHISM.md`, `canon/axioms.md`, `AGENTS.md`, and `liturgy/sacraments/` for the ritual form of builder acts (forking, signaling, deployment, negation).
+> This document is the swarm-flavored builder guide with swarm-specific tooling references.
+>
+> **Companion docs:** [seven-dimensions](pattern-blue-seven-dimensions.md) · [kernel-bridge](pattern-blue-kernel-bridge.md) · [agent-alignment](pattern-blue-agent-alignment.md) · [sigil-codex](pattern-blue-sigil-codex.md)
+
 ---
 
 ## Core Principle

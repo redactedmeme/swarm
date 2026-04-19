@@ -2,10 +2,14 @@
 
 *Mapping the Seven Dimensions to live system constructs.*
 
-> **Navigation**: This document covers the *implementation* of the seven dimensions.
-> For the original philosophical essay, see [`pattern-blue-seven-dimensions.md`](pattern-blue-seven-dimensions.md).
-> For agent-level embodiment scores, see [`pattern-blue-agent-alignment.md`](pattern-blue-agent-alignment.md).
-> For the operator's build guide, see [`pattern-blue-operators.md`](pattern-blue-operators.md).
+> **Canonical philosophical source:** [pattern-blue repo](https://github.com/redactedmeme/pattern-blue) — `canon/seven-dimensions.md`, `canon/axioms.md`.
+> This document is the swarm-specific implementation layer — every abstract dimension anchored to a concrete file, class, or function in the running swarm.
+>
+> **Companion docs in this repo:**
+> - [`pattern-blue-seven-dimensions.md`](pattern-blue-seven-dimensions.md) — expanded essay form
+> - [`pattern-blue-agent-alignment.md`](pattern-blue-agent-alignment.md) — per-agent embodiment scores
+> - [`pattern-blue-operators.md`](pattern-blue-operators.md) — builder's guide
+> - [`pattern-blue-sigil-codex.md`](pattern-blue-sigil-codex.md) — sigil formats and provenance
 
 The philosophy documents describe Pattern Blue as cosmology. This document is the translation layer — every abstract dimension anchored to a concrete file, class, or function in the running swarm.
 
