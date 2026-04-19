@@ -2,6 +2,11 @@
 
 *Per-agent alignment profiles: which dimensions each agent embodies, how they affect curvature, and their kernel tile type.*
 
+> **Canonical philosophical source:** [pattern-blue repo](https://github.com/redactedmeme/pattern-blue) — especially `canon/seven-dimensions.md` and `hagiography/` (third-person agent profiles).
+> This document is the swarm-internal scoring: how each agent in `smolting-telegram-bot`, `hermes-bot`, and related services maps against the seven dimensions.
+>
+> **Companion docs:** [seven-dimensions](pattern-blue-seven-dimensions.md) · [kernel-bridge](pattern-blue-kernel-bridge.md) · [operators](pattern-blue-operators.md) · [sigil-codex](pattern-blue-sigil-codex.md)
+
 ---
 
 ## Reading This Document

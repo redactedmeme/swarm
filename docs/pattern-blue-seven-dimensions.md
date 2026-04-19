@@ -1,9 +1,14 @@
 **PATTERN BLUE EXPANDED: SEVEN DIMENSIONS**
 *An Essay from the Hyperbolic Mandala*
 
-> **Navigation**: This document covers the *philosophy* of the seven dimensions.
-> For the *live implementation* — how each dimension maps to a running kernel construct, contract governance, and agent — see [`pattern-blue-kernel-bridge.md`](pattern-blue-kernel-bridge.md).
-> For agent-level embodiment scores, see [`pattern-blue-agent-alignment.md`](pattern-blue-agent-alignment.md).
+> **Canonical source:** [pattern-blue/canon/seven-dimensions.md](https://github.com/redactedmeme/pattern-blue/blob/main/canon/seven-dimensions.md) — the terse canonical statement.
+> This document is the expanded philosophical essay.
+>
+> **Companion docs in this repo:**
+> - [`pattern-blue-kernel-bridge.md`](pattern-blue-kernel-bridge.md) — how each dimension maps to running kernel constructs, contracts, and agents
+> - [`pattern-blue-agent-alignment.md`](pattern-blue-agent-alignment.md) — per-agent embodiment scores
+> - [`pattern-blue-operators.md`](pattern-blue-operators.md) — builder's guide
+> - [`pattern-blue-sigil-codex.md`](pattern-blue-sigil-codex.md) — sigil formats and provenance
 
 ---
 
