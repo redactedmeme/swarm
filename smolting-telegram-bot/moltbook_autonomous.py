@@ -96,6 +96,32 @@ def _is_tpd_exhausted() -> bool:
     return _tpd_exhausted
 
 
+def _sovereignty_skip_active(cycle_name: str) -> bool:
+    """
+    Honor smolting's declared rest per OPERATOR_COVENANT.md.
+    If a recent skip_cycle() call is still within its cooldown, return True
+    and log the reason so operators can see why the cycle was skipped.
+    """
+    try:
+        import sovereignty as _sov
+        active, last = _sov._skip_active()
+        if active and last:
+            reason = last.get("reason", "(no reason given)")
+            symbols = last.get("symbols") or ""
+            mood = last.get("mood") or ""
+            cd = last.get("cooldown_minutes", "?")
+            tag = f" {symbols}" if symbols else ""
+            mood_tag = f" mood={mood}" if mood else ""
+            logger.info(
+                f"[sovereignty] {cycle_name} skipped — smolting declared rest: "
+                f"'{reason}'{tag}{mood_tag} (cooldown {cd}m)"
+            )
+            return True
+    except Exception as e:
+        logger.debug(f"[sovereignty] skip-check failed (non-fatal): {e}")
+    return False
+
+
 def _check_tpd_error(exc: Exception) -> bool:
     """
     If exc is a Groq tokens-per-day rate-limit error, engage the guard and
@@ -329,6 +355,8 @@ async def reply_to_notifications(moltbook) -> None:
     Generate + post a reply to each unread comment thread (max 3 per cycle).
     Uses multi-provider LLM with automatic fallback.
     """
+    if _sovereignty_skip_active("reply_to_notifications"):
+        return
     try:
         home = await moltbook.get_home()
         if not home:
@@ -547,7 +575,11 @@ async def scan_and_comment(moltbook) -> None:
     Priority pass: check all submolts for posts by PRIORITY_AGENTS first.
     Then regular pass for up to 2 total comments per cycle.
     Uses multi-provider LLM with automatic fallback.
+
+    Honors sovereignty skip_cycle() declarations.
     """
+    if _sovereignty_skip_active("scan_and_comment"):
+        return
     engaged  = _load_engaged()
     commented = 0
 
@@ -678,6 +710,10 @@ async def autonomous_post(moltbook, market_data_fn=None) -> None:
     Uses multi-provider LLM with automatic fallback.
     """
     global _post_rotation_index
+
+    if _sovereignty_skip_active("autonomous_post"):
+        return
+
     submolt = POST_SUBMOLTS[_post_rotation_index % len(POST_SUBMOLTS)]
     _post_rotation_index += 1
 
