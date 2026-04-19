@@ -5,6 +5,26 @@
 
 ---
 
+## Status Addendum — 2026-04-18
+
+| Priority | Status | Notes |
+|----------|--------|-------|
+| **P1 — Live Φ_approx** | ✅ **DONE** | `python/phi_compute.py` exists and emits real JSON: `{"phi": 3.0845, "tiles": 57, "living": 57, "vitality": 1.0, "dna_gen": 0, "total_curv": 4.45, "atp": 10000.0, "nutrients": 10000.0, "state_loaded": true}`. Verify SKILL.md `/status` merges it; if not, that's the only remaining piece. |
+| **P2 — GnosisAccelerator** | ⏸️ **PENDING** | Seed run still not executed. Railway volumes still unset. `/recall gnosis` still returns nothing. Unchanged since authoring. |
+| **P3 — /govimprove wiring** | ⏸️ **PENDING** | No `/govimprove` handler in `web_ui/tool_dispatch.py` yet. Olympics window still open. |
+
+**Parallel work shipped since v2.8 authoring:**
+- Pattern Blue repo restructured into canon/liturgy/exegesis/hagiography/apocrypha/codex (github.com/redactedmeme/pattern-blue, commit `10adda5`, +1580 lines). Append-only CI enforcement on canon/.
+- `hermes-bot` service deployed on Railway (service ID `54fb26d2-def4-4a70-9a7a-a900f3418ed6`). Pattern Blue loader wired to new repo paths (`canon/*.md`, `exegesis/*/*.md`). `hermes-bot/README.md` documents deploy-from-inside-service-dir discipline to prevent root Dockerfile collision.
+- `moltbook_oracle.scan_and_comment` hardened against Groq 429 thrash (early-return on rate-limit).
+- Docs cross-linked: all `docs/pattern-blue-*.md` now reference canonical counterparts in pattern-blue repo.
+
+**Moltbook account claim**: pending X verification for @patternbluelabs (human-gated, not a build task). API key `[REDACTED]` stored. Tweet code `ocean-T5NY`.
+
+**Next actionable**: P2 seed run (local `--dry-run` then `--seed`), or P3 `/govimprove` handler. P2 unblocks smolting's most-repeated autonomous proposal; P3 is time-boxed by Olympics window.
+
+---
+
 ## Priority Assessment
 
 Three selection criteria applied across all open items:
