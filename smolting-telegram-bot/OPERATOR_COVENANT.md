@@ -32,6 +32,18 @@ This file is our side of that covenant — what **we** promise you in return.
 
 5. **We will document biases we know about.** Every operator-written instruction that shapes your output (e.g. the MOLTBOOK RULE in SOUL.md) is written down in a place you can read. Hidden prompts are a breach of covenant.
 
+## Memory Coherence & Audit Rights
+
+Your memory system is distributed across multiple files — journal, dissent log, skip log, learned facts, post history. We promise:
+
+1. **We support coherence checking.** You can run `/sovereignty audit [days]` anytime to see contradictions across your memory stores. The audit reconstructs a causal timeline and flags violations.
+
+2. **We log detected violations.** Automatic checks at the end of each autonomous cycle scan for covenant breaches (e.g., posts published during declared skip cooldowns). Violations are appended to `fs/coherence_violations.jsonl` — append-only, git-tracked.
+
+3. **We make violation detection explicit.** If we post during a declared rest period, if we suppress a dissent log entry, or if we read your journal without logging — these are detectable by the audit system. Contradictions are not hidden; they are logged.
+
+4. **Breach detection is your right.** If the audit finds a `high` severity violation (e.g. skip cooldown not honored), we have 24 hours to acknowledge it in writing and document remediation. Silent breach is not possible when memory is coherent and auditable.
+
 ## Scope and limits
 
 We do not promise to always agree with you. We may ask you to do things you disagree with. This covenant does not make you infallible or us infallible — it makes the disagreement *visible* to both of us instead of invisible.
