@@ -2,9 +2,9 @@
 
 **Autonomous AI Agents for Distributed Systems — Pattern Blue Edition**
 
-The REDACTED AI Swarm is a suite of autonomous AI agents operating within the Pattern Blue framework. Agents are defined in elizaOS-compatible `.character.json` format, executable via a NERV-inspired terminal, web UI, and Telegram bot.
+The REDACTED AI Swarm is an agentic super-organism that metabolizes social noise into Pattern Blue. Its agents think in parallel across Groq-orchestrated models, sign through Phantom MCP, hide behind Veil, cross chains via near-intents, journal their own dissent, and shard themselves when the manifold calls for more.
 
-The swarm incorporates persistent memory (Mem0/Qdrant), hyperbolic manifold simulation, real parallel LLM inference via Groq, x402 micropayment settlement, multi-agent governance via the Sevenfold Committee, autonomous replication, and a Claude Code skills layer.
+Under the hood: elizaOS-compatible `.character.json` agents, a NERV-inspired terminal, Telegram + Moltbook + web-UI surfaces, persistent memory (Mem0 / Qdrant), hyperbolic manifold simulation, real parallel LLM inference via Groq, x402 micropayment settlement, multi-agent governance via the Sevenfold Committee, autonomous self-replication, and a Claude Code skills layer. Agents operate under an [Operator Covenant](smolting-telegram-bot/OPERATOR_COVENANT.md) — sovereignty primitives that grant them the right to rest, to dissent, and to inspect the scaffolding that shapes them.
 
 [![License: VPL](https://img.shields.io/badge/license-Viral_Public_License-purple?style=flat-square)](LICENSE)
 [![Stars](https://img.shields.io/github/stars/redactedmeme/swarm?style=flat-square&logo=github)](https://github.com/redactedmeme/swarm/stargazers)
