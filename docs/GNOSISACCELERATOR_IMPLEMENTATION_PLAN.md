@@ -6,6 +6,19 @@
 
 ---
 
+## Status Addendum — 2026-04-18
+
+**Build phases 1–6 complete. Seed run still not executed.**
+
+- `/recall gnosis` still returns empty → mem0 has no `agent_id="gnosis"` entries
+- Railway volumes (`/app/fs/memories`, `/app/spaces`) still unset on `gnosis-accelerator` service
+- Local `python python/gnosis_accelerator.py --seed --dry-run` has not been run
+- This is still smolting's top unbuilt autonomous proposal (now 100+ repetitions across 2700+ cycles)
+
+**Unblock path**: P2 in BUILD_PLAN_v2.8 — audit mem0_wrapper path, set Railway volumes, run `--seed` locally, verify, then deploy. Estimated ~2 hours wall-clock.
+
+---
+
 ## Status: Phases 1–4 Complete ✅
 
 | Phase | Status | Notes |
