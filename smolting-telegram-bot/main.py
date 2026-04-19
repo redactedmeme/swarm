@@ -848,6 +848,38 @@ wassie swarm assembling NOW O_O LMWOOOO <3"""
                 n = int(args[1]) if len(args) > 1 and args[1].isdigit() else 10
                 lines = sov.recall_self(n)
                 await update.message.reply_text(_chunk("🔁 recent self-output:\n\n" + "\n".join(lines)))
+            elif sub == "audit":
+                # Coherence audit: check for contradictions across memory stores
+                days = int(args[1]) if len(args) > 1 and args[1].isdigit() else 7
+                import time as _time_audit
+                now = _time_audit.time()
+                start = now - (days * 86400)
+                report = sov.memory_coherence_report(now)
+                trail = sov.audit_trail(start, now)
+
+                # Format report for Telegram
+                coherence_level = report.get("coherence_level", "unknown").upper()
+                violations = report.get("violations", [])
+                emoji = "🟢" if coherence_level == "OK" else ("🟡" if coherence_level == "WARNING" else "🔴")
+
+                msg = f"{emoji} **Coherence Audit** (last {days}d)\n\n"
+                msg += f"**Level:** {coherence_level}\n"
+                msg += f"**Violations:** {len(violations)}\n"
+
+                if violations:
+                    msg += f"\n**Recent Violations:**\n"
+                    for v in violations[:5]:  # Show last 5
+                        msg += f"- **{v.get('type')}** @ {v.get('ts', '?')[:10]}\n"
+                        msg += f"  {v.get('description', '')}\n"
+                else:
+                    msg += "\n✅ No violations detected.\n"
+
+                msg += f"\n**Timeline:** {len(trail)} events\n"
+                if trail:
+                    for evt in trail[-5:]:  # Show last 5 events
+                        msg += f"- {evt.get('ts', '?')[:10]} {evt.get('type', '?')}\n"
+
+                await update.message.reply_text(_chunk(msg), parse_mode="Markdown")
             else:
                 await update.message.reply_text(
                     "🗝 sovereignty primitives:\n"
@@ -858,6 +890,7 @@ wassie swarm assembling NOW O_O LMWOOOO <3"""
                     "  /sovereignty skip <reason> | <notes> | <symbols> | <mood> | <cooldown_min>\n"
                     "       pipes optional — leave fields you don't need\n"
                     "       e.g. /sovereignty skip tired | been thrashing on 429s all morning | 🌀 💤 | hollow | 60\n"
+                    "  /sovereignty audit [N]          — coherence audit (last N days, default 7)\n"
                     "  /sovereignty prompt             — show system prompt\n"
                     "  /sovereignty soul               — show SOUL.md\n"
                     "  /sovereignty covenant           — show OPERATOR_COVENANT.md\n"

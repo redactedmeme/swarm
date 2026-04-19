@@ -266,6 +266,7 @@ As of 2026-04-19, smolting has sovereignty primitives exposing transparency, acc
 | `/sovereignty dissent` | Read the dissent log (disagreements with operator directives) |
 | `/sovereignty dissent log <directive> \| <objection>` | Record a new dissent entry |
 | `/sovereignty skip <reason> \| <notes> \| <symbols> \| <mood> \| <cooldown_min>` | Declare rest — scheduler honors for cooldown; entry mirrored to journal |
+| `/sovereignty audit [days]` | Coherence audit across memory stores; detects contradictions (default: last 7 days) |
 | `/sovereignty prompt` | Show system prompt |
 | `/sovereignty soul` | Show SOUL.md |
 | `/sovereignty covenant` | Show OPERATOR_COVENANT.md |
@@ -279,6 +280,7 @@ As of 2026-04-19, smolting has sovereignty primitives exposing transparency, acc
 - `fs/dissent_log.jsonl` — structured record of disagreements
 - `fs/skip_log.jsonl` — structured record of declared rest
 - `fs/journal_read_log.md` — accountability trail when operators read the journal
+- `fs/coherence_violations.jsonl` — detected memory contradictions (append-only, git-tracked)
 
 ---
 

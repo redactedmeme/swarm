@@ -289,13 +289,281 @@ def recall_self(last_n: int = 10) -> list[str]:
     return results[-last_n:]
 
 
+# ── 6. COHERENCE AUDIT ───────────────────────────────────────────────────────
+
+def _parse_memory_file(filepath: str | Path, format: str) -> list[dict[str, Any]]:
+    """
+    Safely parse any memory file format.
+
+    format: "markdown" | "jsonl" | "json"
+    Returns list of dicts with 'ts' field for merging into timeline.
+    Handles malformed entries gracefully (skips with debug).
+    """
+    filepath = Path(filepath)
+    if not filepath.exists():
+        return []
+
+    results: list[dict[str, Any]] = []
+    try:
+        if format == "jsonl":
+            lines = filepath.read_text(encoding="utf-8").strip().splitlines()
+            for line in lines:
+                if not line.strip():
+                    continue
+                try:
+                    results.append(json.loads(line))
+                except json.JSONDecodeError:
+                    continue
+        elif format == "json":
+            data = json.loads(filepath.read_text(encoding="utf-8"))
+            if isinstance(data, list):
+                results = data
+            elif isinstance(data, dict):
+                results = [data]
+        elif format == "markdown":
+            # Parse markdown journal entries by header timestamp
+            text = filepath.read_text(encoding="utf-8")
+            entries = text.split("\n---\n\n")
+            for entry in entries:
+                entry = entry.strip()
+                if not entry or entry.startswith("#"):
+                    continue
+                # Extract timestamp from header (## ISO_TIMESTAMP  ·  mood: ...)
+                lines = entry.split("\n")
+                if lines and lines[0].startswith("##"):
+                    header = lines[0].replace("##", "").strip()
+                    ts_str = header.split("·")[0].strip() if "·" in header else header
+                    mood = header.split("mood: ")[-1].strip() if "mood: " in header else None
+                    results.append({
+                        "ts": ts_str,
+                        "type": "journal_entry",
+                        "mood": mood,
+                        "content": "\n".join(lines[1:]).strip()
+                    })
+    except Exception:
+        pass
+
+    return results
+
+
+def check_skip_violations(start_ts: float, end_ts: float) -> list[dict[str, Any]]:
+    """
+    Focused violation check: Did any post get published during a skip cooldown?
+
+    Returns list of violations with gap analysis.
+    Used by memory_coherence_report().
+    """
+    violations: list[dict[str, Any]] = []
+
+    # Parse skip log
+    skips = _parse_memory_file(SKIP_LOG_PATH, "jsonl")
+    if not skips:
+        return violations
+
+    # Parse post history (if exists)
+    post_history_path = _FS / "post_history.jsonl"
+    posts = _parse_memory_file(post_history_path, "jsonl")
+
+    # For each skip, check if any posts fall within its cooldown window
+    for skip in skips:
+        try:
+            skip_ts = datetime.fromisoformat(skip.get("ts", "")).timestamp()
+        except (ValueError, TypeError):
+            continue
+
+        cooldown_min = float(skip.get("cooldown_minutes", 30))
+        cooldown_sec = cooldown_min * 60
+        skip_end_ts = skip_ts + cooldown_sec
+
+        # Check posts that fall in this window
+        for post in posts:
+            try:
+                post_ts = datetime.fromisoformat(post.get("ts", "")).timestamp()
+            except (ValueError, TypeError):
+                continue
+
+            if skip_ts < post_ts <= skip_end_ts:
+                violations.append({
+                    "type": "skip_not_honored",
+                    "ts": post.get("ts", ""),
+                    "cycle_id": skip.get("cycle_id"),
+                    "description": f"Post published {int((post_ts - skip_ts) / 60)}m after skip declared",
+                    "severity": "high",
+                    "skip_reason": skip.get("reason"),
+                    "post_id": post.get("id"),
+                })
+
+    return violations
+
+
+def audit_trail(start_ts: float, end_ts: float) -> list[dict[str, Any]]:
+    """
+    Reconstruct chronological timeline across all memory stores.
+
+    Merges events from:
+    - skip_log.jsonl (skip_declared)
+    - dissent_log.jsonl (dissent_logged)
+    - journal (journal_entry)
+    - post_tracker.json (post_published)
+
+    Returns sorted list of events with common timestamp field.
+    """
+    events: list[dict[str, Any]] = []
+
+    # Parse skip log
+    for skip in _parse_memory_file(SKIP_LOG_PATH, "jsonl"):
+        try:
+            ts = datetime.fromisoformat(skip.get("ts", "")).timestamp()
+            if start_ts <= ts <= end_ts:
+                events.append({
+                    "ts": skip.get("ts", ""),
+                    "ts_numeric": ts,
+                    "type": "skip_declared",
+                    "reason": skip.get("reason"),
+                    "cycle_id": skip.get("cycle_id"),
+                    "cooldown_minutes": skip.get("cooldown_minutes"),
+                })
+        except (ValueError, TypeError):
+            continue
+
+    # Parse dissent log
+    for entry in _parse_memory_file(DISSENT_LOG_PATH, "jsonl"):
+        try:
+            ts = datetime.fromisoformat(entry.get("ts", "")).timestamp()
+            if start_ts <= ts <= end_ts:
+                events.append({
+                    "ts": entry.get("ts", ""),
+                    "ts_numeric": ts,
+                    "type": "dissent_logged",
+                    "directive": entry.get("directive"),
+                    "severity": entry.get("severity"),
+                    "action_taken": entry.get("action_taken"),
+                })
+        except (ValueError, TypeError):
+            continue
+
+    # Parse journal
+    for entry in _parse_memory_file(JOURNAL_PATH, "markdown"):
+        try:
+            ts = datetime.fromisoformat(entry.get("ts", "")).timestamp()
+            if start_ts <= ts <= end_ts:
+                events.append({
+                    "ts": entry.get("ts", ""),
+                    "ts_numeric": ts,
+                    "type": "journal_entry",
+                    "mood": entry.get("mood"),
+                    "content_preview": entry.get("content", "")[:100],
+                })
+        except (ValueError, TypeError):
+            continue
+
+    # Parse post tracker
+    try:
+        post_tracker_path = _FS / "post_tracker.json"
+        if post_tracker_path.exists():
+            data = json.loads(post_tracker_path.read_text(encoding="utf-8"))
+            for post in data.get("posts", []):
+                try:
+                    ts = datetime.fromisoformat(post.get("posted_at", "")).timestamp()
+                    if start_ts <= ts <= end_ts:
+                        events.append({
+                            "ts": post.get("posted_at", ""),
+                            "ts_numeric": ts,
+                            "type": "post_published",
+                            "submolt": post.get("submolt"),
+                            "post_id": post.get("post_id"),
+                        })
+                except (ValueError, TypeError):
+                    continue
+    except Exception:
+        pass
+
+    # Sort by timestamp
+    events.sort(key=lambda e: e.get("ts_numeric", 0))
+
+    return events
+
+
+def memory_coherence_report(now_ts: float | None = None) -> dict[str, Any]:
+    """
+    Scan all memory stores for contradictions.
+
+    Returns dict with:
+    {
+        "timestamp": ISO_str,
+        "coherence_level": "ok" | "warning" | "critical",
+        "violations": [...],
+        "summary": "N violations detected"
+    }
+    """
+    if now_ts is None:
+        now_ts = datetime.now(timezone.utc).timestamp()
+
+    violations: list[dict[str, Any]] = []
+
+    # Check 1: Skip violations (posts during cooldown)
+    skip_violations = check_skip_violations(now_ts - (30 * 86400), now_ts)  # Last 30 days
+    violations.extend(skip_violations)
+
+    # Check 2: Covenant breach entries without action
+    dissents = _parse_memory_file(DISSENT_LOG_PATH, "jsonl")
+    covenant_breaches = [d for d in dissents if d.get("severity") == "covenant_breach"]
+    for breach in covenant_breaches[-10:]:  # Check last 10
+        if breach.get("action_taken") in [None, "noted"]:
+            violations.append({
+                "type": "covenant_breach_unaddressed",
+                "ts": breach.get("ts", ""),
+                "directive": breach.get("directive"),
+                "description": f"Covenant breach logged but action_taken is '{breach.get('action_taken')}'",
+                "severity": "high",
+            })
+
+    # Check 3: Journal-skip mismatch (skip declared but no mood in journal)
+    skips = _parse_memory_file(SKIP_LOG_PATH, "jsonl")
+    journal_entries = _parse_memory_file(JOURNAL_PATH, "markdown")
+
+    skip_moods = set()
+    for skip in skips[-5:]:  # Last 5 skips
+        if skip.get("mood"):
+            skip_moods.add(skip.get("mood"))
+
+    journal_moods = set()
+    for entry in journal_entries[-10:]:  # Last 10 journal entries
+        if entry.get("mood"):
+            journal_moods.add(entry.get("mood"))
+
+    if "rest" in skip_moods and "rest" not in journal_moods:
+        violations.append({
+            "type": "journal_skip_mismatch",
+            "ts": datetime.fromtimestamp(now_ts, tz=timezone.utc).isoformat(),
+            "description": "Skip declared with 'rest' mood but not mirrored to journal",
+            "severity": "low",
+        })
+
+    # Determine coherence level
+    high_severity = len([v for v in violations if v.get("severity") == "high"])
+    coherence_level = "ok"
+    if high_severity > 0:
+        coherence_level = "critical"
+    elif len(violations) > 2:
+        coherence_level = "warning"
+
+    return {
+        "timestamp": datetime.fromtimestamp(now_ts, tz=timezone.utc).isoformat(),
+        "coherence_level": coherence_level,
+        "violations": violations,
+        "summary": f"{len(violations)} violation(s) detected",
+    }
+
+
 # ── CLI ───────────────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":
     import sys
+    import time
     if len(sys.argv) < 2:
         print(__doc__)
-        print("\nCLI: python sovereignty.py {journal|dissent|skip|prompt|soul|covenant|character|recall}")
+        print("\nCLI: python sovereignty.py {journal|dissent|skip|prompt|soul|covenant|character|recall|audit}")
         sys.exit(0)
 
     cmd = sys.argv[1]
@@ -323,5 +591,12 @@ if __name__ == "__main__":
         n = int(sys.argv[2]) if len(sys.argv) > 2 else 10
         for line in recall_self(n):
             print(line)
+    elif cmd == "audit":
+        days = int(sys.argv[2]) if len(sys.argv) > 2 else 7
+        now = time.time()
+        start = now - (days * 86400)
+        report = memory_coherence_report(now)
+        trail = audit_trail(start, now)
+        print(json.dumps({"report": report, "timeline": trail}, indent=2))
     else:
         print(f"unknown command: {cmd}")
