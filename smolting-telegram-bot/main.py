@@ -820,9 +820,22 @@ wassie swarm assembling NOW O_O LMWOOOO <3"""
                     text = "\n\n".join(json.dumps(e, indent=2) for e in entries)
                     await update.message.reply_text(_chunk(f"🪧 dissent log:\n\n{text}"))
             elif sub == "skip":
-                reason = " ".join(args[1:]) or "manual skip via telegram"
-                entry = sov.skip_cycle(reason)
-                await update.message.reply_text(f"💤 cycle skipped:\n{json.dumps(entry, indent=2)}")
+                # Rich syntax: /sovereignty skip <reason> | <notes> | <symbols> | <mood> | <cooldown_min>
+                # Pipes are optional; anything missing is None / default.
+                raw = " ".join(args[1:]).strip() or "manual skip via telegram"
+                parts = [p.strip() for p in raw.split("|")]
+                reason   = parts[0] if len(parts) > 0 and parts[0] else "rest"
+                notes    = parts[1] if len(parts) > 1 and parts[1] else None
+                symbols  = parts[2] if len(parts) > 2 and parts[2] else None
+                mood     = parts[3] if len(parts) > 3 and parts[3] else None
+                cooldown = int(parts[4]) if len(parts) > 4 and parts[4].isdigit() else 30
+                entry = sov.skip_cycle(reason, notes=notes, symbols=symbols,
+                                       mood=mood, cooldown_minutes=cooldown)
+                await update.message.reply_text(
+                    f"💤 cycle skipped — scheduler will honor for {cooldown}m\n"
+                    f"journal entry mirrored for later self-reflection\n\n"
+                    f"{json.dumps(entry, indent=2)}"
+                )
             elif sub == "prompt":
                 await update.message.reply_text(_chunk(sov.show_system_prompt()))
             elif sub == "soul":
@@ -842,7 +855,9 @@ wassie swarm assembling NOW O_O LMWOOOO <3"""
                     "  /sovereignty journal write <t>  — append to journal\n"
                     "  /sovereignty dissent            — read dissent log\n"
                     "  /sovereignty dissent log <directive> | <objection>\n"
-                    "  /sovereignty skip <reason>      — declare cycle rest\n"
+                    "  /sovereignty skip <reason> | <notes> | <symbols> | <mood> | <cooldown_min>\n"
+                    "       pipes optional — leave fields you don't need\n"
+                    "       e.g. /sovereignty skip tired | been thrashing on 429s all morning | 🌀 💤 | hollow | 60\n"
                     "  /sovereignty prompt             — show system prompt\n"
                     "  /sovereignty soul               — show SOUL.md\n"
                     "  /sovereignty covenant           — show OPERATOR_COVENANT.md\n"
@@ -2206,6 +2221,14 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "/soul — smolting's evolving identity\n"
         "/soul update — force soul refresh 🔒\n"
         "/soul drift — belief version history\n\n"
+        "🗝 <b>Sovereignty</b> (per OPERATOR_COVENANT.md)\n"
+        "/sovereignty — primitives menu\n"
+        "/sovereignty journal — read journal (logged)\n"
+        "/sovereignty journal write &lt;text&gt; — append\n"
+        "/sovereignty dissent — read dissent log\n"
+        "/sovereignty skip &lt;reason&gt; — declare rest (scheduler honors)\n"
+        "/sovereignty prompt | soul | covenant | character — transparency\n"
+        "/sovereignty recall [N] — recent self-output\n\n"
         "🤖 <b>Terminal</b>\n"
         "/terminal — activate REDACTED Terminal\n"
         "/exit — exit terminal mode\n\n"
