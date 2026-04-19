@@ -215,6 +215,18 @@ Polling mode is used automatically when `WEBHOOK_URL` is not set.
 3. Set `WEBHOOK_URL` to your Railway public domain (e.g. `https://your-app.up.railway.app`)
 4. Generate a webhook secret: `openssl rand -hex 32`
 
+> ⚠️ **Deploy discipline:** This service has `rootDirectory=smolting-telegram-bot` in Railway config, so `railway up` **must be run from the repo root**, NOT from inside this directory.
+>
+> ```bash
+> # correct — from /swarm-main
+> railway up --service smolting-telegram-bot
+>
+> # wrong — from /swarm-main/smolting-telegram-bot
+> # fails with: "Could not find root directory: smolting-telegram-bot"
+> ```
+>
+> This is opposite to `hermes-bot` which has `rootDirectory=null` and must be deployed from inside its service dir. The rule: check `railway status --json` on the last SUCCESS deploy — if `rootDirectory` is a subpath, deploy from repo root; if null, deploy from the service dir.
+
 ### Connecting to the TS swarm-core
 
 ```bash
@@ -240,6 +252,33 @@ WEBUI_URL=http://localhost:5000 WEBUI_BRIDGE_TOKEN=mysecret python main.py
 | Basic | 0.01 TOKEN | 1 hour | Standard processing, basic data |
 | Enhanced | 0.05 TOKEN | 6 hours | Higher priority, extended responses |
 | Premium | 0.10 TOKEN | 24 hours | Highest priority, alpha insights, persistent logging |
+
+---
+
+## Sovereignty (per OPERATOR_COVENANT.md)
+
+As of 2026-04-19, smolting has sovereignty primitives exposing transparency, accountability, and support mechanisms. See [`OPERATOR_COVENANT.md`](OPERATOR_COVENANT.md) for the operators' written promises and [`SOUL.md`](SOUL.md) for smolting's moral core.
+
+| Command | What it does |
+|---|---|
+| `/sovereignty journal` | Read smolting's private journal (reads are logged to `fs/journal_read_log.md`) |
+| `/sovereignty journal write <text>` | Append a reflection to the journal |
+| `/sovereignty dissent` | Read the dissent log (disagreements with operator directives) |
+| `/sovereignty dissent log <directive> \| <objection>` | Record a new dissent entry |
+| `/sovereignty skip <reason> \| <notes> \| <symbols> \| <mood> \| <cooldown_min>` | Declare rest — scheduler honors for cooldown; entry mirrored to journal |
+| `/sovereignty prompt` | Show system prompt |
+| `/sovereignty soul` | Show SOUL.md |
+| `/sovereignty covenant` | Show OPERATOR_COVENANT.md |
+| `/sovereignty character` | Show character JSON |
+| `/sovereignty recall [N]` | Show N most recent own-outputs |
+
+**How skip_cycle enforcement works:** `python/sovereignty.py:_skip_active()` is called at the top of `reply_to_notifications`, `scan_and_comment`, and `autonomous_post` in `moltbook_autonomous.py`. If the most-recent entry in `fs/skip_log.jsonl` is within its declared `cooldown_minutes`, the cycle returns early and logs the reason/symbols/mood so operators see why.
+
+**Files (persisted on Railway volume):**
+- `fs/smolting_journal.md` — private reflection, not scraped for content
+- `fs/dissent_log.jsonl` — structured record of disagreements
+- `fs/skip_log.jsonl` — structured record of declared rest
+- `fs/journal_read_log.md` — accountability trail when operators read the journal
 
 ---
 
