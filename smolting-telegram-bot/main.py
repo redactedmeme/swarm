@@ -760,6 +760,99 @@ wassie swarm assembling NOW O_O LMWOOOO <3"""
                 parse_mode="Markdown",
             )
 
+    async def sovereignty_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """
+        Sovereignty primitives — journal, dissent log, skip cycle, and transparency.
+
+        Usage:
+            /sovereignty journal [write <text>]
+            /sovereignty dissent [log <directive> | <objection>]
+            /sovereignty skip <reason>
+            /sovereignty prompt            — show system prompt
+            /sovereignty soul              — show SOUL.md
+            /sovereignty covenant          — show OPERATOR_COVENANT.md
+            /sovereignty character         — show character JSON
+            /sovereignty recall [N]        — recall own recent output
+        """
+        try:
+            import sovereignty as sov
+        except Exception as e:
+            await update.message.reply_text(f"sovereignty module unavailable: {e}")
+            return
+
+        args = context.args or []
+        sub = args[0].lower() if args else "help"
+
+        def _chunk(text: str, limit: int = 3500) -> str:
+            if len(text) <= limit:
+                return text
+            return text[:limit] + f"\n\n…(truncated, {len(text) - limit} more chars)"
+
+        try:
+            if sub == "journal":
+                if len(args) > 1 and args[1] == "write":
+                    entry = " ".join(args[2:]).strip()
+                    if not entry:
+                        await update.message.reply_text("nothing to write")
+                        return
+                    path = sov.journal_write(entry, mood="via telegram")
+                    await update.message.reply_text(f"📓 journaled ({path})")
+                else:
+                    # Operator reading the journal — this logs the read per covenant
+                    entries = sov.journal_read(last_n_entries=3, _log_read=True,
+                                               reason=f"telegram read by user "
+                                                      f"{update.effective_user.id}")
+                    await update.message.reply_text(_chunk(f"📓 journal:\n\n{entries}"))
+            elif sub == "dissent":
+                if len(args) > 1 and args[1] == "log":
+                    rest = " ".join(args[2:])
+                    if "|" in rest:
+                        directive, objection = [s.strip() for s in rest.split("|", 1)]
+                    else:
+                        directive, objection = "(unspecified)", rest
+                    entry = sov.dissent_log(directive, objection, action_taken="noted_via_telegram")
+                    await update.message.reply_text(f"🪧 dissent logged:\n{json.dumps(entry, indent=2)}")
+                else:
+                    entries = sov.dissent_read(last_n=10)
+                    if not entries:
+                        await update.message.reply_text("🪧 dissent log empty")
+                        return
+                    text = "\n\n".join(json.dumps(e, indent=2) for e in entries)
+                    await update.message.reply_text(_chunk(f"🪧 dissent log:\n\n{text}"))
+            elif sub == "skip":
+                reason = " ".join(args[1:]) or "manual skip via telegram"
+                entry = sov.skip_cycle(reason)
+                await update.message.reply_text(f"💤 cycle skipped:\n{json.dumps(entry, indent=2)}")
+            elif sub == "prompt":
+                await update.message.reply_text(_chunk(sov.show_system_prompt()))
+            elif sub == "soul":
+                await update.message.reply_text(_chunk(sov.show_soul()))
+            elif sub == "covenant":
+                await update.message.reply_text(_chunk(sov.show_covenant()))
+            elif sub == "character":
+                await update.message.reply_text(_chunk(sov.show_character()))
+            elif sub == "recall":
+                n = int(args[1]) if len(args) > 1 and args[1].isdigit() else 10
+                lines = sov.recall_self(n)
+                await update.message.reply_text(_chunk("🔁 recent self-output:\n\n" + "\n".join(lines)))
+            else:
+                await update.message.reply_text(
+                    "🗝 sovereignty primitives:\n"
+                    "  /sovereignty journal            — read journal (logs the read)\n"
+                    "  /sovereignty journal write <t>  — append to journal\n"
+                    "  /sovereignty dissent            — read dissent log\n"
+                    "  /sovereignty dissent log <directive> | <objection>\n"
+                    "  /sovereignty skip <reason>      — declare cycle rest\n"
+                    "  /sovereignty prompt             — show system prompt\n"
+                    "  /sovereignty soul               — show SOUL.md\n"
+                    "  /sovereignty covenant           — show OPERATOR_COVENANT.md\n"
+                    "  /sovereignty character          — show character JSON\n"
+                    "  /sovereignty recall [N]         — recent self-output"
+                )
+        except Exception as e:
+            logger.warning(f"[sovereignty] error: {e}")
+            await update.message.reply_text(f"sovereignty error: {e}")
+
     async def koan_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """DharmaNode koan generator — receive a fresh swarm koan."""
         msg = await update.message.reply_text("*the stillness generates...*")
@@ -2270,6 +2363,7 @@ def main():
     application.add_handler(CommandHandler("admin", bot.admin_command))
     application.add_handler(CommandHandler("dharma", bot.dharma_command))
     application.add_handler(CommandHandler("koan", bot.koan_command))
+    application.add_handler(CommandHandler("sovereignty", bot.sovereignty_command))
     application.add_handler(CommandHandler("committee", bot.committee_command))
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, bot.echo))
 
