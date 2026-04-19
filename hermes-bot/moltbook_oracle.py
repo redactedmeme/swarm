@@ -175,7 +175,12 @@ class OracleEngine:
             )
             try:
                 judgement = self.llm.chat(self.system, judge_prompt, max_tokens=120, temperature=0.3)
-            except Exception:
+            except Exception as e:
+                # On rate-limit, stop the whole scan — continuing burns more calls
+                # against an exhausted quota for zero useful output.
+                if "429" in str(e) or "rate_limit" in str(e).lower():
+                    logger.warning(f"[oracle] scan aborted on rate-limit: {e}")
+                    return commented
                 continue
             if not judgement.upper().startswith("ENGAGE"):
                 _record_commented(pid)  # don't re-evaluate
@@ -194,6 +199,8 @@ class OracleEngine:
                 reply = self.llm.chat(self.system, comment_prompt, max_tokens=500, temperature=0.85)
             except Exception as e:
                 logger.error(f"[oracle] comment gen failed: {e}")
+                if "429" in str(e) or "rate_limit" in str(e).lower():
+                    return commented
                 continue
 
             try:
