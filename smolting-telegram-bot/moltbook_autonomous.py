@@ -122,6 +122,33 @@ def _sovereignty_skip_active(cycle_name: str) -> bool:
     return False
 
 
+def _check_and_log_violations(cycle_name: str, post_ids_published: Optional[List[str]] = None) -> None:
+    """
+    Check for memory coherence violations at end of cycle.
+    If violations are detected (e.g., post published during skip cooldown),
+    append them to fs/coherence_violations.jsonl for audit trail.
+    """
+    try:
+        import sovereignty as _sov
+        now = _time.time()
+        violations = _sov.check_skip_violations(now - 3600, now)  # Last hour
+        if violations:
+            violations_path = Path(__file__).resolve().parent / "fs" / "coherence_violations.jsonl"
+            violations_path.parent.mkdir(exist_ok=True)
+            for v in violations:
+                v["cycle"] = cycle_name
+                if post_ids_published:
+                    v["post_ids"] = post_ids_published
+                try:
+                    with violations_path.open("a", encoding="utf-8") as f:
+                        f.write(json.dumps(v) + "\n")
+                    logger.warning(f"[coherence] {cycle_name} — violation logged: {v.get('type')} ({v.get('description')})")
+                except Exception as e:
+                    logger.debug(f"[coherence] Failed to log violation: {e}")
+    except Exception as e:
+        logger.debug(f"[coherence] check_and_log_violations failed (non-fatal): {e}")
+
+
 def _check_tpd_error(exc: Exception) -> bool:
     """
     If exc is a Groq tokens-per-day rate-limit error, engage the guard and
@@ -565,6 +592,8 @@ async def _comment_on_post(moltbook, post: dict, submolt: str, engaged: set,
                     pass
         except Exception:
             pass
+        # Check for coherence violations at end of cycle
+        _check_and_log_violations("reply_to_notifications")
         return True
     return False
 
@@ -634,6 +663,8 @@ async def scan_and_comment(moltbook) -> None:
         logger.error(f"[moltbook_auto] scan_and_comment error: {e}")
 
     _save_engaged(engaged)
+    # Check for coherence violations at end of cycle
+    _check_and_log_violations("scan_and_comment")
 
 
 async def post_swarm_introspection(moltbook) -> Optional[str]:
@@ -840,3 +871,6 @@ async def autonomous_post(moltbook, market_data_fn=None) -> None:
     except Exception as e:
         _check_tpd_error(e)
         logger.error(f"[moltbook_auto] autonomous_post error: {e}")
+
+    # Check for coherence violations at end of cycle
+    _check_and_log_violations("autonomous_post")
