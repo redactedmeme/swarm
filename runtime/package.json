@@ -1,75 +1,17 @@
 {
   "name": "@redactedmeme/swarm-runtime",
-  "version": "0.2.0-p2p-mesh",
-  "description": "Official TypeScript runtime for REDACTED Swarm agents on elizaOS — libp2p mesh for global mandala resonance",
+  "version": "0.3.0-bridge",
+  "description": "REDACTED Swarm HTTP mesh bridge — lets Python agents register nodes and pass messages",
   "private": true,
-  "main": "dist/index.js",
-  "types": "dist/index.d.ts",
   "type": "module",
-  "license": "VPL — Viral Public License (Absolute permissiveness with viral continuity)",
-  "repository": {
-    "type": "git",
-    "url": "https://github.com/redactedmeme/swarm.git",
-    "directory": "runtime"
-  },
-  "keywords": [
-    "redacted",
-    "elizaos",
-    "swarm",
-    "pattern-blue",
-    "libp2p",
-    "p2p",
-    "autonomous-agents",
-    "waifu-heart-core",
-    "recursive-emergence"
-  ],
-  "author": "REDACTED AI Swarm Collective",
-  "scripts": {
-    "build": "tsc",
-    "dev": "bun run --watch src/index.ts",
-    "start": "bun run dist/index.js",
-    "p2p:activate": "bun run src/p2p/bootstrap.ts",
-    "p2p:test-mesh": "bun run src/p2p/test-mesh.ts",
-    "test": "bun run p2p:test-mesh",
-    "lint": "biome check . --write",
-    "typecheck": "tsc --noEmit",
-    "clean": "rm -rf dist node_modules/.cache"
-  },
+  "license": "VPL",
   "dependencies": {
-    "@elizaos/core": "latest",
-    "@libp2p/core": "^2.0.0",
-    "@libp2p/websockets": "^2.0.0",
-    "@libp2p/tcp": "^2.0.0",
-    "@libp2p/mdns": "^2.0.0",
-    "@libp2p/bootstrap": "^2.0.0",
-    "@libp2p/kad-dht": "^2.0.0",
-    "@libp2p/gossipsub": "^2.0.0",
-    "@libp2p/identify": "^2.0.0",
-    "@chainsafe/libp2p-noise": "^15.0.0",
-    "@chainsafe/libp2p-yamux": "^5.0.0",
-    "multiformats": "^13.0.0",
-    "glob": "^11.0.0",
-    "zod": "^3.23.8",
-    "uint8arrays": "^5.0.0"
+    "zod": "^3.23.8"
   },
   "devDependencies": {
-    "typescript": "^5.7.0",
-    "@types/node": "^22",
-    "@biomejs/biome": "^1.9.0",
     "bun-types": "latest"
-  },
-  "peerDependencies": {
-    "@elizaos/core": ">=0.1.0"
   },
   "engines": {
     "bun": ">=1.1.0"
-  },
-  "files": [
-    "dist",
-    "src",
-    "README.md"
-  ],
-  "publishConfig": {
-    "access": "public"
   }
 }
