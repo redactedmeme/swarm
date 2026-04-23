@@ -146,8 +146,11 @@ class MoltbookClient:
             )
             text = str(expr_raw).lower()
 
-            # ── Step 1: clean — keep letters, digits, spaces ────────────────
-            clean = re.sub(r'[^a-z0-9\s]', ' ', text)
+            # ── Step 1: clean — strip obfuscation punctuation WITHOUT inserting
+            # spaces (punctuation inside words like "tW/eNtY" would otherwise split
+            # into "tw enty" and break word-number matching). Only real whitespace
+            # separates tokens.
+            clean = re.sub(r'[^a-z0-9\s]', '', text)
             clean = re.sub(r'\s+', ' ', clean).strip()
 
             # ── Step 2: digit numbers ────────────────────────────────────────
@@ -300,9 +303,8 @@ class MoltbookClient:
         Uses multi-provider LLM with fallback to ensure robustness.
         """
         try:
-            from llm import CloudLLMClient, EventType
+            from llm import CloudLLMClient
 
-            # Try with Anthropic first (better reasoning), fallback to Groq
             for provider in ["anthropic", "xai", "groq"]:
                 try:
                     llm = CloudLLMClient(provider=provider)
@@ -316,9 +318,7 @@ class MoltbookClient:
                         logger.warning("[challenge] No challenge text found in object")
                         continue
 
-                    # Stream for better control
-                    full_response = ""
-                    async for event in llm.stream_message([
+                    full_response = await llm.chat_completion([
                         {"role": "system", "content": (
                             "You are a math problem solver. Solve the obfuscated math challenge.\n"
                             "The text uses mixed case, spaces between letters, doubled letters, and symbols.\n"
@@ -333,12 +333,9 @@ class MoltbookClient:
                             "Do not include any text, quotes, or explanation."
                         )},
                         {"role": "user", "content": f"Problem:\n{expr_raw}\n\nInstructions:\n{instructions}".strip()},
-                    ]):
-                        if event.type == EventType.TEXT_DELTA and event.content:
-                            full_response += event.content
+                    ])
 
-                    # Extract the number — be more flexible
-                    response_clean = full_response.strip().strip('"').strip("'")
+                    response_clean = (full_response or "").strip().strip('"').strip("'")
 
                     # Try direct match first
                     m = re.search(r'(\d+\.\d{2})', response_clean)
