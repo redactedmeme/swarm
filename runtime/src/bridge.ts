@@ -13,9 +13,12 @@
  */
 
 import { z } from 'zod'
-import type { Libp2p } from 'libp2p'
-import { broadcastPresence } from './p2p'
-import { logger } from './utils/logger'
+
+// p2p type shim — bridge works standalone (p2pNode may be null)
+type Libp2p = { peerId: { toString(): string } }
+
+function _log(msg: string): void { console.log(msg) }
+const logger = { info: _log, debug: _log, error: _log, warning: _log }
 
 // ─── Schemas ─────────────────────────────────────────────────────────────────
 
@@ -132,15 +135,6 @@ async function handleBroadcast(req: Request, p2pNode: Libp2p | null): Promise<Re
     if (nodeId !== body.from) {
       msgs.push(msg)
       delivered++
-    }
-  }
-
-  // Also propagate to p2p mesh if available
-  if (p2pNode) {
-    try {
-      await broadcastPresence(p2pNode, `bridge:${body.type}:${body.from}`)
-    } catch (e) {
-      logger.debug(`[bridge] p2p broadcast failed (non-fatal): ${e}`)
     }
   }
 
