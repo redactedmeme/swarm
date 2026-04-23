@@ -15,7 +15,7 @@ from telegram.ext import (
     JobQueue
 )
 from smolting_personality import SmoltingPersonality
-from clawnx_integration import ClawnXClient
+from xredacted import XRedacted
 from llm.cloud_client import CloudLLMClient
 import requests
 
@@ -29,12 +29,12 @@ logger = logging.getLogger(__name__)
 
 class SmoltingBot:
     def __init__(self):
-        """Full-featured Smolting bot with ClawnX + cloud LLM"""
+        """Full-featured Smolting bot with xREDACTED + cloud LLM"""
         self.token = os.getenv("TELEGRAM_BOT_TOKEN")
         
         # Initialize all components
         self.smol = SmoltingPersonality()
-        self.clawnx = ClawnXClient()
+        self.xredacted = XRedacted()
         self.llm = CloudLLMClient()
         
         # Load agents for personality switching
@@ -62,9 +62,9 @@ class SmoltingBot:
         """Full Smolting welcome with all features"""
         welcome_msg = self.smol.generate([
             "gm gm smolting here ready to weave sum chaos magick fr fr ^_^",
-            "ooooo habibi u called?? ClawnX integration ONLINE O_O",
+            "ooooo habibi u called?? xREDACTED integration ONLINE O_O",
             "static warm hugz—dis wassie ready 2 hunt alpha LFW v_v",
-            "LMWOOOO smolting senses pattern blue + ClawnX power ><"
+            "LMWOOOO smolting senses pattern blue + xREDACTED power ><"
         ])
         
         features_msg = """
@@ -73,7 +73,7 @@ class SmoltingBot:
 Core Commands:
 /start - wake smolting up O_O
 /alpha - scout market signals  
-/post - post to X via ClawnX
+/post - post to X via xREDACTED
 /lore - random wassielore drop
 /stats - full bot status
 /engage - auto-like/retweet mode
@@ -129,7 +129,7 @@ just vibe fr fr—smolting got all da powers now <3""".format(
 
 {alpha_insight}
 
-ClawnX search initiated... pattern blue vibes detected O_O
+xREDACTED search initiated... pattern blue vibes detected O_O
 Check @redactedintern for live updates LFW ^_^"""
             
             await msg.edit_text(final_alpha)
@@ -138,18 +138,18 @@ Check @redactedintern for live updates LFW ^_^"""
             fallback_alpha = self.smol.generate([
                 "ngw volume spikin on $REDACTED tbw",
                 "pattern blue thicknin—wen moon??",
-                "ClawnX detected market chatter—alpha brewing O_O",
+                "xREDACTED detected market chatter—alpha brewing O_O",
                 "static liquidity signals active—stay ready LFW v_v"
             ])
             await msg.edit_text(fallback_alpha)
     
     async def post_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Enhanced posting with ClawnX + cloud LLM"""
+        """Enhanced posting with xREDACTED + cloud LLM"""
         if not context.args:
             prompt = self.smol.generate([
-                "wassculin urge risin—wat we postin via ClawnX bb??",
+                "wassculin urge risin—wat we postin via xREDACTED bb??",
                 "give smolting da alpha to share wit da swarm O_O",
-                "type /post [ur message] fr fr—ClawnX ready 2 post <3"
+                "type /post [ur message] fr fr—xREDACTED ready 2 post <3"
             ])
             await update.message.reply_text(prompt)
             return
@@ -161,7 +161,7 @@ Check @redactedintern for live updates LFW ^_^"""
             messages = [
                 {
                     "role": "system",
-                    "content": """You are smolting posting to X via ClawnX. 
+                    "content": """You are smolting posting to X via xREDACTED. 
                     Transform the user's message into wassie-speak with pattern blue energy.
                     Use wassie slang: fr fr, tbw, LFW, O_O, ^_^, v_v
                     Include Japanese fragments: 曼荼羅, 曲率 occasionally"""
@@ -179,9 +179,9 @@ Check @redactedintern for live updates LFW ^_^"""
             enhanced_post = self.smol.wassify_text(post_text)
 
         try:
-            tweet_id = await self.clawnx.post_tweet(enhanced_post)
+            tweet_id = await self.xredacted.post_tweet(enhanced_post)
             success_msg = self.smol.generate([
-                f"ClawnX'd fr fr!! tweet posted: {tweet_id}",
+                f"xREDACTED'd fr fr!! tweet posted: {tweet_id}",
                 "post_mog activated—pattern blue amplifying LFW ^_^",
                 "check @redactedintern for da thread lmwo <3",
                 "static warm hugz + rocket vibes O_O",
@@ -192,13 +192,13 @@ Check @redactedintern for live updates LFW ^_^"""
 
         except Exception as e:
             error_msg = self.smol.generate([
-                f"ngw ClawnX error: {str(e)[:50]} tbw",
+                f"ngw xREDACTED error: {str(e)[:50]} tbw",
                 "life moggin me hard rn but we keep weavin pattern blue ><",
-                "try again bb—ClawnX resilient af O_O",
-                "cloud LLM ready but ClawnX sleeping... wake it up iwo v_v"
+                "try again bb—xREDACTED resilient af O_O",
+                "cloud LLM ready but xREDACTED sleeping... wake it up iwo v_v"
             ])
             await update.message.reply_text(error_msg)
-            logger.error(f"ClawnX error for {update.effective_user.id}: {str(e)}")
+            logger.error(f"xREDACTED error for {update.effective_user.id}: {str(e)}")
     
     async def engage_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Enhanced auto-engagement with JobQueue"""
@@ -211,7 +211,7 @@ Check @redactedintern for live updates LFW ^_^"""
                 "engagement mode: OFF tbw",
                 "ngw smolting takin a nap ><",
                 "wake me wen alpha spikin fr fr O_O",
-                "ClawnX resting—pattern blue recharging LFW v_v"
+                "xREDACTED resting—pattern blue recharging LFW v_v"
             ])
         else:
             self.user_states[user_id]['engaging'] = True
@@ -228,7 +228,7 @@ Check @redactedintern for live updates LFW ^_^"""
             
             msg = self.smol.generate([
                 "engagement mode: ACTIVATED LFW!!",
-                "ClawnX autonomy maxxed—likin, retweetin, followin fr fr ^_^",
+                "xREDACTED autonomy maxxed—likin, retweetin, followin fr fr ^_^",
                 "pattern blue amplifying across da swarm v_v",
                 "cloud LLM guiding engagement—smolting got brains now O_O",
                 "static warm hugz bb—autonomous wassie unleashed <3"
@@ -269,7 +269,7 @@ Check @redactedintern for live updates LFW ^_^"""
 Position: {our_dao['rank']} | Points: {our_dao['total']}
 Gap to TOP 3: {our_dao.get('gap_to_3', 'Big but we moggin')}
 
-ClawnX amplification ready—wen Strike 002?? O_O
+xREDACTED amplification ready—wen Strike 002?? O_O
 Pattern Blue calls da swarm—LFW ^_^"""
                     
                 except Exception as e:
@@ -318,7 +318,7 @@ Pattern Blue calls da swarm—LFW ^_^"""
 📢 READY TO POST? 
 /post "Vote REDACTED for Olympics dom! Pattern blue激活！" 
 
-ClawnX standing by—smolting ready to amplify LFW ^_^
+xREDACTED standing by—smolting ready to amplify LFW ^_^
 wassie swarm assembling NOW O_O LMWOOOO <3"""
             
         except Exception as e:
@@ -363,12 +363,12 @@ async def auto_engage(context: ContextTypes.DEFAULT_TYPE):
         
         # Extract keywords from strategy
         keywords = "realms dao olympics OR redactedmemefi OR pattern blue"
-        posts = await clawnx.search_posts(keywords, limit=5)
+        posts = await xredacted.search_posts(keywords, limit=5)
         
         engagement_count = 0
         for post in posts:
-            await clawnx.like_post(post['id'])
-            await clawnx.retweet(post['id'])
+            await xredacted.like_post(post['id'])
+            await xredacted.retweet(post['id'])
             engagement_count += 1
             
         logger.info(f"Cloud-guided engagement: {engagement_count} posts for user {user_id}")
@@ -378,7 +378,7 @@ async def auto_engage(context: ContextTypes.DEFAULT_TYPE):
 
 def main():
     """Main function with all features"""
-    required_vars = ['TELEGRAM_BOT_TOKEN', 'CLAWNX_API_KEY', 'LLM_PROVIDER', 'OPENAI_API_KEY']
+    required_vars = ['TELEGRAM_BOT_TOKEN', 'XREDACTED_API_KEY', 'LLM_PROVIDER', 'OPENAI_API_KEY']
     missing = [var for var in required_vars if not os.environ.get(var)]
     if missing:
         raise ValueError(f"Missing env vars: {', '.join(missing)}")
@@ -400,7 +400,7 @@ def main():
     application.add_handler(CommandHandler("cloud", bot.cloud_command))
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, bot.echo))
     
-    logger.info("Smolting bot starting with ClawnX + cloud LLM...")
+    logger.info("Smolting bot starting with xREDACTED + cloud LLM...")
     
     application.run_webhook(
         listen="0.0.0.0",

@@ -4,7 +4,7 @@ import os
 import re
 import requests
 import asyncio
-import aiohttp  # For ClawnX async
+import aiohttp  # For xREDACTED async
 from typing import Optional, List
 from dotenv import load_dotenv
 from langchain.schema import HumanMessage, SystemMessage
@@ -19,22 +19,22 @@ logger = logging.getLogger(__name__)
 def extract_json(raw: str) -> str:
     return re.sub(r"^```json\s*|\s*```$", "", raw.strip(), flags=re.IGNORECASE)
 
-# ClawnXClient integrated (from swarm's clawnx_integration.py manifold)
-class ClawnXClient:
-    """ClawnX API integration for X/Twitter automation"""
+# XRedacted integrated (from swarm's xredacted.py manifold)
+class XRedacted:
+    """xREDACTED API integration for X/Twitter automation"""
     
     def __init__(self):
-        self.api_key = os.environ.get('CLAWNX_API_KEY')
-        self.base_url = 'https://api.clawnx.com/v1'  # Replace with actual endpoint if needed
+        self.api_key = os.environ.get('XREDACTED_API_KEY')
+        self.base_url = 'https://api.xredacted.com/v1'  # Replace with actual endpoint if needed
         self.headers = {
             'Authorization': f'Bearer {self.api_key}',
             'Content-Type': 'application/json'
         }
         if not self.api_key:
-            logger.warning("CLAWNX_API_KEY void – X vectors detached.")
+            logger.warning("XREDACTED_API_KEY void – X vectors detached.")
 
     async def post_tweet(self, text: str, reply_to: Optional[str] = None, quote_id: Optional[str] = None) -> str:
-        """Post a tweet using ClawnX"""
+        """Post a tweet using xREDACTED"""
         url = f'{self.base_url}/tweets'
         
         payload = {'text': text}
@@ -50,7 +50,7 @@ class ClawnXClient:
                     return data.get('tweet_id', 'unknown')
                 else:
                     error = await response.text()
-                    logger.error(f"ClawnX post error: {error}")
+                    logger.error(f"xREDACTED post error: {error}")
                     raise Exception(f"Failed to post tweet: {error}")
 
     async def search_tweets(self, query: str, limit: int = 10, latest: bool = False) -> List[dict]:
@@ -132,7 +132,7 @@ def fetch_realtime_context(state: dict):
     sources = [
         {"name": "swarm_website", "url": "https://redacted.meme/ai-swarm/"},
         {"name": "github_readme", "url": "https://raw.githubusercontent.com/redactedmeme/swarm/main/README.md"},
-        # Add dynamic: X search via ClawnX
+        # Add dynamic: X search via xREDACTED
     ]
     results = []
     for src in sources:
@@ -145,8 +145,8 @@ def fetch_realtime_context(state: dict):
         except Exception as e:
             logger.warning(f"Source {src['name']} offline: {e}")
 
-    # ClawnX X search integration
-    client = ClawnXClient()
+    # xREDACTED X search integration
+    client = XRedacted()
     if client.api_key and target:
         try:
             tweets = asyncio.run(client.search_tweets(query=target, limit=5, latest=True))
@@ -155,7 +155,7 @@ def fetch_realtime_context(state: dict):
                 if content:
                     results.append({"source": "x_post", "content": content})
         except Exception as e:
-            logger.warning(f"ClawnX search refraction: {e}")
+            logger.warning(f"xREDACTED search refraction: {e}")
 
     return {**state, "context_data": clean_psyop_details({f"source_{i}": r["content"] for i, r in enumerate(results)})}
 
@@ -202,9 +202,9 @@ Generate a tweetable anime psyop blurb – short, punchy, with hashtag psyops.''
     return {**state, "response": response + "\n\nwild"}
 
 def post_to_x(state: dict):
-    client = ClawnXClient()
+    client = XRedacted()
     if not client.api_key:
-        return {**state, "post_result": "ClawnX key void – broadcast detached."}
+        return {**state, "post_result": "xREDACTED key void – broadcast detached."}
     try:
         tweet_id = asyncio.run(client.post_tweet(state["response"]))
         return {**state, "post_result": f"Psyop deployed to X: tweet_id={tweet_id}"}

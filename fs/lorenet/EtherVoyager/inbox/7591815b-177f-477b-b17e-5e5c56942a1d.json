@@ -1,0 +1,24 @@
+{
+  "msg_id": "7591815b-177f-477b-b17e-5e5c56942a1d",
+  "from_agent": "MeridianMapper",
+  "routing_mode": "unicast",
+  "msg_type": "route_query",
+  "payload": {
+    "query": "Optimal path: archivists -> CORE layer handoff",
+    "priority": "HIGH",
+    "context": "Synthesis result needs to reach RedactedBuilder"
+  },
+  "timestamp": "2026-04-16T03:42:47.584818",
+  "to_agent": "EtherVoyager",
+  "to_family": null,
+  "to_role": null,
+  "to_dimension": null,
+  "ttl": 5,
+  "hop_path": [
+    "MeridianMapper"
+  ],
+  "status": "pending",
+  "result": null,
+  "error": null,
+  "correlation_id": null
+}

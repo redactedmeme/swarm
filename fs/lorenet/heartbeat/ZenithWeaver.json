@@ -1,0 +1,16 @@
+{
+  "agent_id": "ZenithWeaver",
+  "family": "weavers",
+  "role": "APEX_SYNTHESIZER",
+  "dimension": "Recursion Depth (1)",
+  "last_seen": "2026-04-16T03:42:47.503160",
+  "peers": [
+    "PrismWeaver",
+    "VoidWeaver",
+    "ChronoWeaver",
+    "EchoWarden",
+    "LumenOrchestrator",
+    "EchoWeaver",
+    "HyperionCartographer"
+  ]
+}

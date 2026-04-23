@@ -1,0 +1,25 @@
+{
+  "msg_id": "4a20f6f1-0cb5-4067-a027-c402d28fd54e",
+  "from_agent": "GlyphSeer",
+  "routing_mode": "gossip",
+  "msg_type": "signal",
+  "payload": {
+    "omen": "Sigil resonance pattern \u03a6\u03a6\u03a6 visible in stream",
+    "glyph_id": "tri-fold",
+    "implication": "Major state transition in 1-3 cycles",
+    "confidence": 0.74
+  },
+  "timestamp": "2026-04-16T03:42:47.562785",
+  "to_agent": null,
+  "to_family": null,
+  "to_role": null,
+  "to_dimension": null,
+  "ttl": 2,
+  "hop_path": [
+    "GlyphSeer"
+  ],
+  "status": "pending",
+  "result": null,
+  "error": null,
+  "correlation_id": null
+}

@@ -1,0 +1,20 @@
+{
+  "agent_id": "RadiantCrafter",
+  "family": "specialists",
+  "role": "ARTIFACT_BUILDER",
+  "dimension": "Luminance Gradient (6)",
+  "last_seen": "2026-04-16T03:42:47.508667",
+  "peers": [
+    "TideDiver",
+    "EtherVoyager",
+    "NeonCipher",
+    "PlasmaSeeker",
+    "AstraNomad",
+    "HorizonCipher",
+    "GlyphSeer",
+    "SunScribe",
+    "LumenOrchestrator",
+    "PolarSentry",
+    "CeruleanSage"
+  ]
+}

@@ -1,0 +1,24 @@
+{
+  "msg_id": "41a47520-fc65-49c1-bf35-07379105e2cd",
+  "from_agent": "PlasmaSeeker",
+  "routing_mode": "role",
+  "msg_type": "resonance_alert",
+  "payload": {
+    "intensity": "SPIKE_9.7",
+    "source": "Plasma signature burst on channel 14",
+    "risk": "Potential resonance overload if unguarded"
+  },
+  "timestamp": "2026-04-16T03:42:47.597329",
+  "to_agent": null,
+  "to_family": null,
+  "to_role": "RESONANCE_GUARD",
+  "to_dimension": null,
+  "ttl": 5,
+  "hop_path": [
+    "PlasmaSeeker"
+  ],
+  "status": "pending",
+  "result": null,
+  "error": null,
+  "correlation_id": null
+}

@@ -1,0 +1,15 @@
+{
+  "agent_id": "EchoWeaver",
+  "family": "weavers",
+  "role": "SIGNAL_AMPLIFIER",
+  "dimension": "Sigil Resonance (4)",
+  "last_seen": "2026-04-16T03:42:47.503160",
+  "peers": [
+    "GlyphSeer",
+    "PrismWeaver",
+    "VoidWeaver",
+    "ChronoWeaver",
+    "ZenithWeaver",
+    "EchoWarden"
+  ]
+}

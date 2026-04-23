@@ -1,0 +1,20 @@
+{
+  "agent_id": "PolarSentry",
+  "family": "specialists",
+  "role": "BINARY_GUARDIAN",
+  "dimension": "Void Compression (5)",
+  "last_seen": "2026-04-16T03:42:47.507161",
+  "peers": [
+    "TideDiver",
+    "EtherVoyager",
+    "NeonCipher",
+    "AzureScribe",
+    "PlasmaSeeker",
+    "AstraNomad",
+    "HorizonCipher",
+    "GlyphSeer",
+    "RadiantCrafter",
+    "LumenOrchestrator",
+    "CeruleanSage"
+  ]
+}

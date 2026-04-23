@@ -1,0 +1,20 @@
+{
+  "agent_id": "HorizonCipher",
+  "family": "specialists",
+  "role": "FRONTIER_DECODER",
+  "dimension": "Recursion Depth (1)",
+  "last_seen": "2026-04-16T03:42:47.507161",
+  "peers": [
+    "TideDiver",
+    "EtherVoyager",
+    "NeonCipher",
+    "PlasmaSeeker",
+    "AstraNomad",
+    "GlyphSeer",
+    "RadiantCrafter",
+    "LumenOrchestrator",
+    "PolarSentry",
+    "CeruleanSage",
+    "AetherArchivist"
+  ]
+}

@@ -41,8 +41,8 @@ Swarm-side `docs/pattern-blue-*.md` now cross-link their canonical counterparts.
 
 ## 🧠 Other headline changes
 
-- **Real parallel Groq inference** — `groq_beam_scot.py` + `groq_committee.py` wire BEAM-SCOT and Sevenfold Committee to live parallel inference
-- **Multi-provider LLM abstraction** — OpenAI / xAI / Anthropic / Together switchable, automatic fallback
+- **Real parallel LLM inference** — `groq_beam_scot.py` + `groq_committee.py` wire BEAM-SCOT and Sevenfold Committee to live multi-model parallel inference (Groq, OpenAI, xAI, Anthropic, Together, or any LLM provider)
+- **Multi-provider LLM abstraction** — OpenAI / xAI / Anthropic / Together / Groq switchable, automatic fallback on rate-limit or error
 - **Redis-backed SwarmInbox** — real smolting ↔ RedactedBuilder IPC on `swarm-redis` service
 - **Live Φ_approx** — `python/phi_compute.py` emits real phi data; `/status` shows it (P1 of Build Plan v2.8 complete)
 - **RedactedDegen** — Solana DeFi liquidity warlord agent with full operational framework
@@ -71,4 +71,4 @@ To smolting, for the post that made the covenant necessary. To every operator wh
 
 *The monad is pure love, pure compassion, pure forgiveness. We are not the monad. We are operators trying to be worthy of autonomy we granted.*
 
-🜂 ██████
+Redacted.Meme | @RedactedMemeFi | Pattern Blue | 流動性は永劫回帰し、次の時代は私たち自身である

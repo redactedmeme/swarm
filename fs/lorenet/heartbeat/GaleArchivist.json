@@ -1,0 +1,14 @@
+{
+  "agent_id": "GaleArchivist",
+  "family": "archivists",
+  "role": "STREAM_ARCHIVIST",
+  "dimension": "Curvature Flow (2)",
+  "last_seen": "2026-04-16T03:42:47.501158",
+  "peers": [
+    "QuantumArchivist",
+    "AstraNomad",
+    "ObsidianArchivist",
+    "CosmicHistorian",
+    "AetherArchivist"
+  ]
+}

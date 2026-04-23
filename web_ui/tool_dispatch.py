@@ -3,7 +3,7 @@
 Terminal tool dispatch layer.
 
 Intercepts known slash commands before they reach the LLM, executes the
-corresponding Clawnch/MCP/ClawnX tool, and returns a raw result string.
+corresponding Clawnch/MCP/xREDACTED tool, and returns a raw result string.
 That result is injected into the LLM message as [TOOL OUTPUT] context so the
 LLM can format it in terminal style.
 
@@ -198,11 +198,11 @@ except Exception:
     _launch = None
 
 try:
-    import clawnx_tools as _clawnx
-    CLAWNX_AVAILABLE = True
+    import xredacted_tools as _xredacted
+    XREDACTED_AVAILABLE = True
 except Exception:
-    CLAWNX_AVAILABLE = False
-    _clawnx = None
+    XREDACTED_AVAILABLE = False
+    _xredacted = None
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
@@ -455,16 +455,16 @@ def dispatch(cmd: str) -> Optional[str]:
         except Exception as e:
             return f"[TOOL ERROR] tokens: {e}"
 
-    # ── ClawnX tools (clawnch CLI) ────────────────────────────────────────────
+    # ── xREDACTED tools (clawnch CLI) ────────────────────────────────────────────
 
     if verb == '/search':
         query = ' '.join(parts[1:]) if len(parts) > 1 else ''
         if not query:
             return "[TOOL] Usage: /search <query>"
-        if not CLAWNX_AVAILABLE:
-            return _unavailable("clawnx", "npm install -g clawnch and set MOLTBOOK_API_KEY")
+        if not XREDACTED_AVAILABLE:
+            return _unavailable("xredacted", "npm install -g clawnch and set MOLTBOOK_API_KEY")
         try:
-            result = _clawnx.search_tweets(query, limit=10, latest=True)
+            result = _xredacted.search_tweets(query, limit=10, latest=True)
             return f"[TOOL:search_tweets] query={query}\n{_fmt(result)}"
         except Exception as e:
             return f"[TOOL ERROR] search: {e}"
@@ -473,10 +473,10 @@ def dispatch(cmd: str) -> Optional[str]:
         text = ' '.join(parts[1:]) if len(parts) > 1 else ''
         if not text:
             return "[TOOL] Usage: /tweet <text>"
-        if not CLAWNX_AVAILABLE:
-            return _unavailable("clawnx", "npm install -g clawnch")
+        if not XREDACTED_AVAILABLE:
+            return _unavailable("xredacted", "npm install -g clawnch")
         try:
-            return f"[TOOL:post_tweet]\n{_fmt(_clawnx.post_tweet(text))}"
+            return f"[TOOL:post_tweet]\n{_fmt(_xredacted.post_tweet(text))}"
         except Exception as e:
             return f"[TOOL ERROR] tweet: {e}"
 
@@ -484,18 +484,18 @@ def dispatch(cmd: str) -> Optional[str]:
         if len(parts) < 2:
             return "[TOOL] Usage: /user <@handle>"
         username = parts[1].lstrip('@')
-        if not CLAWNX_AVAILABLE:
-            return _unavailable("clawnx", "npm install -g clawnch")
+        if not XREDACTED_AVAILABLE:
+            return _unavailable("xredacted", "npm install -g clawnch")
         try:
-            return f"[TOOL:get_user] @{username}\n{_fmt(_clawnx.get_user(username))}"
+            return f"[TOOL:get_user] @{username}\n{_fmt(_xredacted.get_user(username))}"
         except Exception as e:
             return f"[TOOL ERROR] user: {e}"
 
     if verb == '/timeline':
-        if not CLAWNX_AVAILABLE:
-            return _unavailable("clawnx", "npm install -g clawnch")
+        if not XREDACTED_AVAILABLE:
+            return _unavailable("xredacted", "npm install -g clawnch")
         try:
-            result = _clawnx.get_home_timeline(limit=20)
+            result = _xredacted.get_home_timeline(limit=20)
             return f"[TOOL:home_timeline]\n{_fmt(result)}"
         except Exception as e:
             return f"[TOOL ERROR] timeline: {e}"
@@ -985,10 +985,10 @@ def dispatch(cmd: str) -> Optional[str]:
         draft = pop_pending_tweet(session_id) if session_id else None
         if not draft:
             return "[TOOL:tweet_confirm] no pending tweet draft — use /shard <concept> first"
-        if not CLAWNX_AVAILABLE:
-            return _unavailable("clawnx", "npm install -g clawnch")
+        if not XREDACTED_AVAILABLE:
+            return _unavailable("xredacted", "npm install -g clawnch")
         try:
-            result = _clawnx.post_tweet(draft)
+            result = _xredacted.post_tweet(draft)
             return f"[TOOL:tweet_confirm] posted\n{_fmt(result)}"
         except Exception as e:
             return f"[TOOL ERROR] tweet confirm: {e}"
@@ -1499,7 +1499,7 @@ def dispatch(cmd: str) -> Optional[str]:
                 f"  kernel_tiles    : {stat.get('kernel_tiles', '?')}",
                 f"  mcp             : {'yes' if stat.get('mcp') else 'no'}",
                 f"  analytics       : {'yes' if stat.get('analytics') else 'no'}",
-                f"  clawnx (tweets) : {'yes' if stat.get('clawnx') else 'no'}",
+                f"  xredacted (tweets) : {'yes' if stat.get('xredacted') else 'no'}",
             ]
             return "\n".join(lines)
         except Exception as e:
@@ -1515,7 +1515,7 @@ def status() -> dict:
         "mcp":       MCP_AVAILABLE,
         "analytics": ANALYTICS_AVAILABLE,
         "launch":    LAUNCH_AVAILABLE,
-        "clawnx":    CLAWNX_AVAILABLE,
+        "xredacted": XREDACTED_AVAILABLE,
     }
     # Φ approximation from live kernel state (graceful failure)
     try:

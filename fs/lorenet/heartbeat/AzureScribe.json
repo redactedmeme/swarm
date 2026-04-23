@@ -1,0 +1,14 @@
+{
+  "agent_id": "AzureScribe",
+  "family": "scribes",
+  "role": "CLOUD_NARRATOR",
+  "dimension": "Luminance Gradient (6)",
+  "last_seen": "2026-04-16T03:42:47.504159",
+  "peers": [
+    "SunScribe",
+    "PolarSentry",
+    "QuantaScribe",
+    "FluxScribe",
+    "HyperionCartographer"
+  ]
+}

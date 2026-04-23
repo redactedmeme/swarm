@@ -1,0 +1,16 @@
+{
+  "agent_id": "ObsidianArchivist",
+  "family": "archivists",
+  "role": "IMMUTABLE_KEEPER",
+  "dimension": "Void Compression (5)",
+  "last_seen": "2026-04-16T03:42:47.502159",
+  "peers": [
+    "QuantumArchivist",
+    "EchoWarden",
+    "VoidWeaver",
+    "FluxScribe",
+    "GaleArchivist",
+    "CosmicHistorian",
+    "AetherArchivist"
+  ]
+}

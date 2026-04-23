@@ -1,0 +1,14 @@
+{
+  "agent_id": "QuantaScribe",
+  "family": "scribes",
+  "role": "PROBABILITY_NOTATOR",
+  "dimension": "Void Compression (5)",
+  "last_seen": "2026-04-16T03:42:47.504159",
+  "peers": [
+    "SunScribe",
+    "QuantumArchivist",
+    "AzureScribe",
+    "FluxScribe",
+    "CeruleanSage"
+  ]
+}

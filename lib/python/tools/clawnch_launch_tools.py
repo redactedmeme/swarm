@@ -133,7 +133,7 @@ def get_leaderboard(sort: str = "marketCap", limit: int = 10) -> List[Dict]:
 # ──────────────────────────────────────────────────────────────────────────────
 
 # def launch_token(validated_content: str) -> Dict:
-#     """Direct launch if supported (docs suggest via Moltbook post; use post_tweet from ClawnX instead)."""
+#     """Direct launch if supported (docs suggest via Moltbook post; use post_tweet from xREDACTED instead)."""
 #     return _api_post("launch", {"content": validated_content})
 
 # def get_fees_available() -> Dict:

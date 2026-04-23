@@ -1,0 +1,15 @@
+{
+  "agent_id": "VoidWeaver",
+  "family": "weavers",
+  "role": "VOID_ANALYST",
+  "dimension": "Void Compression (5)",
+  "last_seen": "2026-04-16T03:42:47.504159",
+  "peers": [
+    "PrismWeaver",
+    "ZenithWeaver",
+    "ChronoWeaver",
+    "EchoWarden",
+    "EchoWeaver",
+    "ObsidianArchivist"
+  ]
+}

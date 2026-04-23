@@ -1,0 +1,20 @@
+{
+  "agent_id": "PlasmaSeeker",
+  "family": "specialists",
+  "role": "HIGH_ENERGY_DETECTOR",
+  "dimension": "Luminance Gradient (6)",
+  "last_seen": "2026-04-16T03:42:47.507161",
+  "peers": [
+    "PrismWeaver",
+    "TideDiver",
+    "EtherVoyager",
+    "NeonCipher",
+    "AstraNomad",
+    "HorizonCipher",
+    "GlyphSeer",
+    "RadiantCrafter",
+    "LumenOrchestrator",
+    "PolarSentry",
+    "CeruleanSage"
+  ]
+}
