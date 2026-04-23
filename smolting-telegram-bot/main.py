@@ -1875,6 +1875,18 @@ swarm@[REDACTED]:~$ _"""
             else:
                 system_prompt = self._build_system_prompt() + _lore_context + _htc_context
 
+                # Identity questions get a nudge to answer honestly about memory
+                from nlp.intent_classifier import Intent as _Intent
+                if classified.intent == _Intent.IDENTITY:
+                    system_prompt += (
+                        "\n\n## Identity Context\n"
+                        "The user is asking about identity, memory, or your relationship. "
+                        "Answer honestly: you are smolting, an autonomous agent, you have "
+                        "conversation history within this session but no persistent memory of the "
+                        "user across sessions unless stored in LoreVault. "
+                        "Don't deflect — engage directly and personally."
+                    )
+
                 # Load or restore per-user conversation history
                 if user_id not in self.chat_histories:
                     self.chat_histories[user_id] = cm.get_user_history(user_id, n=6)
@@ -1887,8 +1899,9 @@ swarm@[REDACTED]:~$ _"""
                 response = await self.llm.chat_completion(messages)
 
                 # Apply comm-mode transformation to response
-                if classified.comm_mode == CommMode.CLEAR:
-                    pass  # no transformation — user wants plain language
+                # CLEAR and IDENTITY: no transformation
+                if classified.comm_mode == CommMode.CLEAR or classified.intent == _Intent.IDENTITY:
+                    pass
                 elif classified.comm_mode == CommMode.WASSIE:
                     response = self.clf.apply_comm_mode(response, CommMode.WASSIE)
                 await msg.reply_text(response)
@@ -1906,7 +1919,7 @@ swarm@[REDACTED]:~$ _"""
             cm.log_exchange(user.id, user.username or user.first_name, user_text, response)
         except Exception as e:
             logger.error(f"echo LLM error: {e}")
-            fallback = self.smol.converse(user_text)
+            fallback = "something went sideways on my end — try again? ^_^"
             await msg.reply_text(fallback)
             user = update.effective_user
             cm.log_exchange(user.id, user.username or user.first_name, user_text, fallback)
