@@ -55,6 +55,7 @@ class Intent(str, Enum):
     LORE_ADD     = "lore_add"
     GREETING     = "greeting"
     FAREWELL     = "farewell"
+    IDENTITY     = "identity"   # "who are you", "who am i", "how long have we talked"
     CASUAL       = "casual"
 
 
@@ -108,7 +109,9 @@ _CLEAR_MARKERS = [
     r"\bplease\b", r"\bcould you\b", r"\bwould you\b", r"\bcan you\b",
     r"\bexplain\b", r"\bdescribe\b", r"\btechnically\b", r"\bin plain\b",
     r"\bactually\b", r"\bliterally\b", r"\bhow does\b", r"\bwhat is\b",
-    r"\bwhere is\b", r"\bwho is\b", r"\btell me\b",
+    r"\bwhere is\b", r"\bwho is\b", r"\bwho are\b", r"\btell me\b",
+    r"\bhow long\b", r"\bhow many\b", r"\bhow do\b", r"\bwhat are\b",
+    r"\bwhat was\b", r"\bwhat were\b", r"\bwhy did\b", r"\bwhy are\b",
 ]
 
 # Intent signal tables: (pattern, Intent, slot_extractor_fn | None)
@@ -118,6 +121,15 @@ _LORE_SIGNALS = [
     r"\blore\b", r"\bhistory\b", r"\bwassieverse\b", r"\bwho is\b", r"\bwhat is\b",
     r"\btell me about\b", r"\bexplain\b", r"\bwhere is\b", r"\borigin\b",
     r"\bcharacter\b", r"\bspace\b", r"\bartifact\b", r"\blegend\b",
+    r"\bwho are you\b", r"\bwhat are you\b", r"\bwho am i\b", r"\bwhat am i\b",
+    r"\btell me about yourself\b", r"\babout you\b",
+    r"\bpattern blue\b", r"\bpattern_blue\b",
+]
+
+_IDENTITY_SIGNALS = [
+    r"\bwho are you\b", r"\bwhat are you\b", r"\bwho am i\b", r"\bwhat am i\b",
+    r"\bdo you know me\b", r"\bremember me\b", r"\bhow long\b.*\btalk\b",
+    r"\bhow long.*we\b", r"\bour conversation\b", r"\bsession\b",
 ]
 
 _ALPHA_SIGNALS = [
@@ -323,6 +335,7 @@ class IntentClassifier:
 
         # ── Signal scoring — order matters (higher specificity first) ─────────
         scores = {
+            Intent.IDENTITY:     _score_signals(lower, _IDENTITY_SIGNALS),
             Intent.HTC_ENTER:    _score_signals(lower, _HTC_SIGNALS),
             Intent.LORE_ADD:     _score_signals(lower, _LORE_ADD_SIGNALS),
             Intent.MOLTBOOK:     _score_signals(lower, _MOLTBOOK_SIGNALS),
