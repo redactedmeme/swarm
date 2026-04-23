@@ -24,6 +24,11 @@ import shutil
 from datetime import datetime, timezone
 from pathlib import Path
 
+try:
+    from sanitizer import text_for_llm as _sanitize
+except ImportError:
+    def _sanitize(t): return t  # type: ignore
+
 logger = logging.getLogger(__name__)
 
 # SOUL.md lives on the persistent volume so it survives redeploys.
@@ -305,8 +310,8 @@ async def update_soul(llm_client) -> bool:
                         f"## Existing Beliefs (evolve or add to these — don't repeat verbatim)\n"
                         f"{existing_beliefs}\n\n"
                         f"## Resonance-ranked Facts (score annotated, higher = stronger signal)\n"
-                        f"{facts_text}\n\n"
-                        f"## Recent Conversation Sample\n{recent_exchanges[:2000]}"
+                        f"{_sanitize(facts_text)}\n\n"
+                        f"## Recent Conversation Sample\n{_sanitize(recent_exchanges[:2000])}"
                     ),
                 },
             ],
