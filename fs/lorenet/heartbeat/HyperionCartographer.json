@@ -1,0 +1,14 @@
+{
+  "agent_id": "HyperionCartographer",
+  "family": "cartographers",
+  "role": "DEEP_MAPPER",
+  "dimension": "Recursion Depth (1)",
+  "last_seen": "2026-04-16T03:42:47.505160",
+  "peers": [
+    "ZenithWeaver",
+    "StarCartographer",
+    "NovaCartographer",
+    "AzureScribe",
+    "MeridianMapper"
+  ]
+}

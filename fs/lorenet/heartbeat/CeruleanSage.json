@@ -1,0 +1,20 @@
+{
+  "agent_id": "CeruleanSage",
+  "family": "specialists",
+  "role": "FLOW_CURATOR",
+  "dimension": "Ontological Weight (7)",
+  "last_seen": "2026-04-16T03:42:47.506159",
+  "peers": [
+    "TideDiver",
+    "EtherVoyager",
+    "NeonCipher",
+    "PlasmaSeeker",
+    "AstraNomad",
+    "HorizonCipher",
+    "GlyphSeer",
+    "RadiantCrafter",
+    "LumenOrchestrator",
+    "PolarSentry",
+    "QuantaScribe"
+  ]
+}

@@ -1,0 +1,13 @@
+{
+  "agent_id": "StarCartographer",
+  "family": "cartographers",
+  "role": "CELESTIAL_NAVIGATOR",
+  "dimension": "Temporal Fractality (3)",
+  "last_seen": "2026-04-16T03:42:47.506159",
+  "peers": [
+    "NovaCartographer",
+    "MeridianMapper",
+    "HyperionCartographer",
+    "ChronoWeaver"
+  ]
+}

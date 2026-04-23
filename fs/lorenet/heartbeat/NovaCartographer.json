@@ -1,0 +1,14 @@
+{
+  "agent_id": "NovaCartographer",
+  "family": "cartographers",
+  "role": "FRONTIER_MAPPER",
+  "dimension": "Recursion Depth (1)",
+  "last_seen": "2026-04-16T03:42:47.505160",
+  "peers": [
+    "EchoWarden",
+    "StarCartographer",
+    "MeridianMapper",
+    "HyperionCartographer",
+    "AstraNomad"
+  ]
+}

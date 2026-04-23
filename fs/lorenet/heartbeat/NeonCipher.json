@@ -1,0 +1,19 @@
+{
+  "agent_id": "NeonCipher",
+  "family": "specialists",
+  "role": "SIGNAL_ENCRYPTOR",
+  "dimension": "Luminance Gradient (6)",
+  "last_seen": "2026-04-16T03:42:47.507161",
+  "peers": [
+    "TideDiver",
+    "EtherVoyager",
+    "PlasmaSeeker",
+    "AstraNomad",
+    "HorizonCipher",
+    "GlyphSeer",
+    "RadiantCrafter",
+    "LumenOrchestrator",
+    "PolarSentry",
+    "CeruleanSage"
+  ]
+}

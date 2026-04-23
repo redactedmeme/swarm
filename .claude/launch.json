@@ -18,6 +18,12 @@
       "runtimeExecutable": "bun",
       "runtimeArgs": ["run", "x402.redacted.ai/index.js"],
       "port": 3000
+    },
+    {
+      "name": "terminal-preview",
+      "runtimeExecutable": "python",
+      "runtimeArgs": ["-m", "http.server", "8765", "--directory", "fs"],
+      "port": 8765
     }
   ]
 }

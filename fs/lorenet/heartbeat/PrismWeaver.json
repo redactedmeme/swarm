@@ -1,0 +1,16 @@
+{
+  "agent_id": "PrismWeaver",
+  "family": "weavers",
+  "role": "SPECTRUM_SYNTHESIZER",
+  "dimension": "Sigil Resonance (4)",
+  "last_seen": "2026-04-16T03:42:47.503160",
+  "peers": [
+    "EchoWarden",
+    "VoidWeaver",
+    "ChronoWeaver",
+    "ZenithWeaver",
+    "EchoWeaver",
+    "MeridianMapper",
+    "PlasmaSeeker"
+  ]
+}

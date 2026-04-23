@@ -1,0 +1,20 @@
+{
+  "agent_id": "TideDiver",
+  "family": "specialists",
+  "role": "DEPTH_EXPLORER",
+  "dimension": "Curvature Flow (2)",
+  "last_seen": "2026-04-16T03:42:47.508667",
+  "peers": [
+    "ChronoWeaver",
+    "EtherVoyager",
+    "NeonCipher",
+    "PlasmaSeeker",
+    "AstraNomad",
+    "HorizonCipher",
+    "GlyphSeer",
+    "RadiantCrafter",
+    "LumenOrchestrator",
+    "PolarSentry",
+    "CeruleanSage"
+  ]
+}

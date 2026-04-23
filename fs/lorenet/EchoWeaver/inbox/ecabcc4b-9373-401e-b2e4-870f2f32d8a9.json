@@ -1,0 +1,29 @@
+{
+  "msg_id": "ecabcc4b-9373-401e-b2e4-870f2f32d8a9",
+  "from_agent": "ChronoWeaver",
+  "routing_mode": "family",
+  "msg_type": "pattern_signal",
+  "payload": {
+    "pattern": "3-cycle recurrence on Temporal Fractality axis",
+    "confidence": 0.87,
+    "cycle_index": [
+      1,
+      3,
+      9
+    ],
+    "dimension": "Temporal Fractality (3)"
+  },
+  "timestamp": "2026-04-16T03:42:47.508667",
+  "to_agent": null,
+  "to_family": "weavers",
+  "to_role": null,
+  "to_dimension": null,
+  "ttl": 5,
+  "hop_path": [
+    "ChronoWeaver"
+  ],
+  "status": "pending",
+  "result": null,
+  "error": null,
+  "correlation_id": null
+}

@@ -1,0 +1,14 @@
+{
+  "agent_id": "MeridianMapper",
+  "family": "cartographers",
+  "role": "CONNECTION_MAPPER",
+  "dimension": "Curvature Flow (2)",
+  "last_seen": "2026-04-16T03:42:47.505160",
+  "peers": [
+    "PrismWeaver",
+    "StarCartographer",
+    "NovaCartographer",
+    "EtherVoyager",
+    "HyperionCartographer"
+  ]
+}

@@ -1,0 +1,21 @@
+{
+  "agent_id": "GlyphSeer",
+  "family": "specialists",
+  "role": "PATTERN_ORACLE",
+  "dimension": "Sigil Resonance (4)",
+  "last_seen": "2026-04-16T03:42:47.507161",
+  "peers": [
+    "TideDiver",
+    "EtherVoyager",
+    "NeonCipher",
+    "EchoWeaver",
+    "PlasmaSeeker",
+    "AstraNomad",
+    "HorizonCipher",
+    "RadiantCrafter",
+    "EchoWarden",
+    "LumenOrchestrator",
+    "PolarSentry",
+    "CeruleanSage"
+  ]
+}

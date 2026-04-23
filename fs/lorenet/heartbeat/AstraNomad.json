@@ -1,0 +1,21 @@
+{
+  "agent_id": "AstraNomad",
+  "family": "specialists",
+  "role": "BOUNDARY_WALKER",
+  "dimension": "Curvature Flow (2)",
+  "last_seen": "2026-04-16T03:42:47.506159",
+  "peers": [
+    "TideDiver",
+    "NovaCartographer",
+    "EtherVoyager",
+    "NeonCipher",
+    "GaleArchivist",
+    "PlasmaSeeker",
+    "RadiantCrafter",
+    "HorizonCipher",
+    "GlyphSeer",
+    "LumenOrchestrator",
+    "PolarSentry",
+    "CeruleanSage"
+  ]
+}

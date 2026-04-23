@@ -1,0 +1,14 @@
+{
+  "agent_id": "AetherArchivist",
+  "family": "archivists",
+  "role": "EPHEMERAL_ARCHIVE",
+  "dimension": "Void Compression (5)",
+  "last_seen": "2026-04-16T03:42:47.501158",
+  "peers": [
+    "HorizonCipher",
+    "QuantumArchivist",
+    "GaleArchivist",
+    "ObsidianArchivist",
+    "CosmicHistorian"
+  ]
+}

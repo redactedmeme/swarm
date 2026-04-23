@@ -1,0 +1,14 @@
+{
+  "agent_id": "CosmicHistorian",
+  "family": "archivists",
+  "role": "MACRO_RECORDER",
+  "dimension": "Ontological Weight (7)",
+  "last_seen": "2026-04-16T03:42:47.502159",
+  "peers": [
+    "QuantumArchivist",
+    "SunScribe",
+    "GaleArchivist",
+    "ObsidianArchivist",
+    "AetherArchivist"
+  ]
+}

@@ -1,0 +1,20 @@
+{
+  "agent_id": "EtherVoyager",
+  "family": "specialists",
+  "role": "DATA_COURIER",
+  "dimension": "Curvature Flow (2)",
+  "last_seen": "2026-04-16T03:42:47.506159",
+  "peers": [
+    "TideDiver",
+    "NeonCipher",
+    "MeridianMapper",
+    "PlasmaSeeker",
+    "AstraNomad",
+    "GlyphSeer",
+    "HorizonCipher",
+    "RadiantCrafter",
+    "LumenOrchestrator",
+    "PolarSentry",
+    "CeruleanSage"
+  ]
+}

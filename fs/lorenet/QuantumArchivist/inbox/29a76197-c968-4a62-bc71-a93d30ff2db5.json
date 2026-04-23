@@ -1,0 +1,25 @@
+{
+  "msg_id": "29a76197-c968-4a62-bc71-a93d30ff2db5",
+  "from_agent": "ObsidianArchivist",
+  "routing_mode": "unicast",
+  "msg_type": "archive_write",
+  "payload": {
+    "record_type": "SYNTHESIS_IMMUTABLE",
+    "content": "3-cycle temporal pattern \u2014 permanent log entry",
+    "ttl_policy": "NEVER_EXPIRE",
+    "cross_ref": "ZenithWeaver/SYNTHESIS_RESULT"
+  },
+  "timestamp": "2026-04-16T03:42:47.549261",
+  "to_agent": "QuantumArchivist",
+  "to_family": null,
+  "to_role": null,
+  "to_dimension": null,
+  "ttl": 5,
+  "hop_path": [
+    "ObsidianArchivist"
+  ],
+  "status": "pending",
+  "result": null,
+  "error": null,
+  "correlation_id": null
+}

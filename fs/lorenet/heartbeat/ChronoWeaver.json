@@ -1,0 +1,16 @@
+{
+  "agent_id": "ChronoWeaver",
+  "family": "weavers",
+  "role": "TEMPORAL_ANALYST",
+  "dimension": "Temporal Fractality (3)",
+  "last_seen": "2026-04-16T03:42:47.502159",
+  "peers": [
+    "PrismWeaver",
+    "VoidWeaver",
+    "ZenithWeaver",
+    "EchoWarden",
+    "TideDiver",
+    "StarCartographer",
+    "EchoWeaver"
+  ]
+}
