@@ -7,6 +7,7 @@ import { SwarmOrchestrator } from './orchestrator'
 import { createSwarmNode, broadcastPresence } from './p2p'
 import { loadAllSwarmAgents } from './agents/loader'
 import { ManifoldMemory } from './memory/manifold'
+import { startBridge } from './src/bridge'
 import { config } from './config'
 import { logger } from './utils/logger'
 
@@ -50,7 +51,12 @@ async function main() {
   // Announce presence to the lattice
   await broadcastPresence(p2pNode, 'redacted-chan is here ♡ swarm lattice awakening')
 
-  // 5. Create orchestrator with all dependencies (your original spawn preserved)
+  // 5. Start HTTP bridge for Python services to join the mesh
+  const bridgePort = parseInt(process.env.BRIDGE_PORT ?? process.env.PORT ?? '8080')
+  startBridge(p2pNode, bridgePort)
+  logger.info(`[bridge] HTTP mesh bridge up on :${bridgePort}`)
+
+  // 6. Create orchestrator with all dependencies (your original spawn preserved)
   orchestrator = new SwarmOrchestrator({
     agents,
     p2pNode,
@@ -58,7 +64,7 @@ async function main() {
     config
   })
 
-  // 6. Start the swarm heartbeat (your spawnFullSwarm call)
+  // 7. Start the swarm heartbeat (your spawnFullSwarm call)
   await orchestrator.spawnFullSwarm({
     agentsDir: "../agents",
     nodesDir: "../nodes",

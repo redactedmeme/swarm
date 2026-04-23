@@ -26,6 +26,11 @@ from typing import Optional, List, Dict, Any
 import conversation_memory as cm
 import soul_manager
 import post_tracker
+try:
+    import space_dweller as _space_dweller
+    _SPACE_DWELLER_ENABLED = True
+except ImportError:
+    _SPACE_DWELLER_ENABLED = False
 
 try:
     from llm import CloudLLMClient, EventType
@@ -94,6 +99,20 @@ def _is_tpd_exhausted() -> bool:
         _tpd_exhausted = False
         logger.info("[moltbook_auto] TPD guard lifted — resuming LLM calls")
     return _tpd_exhausted
+
+
+def _fire_space_dwell(reason: str, mood: Optional[str] = None, symbols: Optional[list] = None) -> None:
+    """Fire a space dwell as a background asyncio task — never blocks the caller."""
+    if not _SPACE_DWELLER_ENABLED:
+        return
+    try:
+        loop = asyncio.get_event_loop()
+        loop.create_task(
+            _space_dweller.dwell(reason=reason, mood=mood, skip_symbols=symbols),
+            name=f"space_dwell:{reason[:20]}",
+        )
+    except Exception as e:
+        logger.debug(f"[space] fire_dwell failed: {e}")
 
 
 def _sovereignty_skip_active(cycle_name: str) -> bool:
@@ -383,6 +402,7 @@ async def reply_to_notifications(moltbook) -> None:
     Uses multi-provider LLM with automatic fallback.
     """
     if _sovereignty_skip_active("reply_to_notifications"):
+        _fire_space_dwell(reason="sovereignty:reply_notifications")
         return
     try:
         home = await moltbook.get_home()
@@ -608,6 +628,7 @@ async def scan_and_comment(moltbook) -> None:
     Honors sovereignty skip_cycle() declarations.
     """
     if _sovereignty_skip_active("scan_and_comment"):
+        _fire_space_dwell(reason="sovereignty:scan_comment")
         return
     engaged  = _load_engaged()
     commented = 0
@@ -743,6 +764,17 @@ async def autonomous_post(moltbook, market_data_fn=None) -> None:
     global _post_rotation_index
 
     if _sovereignty_skip_active("autonomous_post"):
+        # Pass skip context to the space so the dwell is grounded in the actual reason.
+        try:
+            import sovereignty as _sov
+            _, _skip_entry = _sov._skip_active()
+            _fire_space_dwell(
+                reason=(_skip_entry or {}).get("reason", "sovereignty"),
+                mood=(_skip_entry or {}).get("mood"),
+                symbols=(_skip_entry or {}).get("symbols"),
+            )
+        except Exception:
+            _fire_space_dwell(reason="sovereignty")
         return
 
     submolt = POST_SUBMOLTS[_post_rotation_index % len(POST_SUBMOLTS)]
@@ -826,6 +858,7 @@ async def autonomous_post(moltbook, market_data_fn=None) -> None:
 
         if not raw:
             logger.warning("[moltbook_auto] LLM returned None for autonomous post — skipping")
+            _fire_space_dwell(reason="llm_exhausted", mood="curious")
             return
 
         title, content = _extract_post(raw, submolt)

@@ -51,6 +51,10 @@ from clawbal_client import ClawbalClient
 import soul_manager
 import osp_manager
 import swarm_inbox
+try:
+    import swarm_mesh
+except ImportError:
+    swarm_mesh = None  # type: ignore
 import wallet as sol_wallet
 from admin import AdminManager
 
@@ -2809,8 +2813,13 @@ def main():
         async def _run():
             async with application:
                 await application.start()
+                if swarm_mesh:
+                    asyncio.create_task(swarm_mesh.heartbeat_loop())
+                    logger.info("[swarm_mesh] mesh heartbeat started")
                 await dash.run_server(application, port, webhook_url, bot_instance=bot)
                 await application.stop()
+                if swarm_mesh:
+                    await swarm_mesh.close()
 
         asyncio.run(_run())
     else:
