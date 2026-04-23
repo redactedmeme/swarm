@@ -17,6 +17,12 @@ from typing import Any, Optional
 
 import aiohttp
 
+try:
+    from sanitizer import payload_for_mesh as _sanitize
+except ImportError:
+    def _sanitize(p):  # type: ignore
+        return p
+
 logger = logging.getLogger(__name__)
 
 MESH_URL  = os.getenv("SWARM_MESH_URL", "").rstrip("/")
@@ -77,7 +83,7 @@ async def broadcast(msg_type: str, payload: Any) -> bool:
         async with s.post(f"{MESH_URL}/broadcast", json={
             "from":    NODE_ID,
             "type":    msg_type,
-            "payload": payload,
+            "payload": _sanitize(payload),
         }) as resp:
             return resp.status == 200
     except Exception as e:
@@ -94,7 +100,7 @@ async def send(target_node_id: str, msg_type: str, payload: Any) -> bool:
         async with s.post(f"{MESH_URL}/message/{target_node_id}", json={
             "from":    NODE_ID,
             "type":    msg_type,
-            "payload": payload,
+            "payload": _sanitize(payload),
         }) as resp:
             return resp.status == 200
     except Exception as e:

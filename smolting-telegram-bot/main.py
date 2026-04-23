@@ -52,6 +52,11 @@ import soul_manager
 import osp_manager
 import swarm_inbox
 try:
+    from sanitizer import text_for_llm as _sanitize_text, payload_for_mesh as _sanitize_payload
+except ImportError:
+    def _sanitize_text(t): return t   # type: ignore
+    def _sanitize_payload(p): return p  # type: ignore
+try:
     import swarm_mesh
 except ImportError:
     swarm_mesh = None  # type: ignore
@@ -1894,7 +1899,7 @@ swarm@[REDACTED]:~$ _"""
                 history = self.chat_histories[user_id]
                 messages = [{"role": "system", "content": system_prompt}]
                 messages.extend(history[-14:])  # last 7 exchanges = 14 messages max
-                messages.append({"role": "user", "content": user_text})
+                messages.append({"role": "user", "content": _sanitize_text(user_text)})
 
                 response = await self.llm.chat_completion(messages)
 
@@ -1934,7 +1939,7 @@ swarm@[REDACTED]:~$ _"""
                     "that is genuinely new and useful about REDACTED, its token, community, agents, or ecosystem. "
                     "If there's nothing new or the exchange is trivial, reply with exactly: NONE"
                 )},
-                {"role": "user", "content": f"User: {user_msg[:200]}\nBot: {bot_reply[:300]}"},
+                {"role": "user", "content": f"User: {_sanitize_text(user_msg[:200])}\nBot: {_sanitize_text(bot_reply[:300])}"},
             ], max_tokens=80)
             cm.append_fact(raw.strip(), source="telegram")
         except Exception as e:
