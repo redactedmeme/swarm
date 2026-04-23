@@ -8,8 +8,8 @@ from groq import Groq, APIError
 
 logger = logging.getLogger(__name__)
 
-DEFAULT_MODEL = os.getenv("GROQ_MODEL", "llama-3.3-70b-versatile")
-FALLBACK_MODEL = os.getenv("GROQ_FALLBACK_MODEL", "llama-3.1-8b-instant")
+DEFAULT_MODEL = os.getenv("GROQ_MODEL", "llama-3.1-8b-instant")
+FALLBACK_MODEL = os.getenv("GROQ_FALLBACK_MODEL", "llama-3.3-70b-versatile")
 
 # Simple global cooldown: if a model just 429'd, skip it for N seconds.
 _model_cooldown_until: dict[str, float] = {}
