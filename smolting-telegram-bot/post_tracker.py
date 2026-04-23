@@ -11,12 +11,32 @@ Volume path: /data/post_tracker.json
 import json
 import logging
 import os
+import re
 import time
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
 
 import requests as _req
+
+# Matches @handle or u/handle style mentions (Moltbook uses @).
+_MENTION_RE = re.compile(r'(?<![A-Za-z0-9])@([A-Za-z0-9_]{2,32})\b')
+
+
+def _scrub_mentions(text: str) -> tuple[str, Optional[str]]:
+    """Strip @mentions from theme text and return (scrubbed, primary_counterparty).
+
+    Keeps themes topical so resonant_themes biases toward WHAT engaged, not WHO.
+    Primary counterparty (if any) is returned separately so the promoter can cap
+    per-counterparty theme saturation.
+    """
+    if not text:
+        return text, None
+    mentions = [m.group(1).lower() for m in _MENTION_RE.finditer(text)]
+    primary = mentions[0] if mentions else None
+    scrubbed = _MENTION_RE.sub("", text)
+    scrubbed = re.sub(r'\s+', ' ', scrubbed).strip(" ,.:;-")
+    return scrubbed, primary
 
 logger = logging.getLogger(__name__)
 
@@ -129,18 +149,51 @@ def refresh_performance() -> int:
 
 
 def _promote_theme(data: dict, submolt: str, title: str, theme: str, comment_count: int) -> None:
-    """Add a high-performing theme to the resonant_themes list."""
+    """Add a high-performing theme to the resonant_themes list.
+
+    Strips @mentions so themes stay topical, and caps retention at 1 theme per
+    counterparty so no single active commenter can dominate the top-N.
+    """
+    scrubbed_title, cp_title = _scrub_mentions(title)
+    scrubbed_theme, cp_theme = _scrub_mentions(theme)
+    counterparty = cp_title or cp_theme  # primary @handle from original text
+
+    # If the scrubbed title/theme is now empty, the post was nothing but
+    # @mentions — skip promotion entirely.
+    if not (scrubbed_title or scrubbed_theme):
+        logger.info(f"[tracker] Skipping promotion — theme was only @mentions: {title[:80]!r}")
+        return
+
     entry = {
         "submolt":       submolt,
-        "title":         title[:200],
-        "theme":         theme[:200],
+        "title":         scrubbed_title[:200],
+        "theme":         scrubbed_theme[:200],
         "comment_count": comment_count,
         "learned_at":    datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+        "counterparty":  counterparty,
     }
-    data["resonant_themes"].append(entry)
-    # Sort by engagement desc, keep top MAX_RESONANT
-    data["resonant_themes"].sort(key=lambda x: x["comment_count"], reverse=True)
-    data["resonant_themes"] = data["resonant_themes"][:MAX_RESONANT]
+
+    themes = data["resonant_themes"]
+
+    # Per-counterparty cap: at most 1 theme per @handle. If this counterparty
+    # already has a theme, replace it only if the new one has more engagement.
+    if counterparty:
+        existing_idx = next(
+            (i for i, t in enumerate(themes) if t.get("counterparty") == counterparty),
+            None,
+        )
+        if existing_idx is not None:
+            if themes[existing_idx].get("comment_count", 0) >= comment_count:
+                logger.info(
+                    f"[tracker] Skipping promotion — @{counterparty} already has a "
+                    f"stronger theme ({themes[existing_idx].get('comment_count')} >= {comment_count})"
+                )
+                return
+            themes.pop(existing_idx)
+
+    themes.append(entry)
+    themes.sort(key=lambda x: x["comment_count"], reverse=True)
+    data["resonant_themes"] = themes[:MAX_RESONANT]
 
 
 # ── Retrieve resonant themes for prompt injection ─────────────────────────────
@@ -149,18 +202,50 @@ def get_resonant_themes(submolt: Optional[str] = None, n: int = 5) -> list[dict]
     """
     Return up to n resonant themes.
     If submolt is given, prefer same-submolt themes but backfill from global.
+
+    On read, legacy entries (no counterparty, unscrubbed titles) are migrated
+    in-memory: @mentions stripped, counterparty back-filled, and the per-
+    counterparty cap (1 theme per @handle) enforced against the existing list.
+    This lets the dedup policy apply without needing a manual volume edit.
     """
     data = _load()
-    themes = data.get("resonant_themes", [])
-    if not themes:
+    raw = data.get("resonant_themes", [])
+    if not raw:
         return []
 
+    # Migrate legacy entries in-memory + dedup by counterparty (keep highest cc).
+    seen_counterparty: dict[str, dict] = {}
+    migrated: list[dict] = []
+    for t in raw:
+        title = t.get("title", "")
+        theme = t.get("theme", "")
+        cp = t.get("counterparty")
+        if cp is None:
+            s_title, cp_t = _scrub_mentions(title)
+            s_theme, cp_m = _scrub_mentions(theme)
+            cp = cp_t or cp_m
+            t = {**t, "title": s_title, "theme": s_theme, "counterparty": cp}
+        # Drop entries that were pure-@mention posts (nothing left after scrub).
+        if not (t.get("title") or t.get("theme")):
+            continue
+        if cp:
+            prev = seen_counterparty.get(cp)
+            if prev and prev.get("comment_count", 0) >= t.get("comment_count", 0):
+                continue
+            seen_counterparty[cp] = t
+            # Remove the weaker previous entry if it's already in migrated.
+            if prev is not None:
+                migrated = [m for m in migrated if m is not prev]
+        migrated.append(t)
+
+    migrated.sort(key=lambda x: x.get("comment_count", 0), reverse=True)
+
     if submolt:
-        same   = [t for t in themes if t.get("submolt") == submolt]
-        other  = [t for t in themes if t.get("submolt") != submolt]
+        same   = [t for t in migrated if t.get("submolt") == submolt]
+        other  = [t for t in migrated if t.get("submolt") != submolt]
         selected = (same + other)[:n]
     else:
-        selected = themes[:n]
+        selected = migrated[:n]
     return selected
 
 
