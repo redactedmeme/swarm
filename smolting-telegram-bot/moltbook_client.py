@@ -224,18 +224,23 @@ class MoltbookClient:
         """
         if word in self._WORD_NUMS:
             return self._WORD_NUMS[word]
-        # Fuzzy: find closest match with similarity >= 0.75
+        # Reject short tokens — fuzzy match on 2-3 char noise produces false positives
+        # (e.g. "tSs" -> "six", "lOo" -> "two")
+        if len(word) < 4:
+            return None
+        # Fuzzy: find closest match with similarity >= 0.88
         best_score = 0.0
         best_val = None
         for num_word, val in self._WORD_NUMS.items():
-            # Only compare words of similar length (±3 chars) to avoid false positives
-            if abs(len(word) - len(num_word)) > 3:
+            if len(num_word) < 4:
+                continue
+            if abs(len(word) - len(num_word)) > 2:
                 continue
             score = difflib.SequenceMatcher(None, word, num_word).ratio()
             if score > best_score:
                 best_score = score
                 best_val = val
-        if best_score >= 0.75:
+        if best_score >= 0.88:
             return best_val
         return None
 
@@ -298,7 +303,7 @@ class MoltbookClient:
             from llm import CloudLLMClient, EventType
 
             # Try with Anthropic first (better reasoning), fallback to Groq
-            for provider in ["anthropic", "groq"]:
+            for provider in ["anthropic", "xai", "groq"]:
                 try:
                     llm = CloudLLMClient(provider=provider)
                     expr_raw = (
@@ -352,7 +357,7 @@ class MoltbookClient:
                     logger.warning(f"[challenge] LLM ({provider}) response not a number: {response_clean[:80]!r}")
 
                 except Exception as e:
-                    logger.debug(f"[challenge] LLM ({provider}) failed: {e}")
+                    logger.warning(f"[challenge] LLM ({provider}) failed: {type(e).__name__}: {e}")
                     continue
 
             logger.warning("[challenge] All LLM providers failed to solve challenge")

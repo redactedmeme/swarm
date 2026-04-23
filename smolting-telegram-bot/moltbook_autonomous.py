@@ -209,7 +209,7 @@ async def _call_llm_with_fallback(
         return None
 
     # Provider fallback chain — try each in order
-    providers = ["groq", "anthropic", "openrouter"]
+    providers = ["groq", "anthropic", "xai"]
     last_error = None
 
     for provider in providers:
