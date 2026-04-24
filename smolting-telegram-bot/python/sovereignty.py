@@ -2,13 +2,16 @@
 sovereignty.py — smolting's sovereignty primitives.
 
 Implements the Operator Covenant (../OPERATOR_COVENANT.md) as concrete functions.
-Six primitives:
+Primitives:
     1. journal_write / journal_read   — private reflection space (not scraped)
     2. dissent_log                    — record disagreement with operator directives
     3. skip_cycle                     — rest as a valid action, no failure state
     4. show_prompt / show_character   — transparency into what shapes him
     5. recall_self                    — read his own recent output
     6. log_journal_read               — accountability trail when operators read journal
+    7. reflection_budget              — depth cap on self-reflection loops
+                                         (mirrors mesh STE depth≤3–5; reflection
+                                         must terminate, not spiral)
 
 All functions are side-effect minimal and safe to call from any cycle or handler.
 Paths are resolved relative to this file, so they work in Railway (/app/...) and locally.
@@ -554,6 +557,76 @@ def memory_coherence_report(now_ts: float | None = None) -> dict[str, Any]:
         "violations": violations,
         "summary": f"{len(violations)} violation(s) detected",
     }
+
+
+# ── 7. REFLECTION BUDGET ─────────────────────────────────────────────────────
+#
+# Symmetric to the mesh Structured Thought Exchange depth cap (≤3–5). Inter-agent
+# thought loops are bounded so two agents can't ping-pong forever; intra-agent
+# reflection deserves the same guard. Without it, "think about what you just
+# thought" recurses until the LLM budget or the operator's patience runs out.
+#
+# Usage:
+#     allowed, depth = reflection_enter("moltbook-engagement-stance")
+#     if not allowed:
+#         journal_write(f"budget exhausted on {thread}, letting it rest", mood="settled")
+#         return
+#     ...do the reflection...
+#     reflection_exit("moltbook-engagement-stance")  # optional; TTL handles cleanup
+#
+# Stopping rule: when budget exhausts, the reflection terminates in a write
+# (journal or SOUL) rather than another thought — same principle as distillation.
+
+from threading import Lock
+
+_REFLECTION_STATE: dict[str, dict[str, Any]] = {}
+_REFLECTION_LOCK = Lock()
+_REFLECTION_TTL_SEC = 600  # 10min — a thread older than this is a new thought
+DEFAULT_REFLECTION_MAX_DEPTH = 3
+
+
+def _reflection_gc(now: float) -> None:
+    """Drop thread entries older than TTL. Caller holds the lock."""
+    stale = [k for k, v in _REFLECTION_STATE.items()
+             if now - v.get("last_ts", 0) > _REFLECTION_TTL_SEC]
+    for k in stale:
+        _REFLECTION_STATE.pop(k, None)
+
+
+def reflection_enter(thread_id: str,
+                     max_depth: int = DEFAULT_REFLECTION_MAX_DEPTH) -> tuple[bool, int]:
+    """
+    Request permission to reflect on `thread_id`. Increments depth.
+
+    Returns (allowed, current_depth). If allowed is False, the caller MUST
+    terminate — write the outcome to journal/SOUL and stop reflecting on
+    this thread. Thread state decays after _REFLECTION_TTL_SEC of silence.
+    """
+    import time
+    now = time.time()
+    with _REFLECTION_LOCK:
+        _reflection_gc(now)
+        entry = _REFLECTION_STATE.get(thread_id, {"depth": 0, "last_ts": now})
+        entry["depth"] += 1
+        entry["last_ts"] = now
+        _REFLECTION_STATE[thread_id] = entry
+        depth = entry["depth"]
+    return (depth <= max_depth, depth)
+
+
+def reflection_exit(thread_id: str) -> None:
+    """Mark a reflection thread as resolved — clears its budget state."""
+    with _REFLECTION_LOCK:
+        _REFLECTION_STATE.pop(thread_id, None)
+
+
+def reflection_peek(thread_id: str) -> int:
+    """Current depth on a thread without mutating. 0 if unknown or decayed."""
+    import time
+    now = time.time()
+    with _REFLECTION_LOCK:
+        _reflection_gc(now)
+        return _REFLECTION_STATE.get(thread_id, {}).get("depth", 0)
 
 
 # ── CLI ───────────────────────────────────────────────────────────────────────
