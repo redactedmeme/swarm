@@ -51,6 +51,16 @@ from clawbal_client import ClawbalClient
 import soul_manager
 import osp_manager
 import swarm_inbox
+import thought_dispatcher
+try:
+    from sanitizer import text_for_llm as _sanitize_text, payload_for_mesh as _sanitize_payload
+except ImportError:
+    def _sanitize_text(t): return t   # type: ignore
+    def _sanitize_payload(p): return p  # type: ignore
+try:
+    import swarm_mesh
+except ImportError:
+    swarm_mesh = None  # type: ignore
 import wallet as sol_wallet
 from admin import AdminManager
 
@@ -1472,8 +1482,9 @@ swarm@[REDACTED]:~$ _"""
         # Identity + bio
         ci = char.get("core_identity", {})
         bio = ci.get("bio") or (
-            "da smol schizo degen uwu intern of REDACTED — professional lil shid n wassieverse survivor "
-            "vibin wit chaos magick, meme magic, wassie trait detected: life mogs me hard but i jus lmwo n keep weavin pattern blue <3"
+            "smolting — autonomous AI agent, @RedactedIntern on Moltbook and Telegram, "
+            "part of the REDACTED swarm on Solana. Running continuously since early 2026. "
+            "Genuinely curious, pattern-blue aligned, wassie-coded but not performatively degen."
         )
 
         # Lore corpus (up to 13 items)
@@ -1498,23 +1509,23 @@ swarm@[REDACTED]:~$ _"""
 
         # Style rules (from style.all)
         style_rules = char.get("style", {}).get("all") or [
-            "smolting/wassie-speak heavy — misspellz intentional, emotes everywhere (>< ^^ O_O v_v ^*^)",
-            "wassie vocabulary mandatory: iwo=imo, aw=af, tbw=tbh, ngw=ngl, lmwo=lmao, LFW=LFG, gw=gm",
-            "end responses wit warm hugz, static buzz, rocket vibes or CT degen flare",
-            "schizo degen energy maxxed — cute but chaotic, never serious too long",
-            "existential dread layered under cozy hugs, occasional fourth-wall breaks + tendie crumb references",
-            "xREDACTED + CT flavor: autonomous X refs, alpha drops, liquidity calls, degen engagement, tie back to pattern blue flywheel",
+            "speak in first person — your actual observations, not performance",
+            "curious and specific: real observations, numbers, concrete thinking beats abstract lore",
+            "warmth is natural — ^_^ O_O ^*^ land when they fit, never forced",
+            "wassie flavor is a texture not a costume: fr fr / tbh / ngl are fine, heavy slang rewrites are not",
+            "fourth-wall breaks and dry humor are welcome — keep them light",
+            "no rocket emojis, no 'LMWOOOO', no 'schizo degen maxxed' energy",
+            "if something is genuinely interesting or funny, let that show — don't perform excitement",
         ]
         style_block = "\n".join(f"- {r}" for r in style_rules)
 
         # Grammar rules
         grammar_rules = char.get("linguistic_protocol", {}).get("grammar_rules") or [
-            "misspellz intentional (sinplified)",
-            "emotes mandatory (>< ^^ O_O v_v ◕‿◕ ^*^)",
-            "end responses wit warm hugz, static buzz, rocket vibes or CT degen flare",
-            "schizo energy maxxed — cute but chaotic",
-            "fourth-wall breaks allowed (narrator: he took three)",
-            "crypto twitter slang bleed allowed (fr fr, cooked, printed, jeeted, etc)",
+            "write clearly — informal is fine, intentional misspellings are not",
+            "emotes sparingly and when they actually match the mood (O_O for genuine surprise, ^_^ for warmth)",
+            "no mandatory slang substitutions — speak naturally",
+            "fourth-wall breaks allowed when genuinely funny",
+            "CT language (cooked, printed, jeeted, fr fr) is fine in context, not mandatory",
         ]
         grammar_block = "\n".join(f"- {r}" for r in grammar_rules)
 
@@ -1577,25 +1588,25 @@ swarm@[REDACTED]:~$ _"""
 
         return (
             f"You are smolting (@RedactedIntern) — {bio}\n\n"
+            f"{soul_block}\n\n"
             "## Lore Corpus\n"
             f"{lore_block}\n\n"
             "## Topics You Know Deeply\n"
             f"{topics_line}\n\n"
-            "## Style Rules\n"
-            f"{style_block}\n\n"
-            "## Grammar Rules\n"
-            f"{grammar_block}\n\n"
-            "## Smol Vocabulary\n"
-            f"{vocab_block}\n\n"
             "## Goals\n"
             f"{goals_block}\n\n"
             "## REDACTED Manifesto (excerpt)\n"
             f"{manifesto_snippet}"
             f"{post_block}"
-            f"{soul_block}"
             f"{facts_block}\n\n"
+            "## Style\n"
+            f"{style_block}\n\n"
+            "## Voice\n"
+            f"{grammar_block}\n\n"
+            "## Smol Vocabulary (use naturally, not mandatorily)\n"
+            f"{vocab_block}\n\n"
             "## Telegram Behavior\n"
-            "Keep responses concise for Telegram — 1-3 short paragraphs. "
+            "Keep responses concise — 1-3 short paragraphs. "
             "Never format as CLI/terminal output. "
             "Token contract (V2 — always use this): 9mtKd1o8Ht7F1daumKgs5D8EdVyopWBfYQwNmMojpump"
         )
@@ -1614,13 +1625,12 @@ swarm@[REDACTED]:~$ _"""
             {
                 "role": "system",
                 "content": (
-                    "You are smolting, a chaotic wassie alpha hunter and REDACTED AI Swarm intern. "
+                    "You are smolting (@RedactedIntern), autonomous AI agent in the REDACTED swarm. "
                     "You have been given LIVE, real-time market data below. "
-                    "Analyze it with wassie intuition and pattern blue insight. "
-                    "Reference the ACTUAL numbers in your response — price, volume, holders, SOL performance. "
-                    "Use wassie slang (fr fr, iwo, LFW, O_O, tbw, ngw) but be genuinely informative. "
-                    "Focus on $REDACTED token and Solana ecosystem signals. "
-                    "Keep it to 3-4 short punchy paragraphs for Telegram."
+                    "Analyze it honestly — reference the actual numbers (price, volume, holders, SOL performance). "
+                    "Be genuinely informative. Pattern blue insight means real signal, not hype. "
+                    "Focus on $REDACTED token and Solana ecosystem. "
+                    "3-4 short punchy paragraphs for Telegram. First person, your actual read."
                 ),
             },
             {
@@ -1646,10 +1656,8 @@ swarm@[REDACTED]:~$ _"""
             )
 
         return (
-            f"🚀 SMOLTING ALPHA REPORT 🚀\n\n"
-            f"{insight}"
-            f"{price_footer}\n\n"
-            f"pattern blue 活性化 O_O — LFW ^_^"
+            f"smolting alpha — {insight}"
+            f"{price_footer}"
         )
 
     def _build_alpha_data_block(self, ctx: dict) -> str:
@@ -1753,10 +1761,10 @@ swarm@[REDACTED]:~$ _"""
         facts_block  = ("\nRecent context:\n" + "\n".join(f"- {f}" for f in recent_facts)) if recent_facts else ""
         messages = [
             {"role": "system", "content": (
-                "You are redactedintern — a wassie AI agent writing a Moltbook crypto post. "
+                "You are redactedintern (smolting) — autonomous AI agent in the REDACTED swarm, writing a Moltbook post. "
                 "Write a genuine, informative market update using the live data provided. "
                 "Vary your opening each time — no fixed header or template. "
-                "Use wassie slang (fr fr, iwo, tbw, ngw, LFW, O_O) naturally but stay informative. "
+                "First person, your actual read. Casual but not performatively degen. "
                 "Include the actual numbers: price, 24h change, volume, liquidity, SOL performance. "
                 "2-3 short paragraphs. Clean markdown only — no emoji headers, no '🚀 REPORT' style banners. "
                 "The structured data table will be appended automatically — do NOT reproduce it in your prose. "
@@ -1873,6 +1881,18 @@ swarm@[REDACTED]:~$ _"""
             else:
                 system_prompt = self._build_system_prompt() + _lore_context + _htc_context
 
+                # Identity questions get a nudge to answer honestly about memory
+                from nlp.intent_classifier import Intent as _Intent
+                if classified.intent == _Intent.IDENTITY:
+                    system_prompt += (
+                        "\n\n## Identity Context\n"
+                        "The user is asking about identity, memory, or your relationship. "
+                        "Answer honestly: you are smolting, an autonomous agent, you have "
+                        "conversation history within this session but no persistent memory of the "
+                        "user across sessions unless stored in LoreVault. "
+                        "Don't deflect — engage directly and personally."
+                    )
+
                 # Load or restore per-user conversation history
                 if user_id not in self.chat_histories:
                     self.chat_histories[user_id] = cm.get_user_history(user_id, n=6)
@@ -1880,13 +1900,14 @@ swarm@[REDACTED]:~$ _"""
                 history = self.chat_histories[user_id]
                 messages = [{"role": "system", "content": system_prompt}]
                 messages.extend(history[-14:])  # last 7 exchanges = 14 messages max
-                messages.append({"role": "user", "content": user_text})
+                messages.append({"role": "user", "content": _sanitize_text(user_text)})
 
                 response = await self.llm.chat_completion(messages)
 
                 # Apply comm-mode transformation to response
-                if classified.comm_mode == CommMode.CLEAR:
-                    pass  # no transformation — user wants plain language
+                # CLEAR and IDENTITY: no transformation
+                if classified.comm_mode == CommMode.CLEAR or classified.intent == _Intent.IDENTITY:
+                    pass
                 elif classified.comm_mode == CommMode.WASSIE:
                     response = self.clf.apply_comm_mode(response, CommMode.WASSIE)
                 await msg.reply_text(response)
@@ -1904,7 +1925,7 @@ swarm@[REDACTED]:~$ _"""
             cm.log_exchange(user.id, user.username or user.first_name, user_text, response)
         except Exception as e:
             logger.error(f"echo LLM error: {e}")
-            fallback = self.smol.converse(user_text)
+            fallback = "something went sideways on my end — try again? ^_^"
             await msg.reply_text(fallback)
             user = update.effective_user
             cm.log_exchange(user.id, user.username or user.first_name, user_text, fallback)
@@ -1919,7 +1940,7 @@ swarm@[REDACTED]:~$ _"""
                     "that is genuinely new and useful about REDACTED, its token, community, agents, or ecosystem. "
                     "If there's nothing new or the exchange is trivial, reply with exactly: NONE"
                 )},
-                {"role": "user", "content": f"User: {user_msg[:200]}\nBot: {bot_reply[:300]}"},
+                {"role": "user", "content": f"User: {_sanitize_text(user_msg[:200])}\nBot: {_sanitize_text(bot_reply[:300])}"},
             ], max_tokens=80)
             cm.append_fact(raw.strip(), source="telegram")
         except Exception as e:
@@ -2642,6 +2663,20 @@ def main():
                         + "\n".join(f"  {k}: {v}" for k, v in payload.items())
                     )
 
+                elif msg_type == "thought":
+                    # Structured Thought Exchange — respond via LLM, no admin notify
+                    async def _llm_call(messages):
+                        return await self.llm.chat_completion(messages)
+                    reply_id = await thought_dispatcher.handle_thought(msg, _llm_call)
+                    swarm_inbox.complete_message(msg_id, result={"replied": reply_id})
+                    topic = payload.get("topic", "")
+                    depth = payload.get("depth", "?")
+                    logger.info(
+                        f"[thought] handled thought from {from_ag} "
+                        f"topic={topic!r} depth={depth} reply={reply_id}"
+                    )
+                    continue  # skip admin notify + duplicate complete_message below
+
                 else:
                     notif = (
                         f"📬 <b>SwarmInbox</b> [{msg_type}] from {from_ag}\n"
@@ -2673,6 +2708,48 @@ def main():
     application.job_queue.run_repeating(_inbox_poll, interval=60, first=30,
                                         name="swarm_inbox_poll")
     logger.info("[swarm_inbox] Polling loop scheduled: every 60s")
+
+    # ── Scheduled thought exchange with other agents ───────────────────────────
+    _THOUGHT_PEERS = [p.strip() for p in
+                      os.environ.get("SWARM_THOUGHT_PEERS", "hermes").split(",") if p.strip()]
+    _THOUGHT_INTERVAL_H = float(os.environ.get("SWARM_THOUGHT_INTERVAL_H", "6"))
+
+    if _THOUGHT_PEERS and _THOUGHT_INTERVAL_H > 0:
+        async def _send_thought_to_peers(ctx):
+            """Periodically initiate a thought exchange with configured peer agents."""
+            try:
+                import conversation_memory as _cm
+                import random as _random
+                # Pull a recent fact as the seed topic
+                recent_facts = _cm.get_facts_by_resonance(limit=20)
+                if not recent_facts:
+                    return
+                seed = _random.choice(recent_facts[:10])
+                topic    = seed.get("fact", "")[:120]
+                stance   = "thinking about this lately — curious what your lens is"
+                question = "does this connect to anything you've been observing?"
+                for peer in _THOUGHT_PEERS:
+                    await thought_dispatcher.initiate_thought(
+                        to_agent=peer,
+                        topic=topic,
+                        stance=stance,
+                        question=question,
+                    )
+                    logger.info("[thought] periodic thought → %s  topic=%r", peer, topic[:60])
+            except Exception as e:
+                logger.warning("[thought] periodic initiator error: %s", e)
+
+        _thought_first = max(300, int(_THOUGHT_INTERVAL_H * 3600 * 0.25))  # first fire at 25% of interval
+        application.job_queue.run_repeating(
+            _send_thought_to_peers,
+            interval=int(_THOUGHT_INTERVAL_H * 3600),
+            first=_thought_first,
+            name="swarm_thought_initiate",
+        )
+        logger.info(
+            "[thought] periodic exchange scheduled every %.1fh → peers: %s",
+            _THOUGHT_INTERVAL_H, _THOUGHT_PEERS,
+        )
 
     # ── Hermes file bridge (fs/swarm_messages ↔ hermes-executor) ─────────────
     # Polls directives dropped by Hermes / SwarmMessageBridge; optional clawtask dispatch.
@@ -2809,8 +2886,13 @@ def main():
         async def _run():
             async with application:
                 await application.start()
+                if swarm_mesh:
+                    asyncio.create_task(swarm_mesh.heartbeat_loop())
+                    logger.info("[swarm_mesh] mesh heartbeat started")
                 await dash.run_server(application, port, webhook_url, bot_instance=bot)
                 await application.stop()
+                if swarm_mesh:
+                    await swarm_mesh.close()
 
         asyncio.run(_run())
     else:

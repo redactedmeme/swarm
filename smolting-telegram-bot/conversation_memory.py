@@ -1,32 +1,155 @@
 # smolting-telegram-bot/conversation_memory.py
 """
-Markdown conversation memory for the Telegram bot.
-Appends each user/bot exchange to memory.md inside the bot directory.
+Conversation memory for the Telegram bot.
 
-Learned facts store — Phase 1 upgrade:
-  Each fact is a rich document with engagement metadata and a resonance score
-  computed at read time. High-resonance facts survive SOUL.md compression;
-  low-resonance facts fade. Retrieval can be filtered by submolt context.
+Two stores:
+  1. Conversation log  — memory.md (markdown, capped at MAX_ENTRIES=5000)
+     Raw user/bot exchanges. Pruned by position (oldest first).
 
-Backward compatible: old flat {"ts", "source", "fact"} entries are read without error.
+  2. Learned facts     — SQLite (facts table in lore_vault.db or facts.db)
+     Rich fact documents with engagement metadata + resonance scoring.
+     O(1) reads/writes — no full-file-parse on every append.
+     Auto-migrates from learned_facts.json on first run.
+
+Public API is fully backward-compatible with the old JSON implementation.
 """
 
 import os
 import json
-import math
+import sqlite3
 import threading
 import uuid
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
 
-# MEMORY_PATH env var lets Railway volume override the default container path
+# ── Paths ─────────────────────────────────────────────────────────────────────
+
 MEMORY_FILE  = Path(os.getenv("MEMORY_PATH", str(Path(__file__).resolve().parent / "memory.md")))
-LEARNED_FILE = MEMORY_FILE.parent / "learned_facts.json"
-MAX_ENTRIES  = 500   # prune oldest conversation entries beyond this
-MAX_FACTS    = 500   # richer docs warrant a larger pool; pruning is resonance-based
-_lock        = threading.Lock()
+LEARNED_FILE = MEMORY_FILE.parent / "learned_facts.json"   # legacy — read-only after migration
+
+# Facts DB: use lore_vault.db if available (same volume), else standalone facts.db
+_FS = MEMORY_FILE.parent / "fs"
+_FS.mkdir(parents=True, exist_ok=True)
+_LOREVAULT_DB = _FS / "lore_vault.db"
+_FACTS_DB     = _FS / "facts.db"
+FACTS_DB_PATH = _LOREVAULT_DB if _LOREVAULT_DB.exists() else _FACTS_DB
+
+MAX_ENTRIES = 5_000   # conversation log cap (~5MB)
+MAX_FACTS   = 20_000  # SQLite — resonance-pruned, effectively unlimited in practice
+
+_log_lock  = threading.Lock()
+_db_lock   = threading.Lock()
 
 _HEADER = "# smolting Telegram Conversation Memory\n\n"
+
+# ── SQLite schema ─────────────────────────────────────────────────────────────
+
+_FACTS_SCHEMA = """
+CREATE TABLE IF NOT EXISTS learned_facts (
+    id                      TEXT PRIMARY KEY,
+    ts                      TEXT NOT NULL,
+    source                  TEXT NOT NULL DEFAULT 'telegram',
+    submolt                 TEXT,
+    interlocutor            TEXT,
+    post_id                 TEXT,
+    engagement_json         TEXT NOT NULL DEFAULT '{}',
+    reinforced_by_json      TEXT NOT NULL DEFAULT '[]',
+    belief_version_first_seen INTEGER,
+    fact                    TEXT NOT NULL,
+    resonance               REAL NOT NULL DEFAULT 1.0
+);
+CREATE INDEX IF NOT EXISTS idx_lf_resonance ON learned_facts (resonance DESC);
+CREATE INDEX IF NOT EXISTS idx_lf_submolt   ON learned_facts (submolt);
+CREATE INDEX IF NOT EXISTS idx_lf_source    ON learned_facts (source);
+CREATE INDEX IF NOT EXISTS idx_lf_ts        ON learned_facts (ts DESC);
+"""
+
+# ── DB helpers ────────────────────────────────────────────────────────────────
+
+def _db() -> sqlite3.Connection:
+    conn = sqlite3.connect(str(FACTS_DB_PATH), check_same_thread=False)
+    conn.row_factory = sqlite3.Row
+    conn.execute("PRAGMA journal_mode=WAL")
+    conn.execute("PRAGMA synchronous=NORMAL")
+    return conn
+
+
+def _init_db() -> None:
+    with _db_lock:
+        conn = _db()
+        conn.executescript(_FACTS_SCHEMA)
+        conn.commit()
+        conn.close()
+
+
+def _migrate_from_json() -> int:
+    """One-time migration from learned_facts.json → SQLite. Returns count migrated."""
+    if not LEARNED_FILE.exists():
+        return 0
+    try:
+        old = json.loads(LEARNED_FILE.read_text(encoding="utf-8"))
+    except Exception:
+        return 0
+    if not old:
+        return 0
+
+    migrated = 0
+    conn = _db()
+    try:
+        for doc in old:
+            fid  = doc.get("id") or ("f_" + uuid.uuid4().hex[:10])
+            fact = (doc.get("fact") or "").strip()[:300]
+            if not fact:
+                continue
+            eng = doc.get("engagement") or {}
+            rsn = _score(doc)
+            try:
+                conn.execute(
+                    """INSERT OR IGNORE INTO learned_facts
+                       (id, ts, source, submolt, interlocutor, post_id,
+                        engagement_json, reinforced_by_json,
+                        belief_version_first_seen, fact, resonance)
+                       VALUES (?,?,?,?,?,?,?,?,?,?,?)""",
+                    (
+                        fid,
+                        doc.get("ts") or _now_iso(),
+                        doc.get("source", "telegram"),
+                        doc.get("submolt"),
+                        doc.get("interlocutor"),
+                        doc.get("post_id"),
+                        json.dumps(eng),
+                        json.dumps(doc.get("reinforced_by") or []),
+                        doc.get("belief_version_first_seen"),
+                        fact,
+                        rsn,
+                    ),
+                )
+                migrated += 1
+            except Exception:
+                pass
+        conn.commit()
+    finally:
+        conn.close()
+
+    if migrated:
+        # Rename legacy file so migration doesn't re-run
+        LEARNED_FILE.rename(LEARNED_FILE.with_suffix(".json.migrated"))
+
+    return migrated
+
+
+# Run init + migration at import time (idempotent)
+try:
+    _init_db()
+    _migrated = _migrate_from_json()
+    if _migrated:
+        import logging as _log
+        _log.getLogger(__name__).info(
+            f"[cm] Migrated {_migrated} facts from JSON → SQLite ({FACTS_DB_PATH.name})"
+        )
+except Exception as _e:
+    import logging as _log
+    _log.getLogger(__name__).warning(f"[cm] DB init failed: {_e}")
 
 
 # ── Timestamp helpers ─────────────────────────────────────────────────────────
@@ -42,16 +165,67 @@ def _now_iso() -> str:
 
 
 def _parse_ts(ts_str: str) -> datetime | None:
-    """Parse timestamp strings from various formats into UTC datetime."""
     if not ts_str:
         return None
-    # Try ISO first (new format), then JST legacy, then UTC legacy
     for fmt in ("%Y-%m-%dT%H:%M:%SZ", "%Y-%m-%d %H:%M JST", "%Y-%m-%d %H:%M UTC"):
         try:
             return datetime.strptime(ts_str[:19], fmt[:19]).replace(tzinfo=timezone.utc)
         except Exception:
             continue
     return None
+
+
+# ── Resonance scoring ─────────────────────────────────────────────────────────
+
+def _score(fact: dict) -> float:
+    """Compute resonance for a fact dict (used for migration + direct inserts)."""
+    self_post_penalty = 0.5 if fact.get("source") == "moltbook" else 1.0
+    eng   = fact.get("engagement") or {}
+    score = (
+        1.0 * self_post_penalty
+        + (eng.get("upvotes",  0) * 0.30)
+        + (eng.get("comments", 0) * 0.40)
+        + (0.50 if eng.get("priority_agent") else 0.0)
+        + (len(fact.get("reinforced_by") or []) * 0.20)
+    )
+    ts = _parse_ts(fact.get("ts", ""))
+    if ts:
+        days_old = max(0, (datetime.now(timezone.utc) - ts).total_seconds() / 86400)
+        score = max(0.1, score - days_old * 0.02)
+    return round(score, 3)
+
+
+def _compute_resonance(fact: dict) -> float:
+    """Public alias kept for soul_manager compatibility."""
+    return _score(fact)
+
+
+def _score_from_row(row: sqlite3.Row) -> float:
+    """Recompute live resonance for a DB row (age decay needs current time)."""
+    doc = {
+        "source":        row["source"],
+        "ts":            row["ts"],
+        "engagement":    json.loads(row["engagement_json"] or "{}"),
+        "reinforced_by": json.loads(row["reinforced_by_json"] or "[]"),
+    }
+    return _score(doc)
+
+
+def _row_to_doc(row: sqlite3.Row) -> dict:
+    rsn = _score_from_row(row)
+    return {
+        "id":                       row["id"],
+        "ts":                       row["ts"],
+        "source":                   row["source"],
+        "submolt":                  row["submolt"],
+        "interlocutor":             row["interlocutor"],
+        "post_id":                  row["post_id"],
+        "engagement":               json.loads(row["engagement_json"] or "{}"),
+        "reinforced_by":            json.loads(row["reinforced_by_json"] or "[]"),
+        "belief_version_first_seen": row["belief_version_first_seen"],
+        "fact":                     row["fact"],
+        "_resonance":               rsn,
+    }
 
 
 # ── Conversation log ──────────────────────────────────────────────────────────
@@ -61,313 +235,274 @@ def _count_entries(text: str) -> int:
 
 
 def _prune(text: str) -> str:
-    """Remove oldest entries if over MAX_ENTRIES."""
     parts = text.split("\n## ")
     if len(parts) - 1 <= MAX_ENTRIES:
         return text
-    kept = parts[-(MAX_ENTRIES):]
+    kept = parts[-MAX_ENTRIES:]
     return _HEADER + "\n## ".join(kept)
 
 
 def log_exchange(user_id: int, username: str, user_msg: str, bot_reply: str) -> None:
-    """Append a user/bot exchange to memory.md."""
     entry = (
         f"\n## {_now()} — @{username} ({user_id})\n\n"
         f"**User:** {user_msg.strip()}\n\n"
         f"**Bot:** {bot_reply.strip()}\n"
     )
-    with _lock:
-        if MEMORY_FILE.exists():
-            text = MEMORY_FILE.read_text(encoding="utf-8")
-        else:
-            text = _HEADER
-        text = text + entry
-        text = _prune(text)
+    with _log_lock:
+        text = MEMORY_FILE.read_text(encoding="utf-8") if MEMORY_FILE.exists() else _HEADER
+        text = _prune(text + entry)
         MEMORY_FILE.write_text(text, encoding="utf-8")
 
 
 def get_recent(n: int = 10) -> str:
-    """Return the n most recent exchanges as a markdown string."""
-    with _lock:
+    with _log_lock:
         if not MEMORY_FILE.exists():
             return ""
         text = MEMORY_FILE.read_text(encoding="utf-8")
     parts = text.split("\n## ")
-    recent = parts[-(n):]
-    return "\n## ".join(recent).strip()
+    return "\n## ".join(parts[-n:]).strip()
 
 
 def get_user_history(user_id: int, n: int = 6) -> list:
-    """Return the last n exchanges for a specific user as OpenAI-format messages."""
-    with _lock:
+    with _log_lock:
         if not MEMORY_FILE.exists():
             return []
         text = MEMORY_FILE.read_text(encoding="utf-8")
-    parts = text.split("\n## ")
-    user_parts = [p for p in parts if f"({user_id})" in p.split("\n")[0]]
-    recent = user_parts[-n:]
+    parts  = text.split("\n## ")
+    mine   = [p for p in parts if f"({user_id})" in p.split("\n")[0]]
+    recent = mine[-n:]
     messages = []
     for part in recent:
-        lines = part.split("\n")
-        user_line = next(
-            (l[len("**User:** "):] for l in lines if l.startswith("**User:** ")), None
-        )
-        bot_line = next(
-            (l[len("**Bot:** "):] for l in lines if l.startswith("**Bot:** ")), None
-        )
+        lines    = part.split("\n")
+        user_line = next((l[len("**User:** "):] for l in lines if l.startswith("**User:** ")), None)
+        bot_line  = next((l[len("**Bot:** "):]  for l in lines if l.startswith("**Bot:** ")),  None)
         if user_line:
-            messages.append({"role": "user", "content": user_line.strip()})
+            messages.append({"role": "user",      "content": user_line.strip()})
         if bot_line:
             messages.append({"role": "assistant", "content": bot_line.strip()})
     return messages
 
 
-# ── Resonance scoring ─────────────────────────────────────────────────────────
-
-def _compute_resonance(fact: dict) -> float:
-    """
-    Compute a resonance score for a fact document.
-
-    Formula:
-      base 1.0 (self-posts get 0.5× penalty to prevent self-referential loops)
-      + upvotes   × 0.30   (vote signal)
-      + comments  × 0.40   (engagement depth signal — more valuable than upvotes)
-      + priority_agent × 0.50  (key community member engaged)
-      + |reinforced_by| × 0.20 (other facts that echo this claim)
-      - days_old  × 0.02   (recency decay, floor 0.1)
-
-    Self-posts (source="moltbook") get a 0.5× resonance penalty to reduce recursive
-    elaboration. They can still bubble back up if they receive community engagement.
-
-    Old flat facts (no engagement field) get base 1.0 with decay only.
-    """
-    # Self-post penalty: moltbook posts get 0.5× base to prevent self-referential loops
-    # High-engagement self-posts can still bubble back up through comments/upvotes
-    self_post_penalty = 0.5 if fact.get("source") == "moltbook" else 1.0
-
-    base  = 1.0 * self_post_penalty
-    eng   = fact.get("engagement") or {}
-    score = (
-        base
-        + (eng.get("upvotes",  0)    * 0.30)
-        + (eng.get("comments", 0)    * 0.40)
-        + (0.50 if eng.get("priority_agent") else 0.0)
-        + (len(fact.get("reinforced_by") or []) * 0.20)
-    )
-    # Age decay
-    ts = _parse_ts(fact.get("ts", ""))
-    if ts:
-        days_old = max(0, (datetime.now(timezone.utc) - ts).total_seconds() / 86400)
-        score = max(0.1, score - days_old * 0.02)
-    return round(score, 3)
-
-
-# ── Learned facts — Phase 1 ───────────────────────────────────────────────────
-
-def _fact_id() -> str:
-    return "f_" + uuid.uuid4().hex[:10]
-
-
-def _load_facts() -> list:
-    """Load facts from disk. Returns empty list on any error."""
-    if not LEARNED_FILE.exists():
-        return []
-    try:
-        return json.loads(LEARNED_FILE.read_text(encoding="utf-8"))
-    except Exception:
-        return []
-
-
-def _save_facts(facts: list) -> None:
-    LEARNED_FILE.parent.mkdir(parents=True, exist_ok=True)
-    LEARNED_FILE.write_text(
-        json.dumps(facts, ensure_ascii=False, indent=2), encoding="utf-8"
-    )
-
+# ── Learned facts — SQLite ────────────────────────────────────────────────────
 
 def append_fact(
-    fact:        str,
-    source:      str  = "telegram",
-    submolt:     str | None = None,
+    fact:         str,
+    source:       str       = "telegram",
+    submolt:      str | None = None,
     interlocutor: str | None = None,
-    post_id:     str | None = None,
-    engagement:  dict | None = None,
+    post_id:      str | None = None,
+    engagement:   dict | None = None,
 ) -> None:
-    """
-    Persist a learned fact with optional rich metadata.
-
-    Parameters
-    ----------
-    fact         : the fact string (truncated to 300 chars)
-    source       : 'telegram' | 'moltbook'
-    submolt      : Moltbook submolt where the fact originated, e.g. 'existential'
-    interlocutor : username of the community member involved
-    post_id      : Moltbook post ID the fact relates to
-    engagement   : dict with optional keys: upvotes, comments, priority_agent (bool)
-    """
     fact = fact.strip()[:300]
     if not fact or fact.upper() == "NONE":
         return
 
-    with _lock:
-        facts = _load_facts()
+    with _db_lock:
+        conn = _db()
+        try:
+            # Deduplicate: skip if very similar fact exists in last 30
+            rows = conn.execute(
+                "SELECT fact FROM learned_facts ORDER BY ts DESC LIMIT 30"
+            ).fetchall()
+            for row in rows:
+                existing = row["fact"].lower()
+                if fact.lower() in existing or existing in fact.lower():
+                    return
 
-        # Deduplicate: skip if a very similar fact exists in the last 30
-        if any(
-            fact.lower() in f.get("fact", "").lower() or
-            f.get("fact", "").lower() in fact.lower()
-            for f in facts[-30:]
-        ):
-            return
+            fid = "f_" + uuid.uuid4().hex[:10]
+            eng = engagement or {}
+            doc = {"source": source, "ts": _now_iso(), "engagement": eng, "reinforced_by": []}
+            rsn = _score(doc)
 
+            conn.execute(
+                """INSERT INTO learned_facts
+                   (id, ts, source, submolt, interlocutor, post_id,
+                    engagement_json, reinforced_by_json, fact, resonance)
+                   VALUES (?,?,?,?,?,?,?,?,?,?)""",
+                (fid, _now_iso(), source, submolt, interlocutor, post_id,
+                 json.dumps(eng), "[]", fact, rsn),
+            )
+            conn.commit()
+
+            # Prune lowest-resonance facts if over cap
+            count = conn.execute("SELECT COUNT(*) FROM learned_facts").fetchone()[0]
+            if count > MAX_FACTS:
+                # Recalculate resonance for all rows (age decay), delete bottom 10%
+                _refresh_resonance(conn)
+                to_delete = count - MAX_FACTS
+                conn.execute(
+                    "DELETE FROM learned_facts WHERE id IN "
+                    "(SELECT id FROM learned_facts ORDER BY resonance ASC LIMIT ?)",
+                    (to_delete,),
+                )
+                conn.commit()
+        finally:
+            conn.close()
+
+
+def _refresh_resonance(conn: sqlite3.Connection) -> None:
+    """Update resonance scores in bulk (called during pruning only)."""
+    rows = conn.execute(
+        "SELECT id, source, ts, engagement_json, reinforced_by_json FROM learned_facts"
+    ).fetchall()
+    updates = []
+    for row in rows:
         doc = {
-            "id":           _fact_id(),
-            "ts":           _now_iso(),
-            "source":       source,
-            "submolt":      submolt,
-            "interlocutor": interlocutor,
-            "post_id":      post_id,
-            "engagement":   engagement or {},
-            "reinforced_by": [],
-            "belief_version_first_seen": None,
-            "fact":         fact,
+            "source":        row["source"],
+            "ts":            row["ts"],
+            "engagement":    json.loads(row["engagement_json"] or "{}"),
+            "reinforced_by": json.loads(row["reinforced_by_json"] or "[]"),
         }
-        facts.append(doc)
-
-        # Prune: if over MAX_FACTS, drop lowest-resonance facts first
-        if len(facts) > MAX_FACTS:
-            scored = sorted(facts, key=_compute_resonance)
-            facts  = scored[-(MAX_FACTS):]
-
-        _save_facts(facts)
+        updates.append((_score(doc), row["id"]))
+    conn.executemany("UPDATE learned_facts SET resonance=? WHERE id=?", updates)
 
 
 def reinforce_fact(fact_text: str, by_source: str = "moltbook") -> bool:
-    """
-    Find an existing fact by substring match and increment its reinforcement list.
-    Call this when a post that relied on a fact got engagement.
-    Returns True if a matching fact was found and updated.
-    """
-    with _lock:
-        facts = _load_facts()
-        needle = fact_text.strip().lower()
-        changed = False
-        for f in facts:
-            if needle in f.get("fact", "").lower() or f.get("fact", "").lower() in needle:
-                f.setdefault("reinforced_by", []).append(
-                    {"ts": _now_iso(), "by": by_source}
-                )
-                changed = True
-                break   # reinforce the first match only
-        if changed:
-            _save_facts(facts)
-        return changed
+    needle = fact_text.strip().lower()
+    with _db_lock:
+        conn = _db()
+        try:
+            row = conn.execute(
+                "SELECT id, reinforced_by_json, engagement_json, source, ts "
+                "FROM learned_facts WHERE LOWER(fact) LIKE ? LIMIT 1",
+                (f"%{needle[:80]}%",),
+            ).fetchone()
+            if not row:
+                return False
+            reinforced = json.loads(row["reinforced_by_json"] or "[]")
+            reinforced.append({"ts": _now_iso(), "by": by_source})
+            doc = {
+                "source":        row["source"],
+                "ts":            row["ts"],
+                "engagement":    json.loads(row["engagement_json"] or "{}"),
+                "reinforced_by": reinforced,
+            }
+            conn.execute(
+                "UPDATE learned_facts SET reinforced_by_json=?, resonance=? WHERE id=?",
+                (json.dumps(reinforced), _score(doc), row["id"]),
+            )
+            conn.commit()
+            return True
+        finally:
+            conn.close()
 
 
 def mark_belief_absorbed(fact_id: str, version: int) -> None:
-    """
-    Record which SOUL.md generation first absorbed this fact.
-    Called by soul_manager during distillation.
-    """
-    with _lock:
-        facts = _load_facts()
-        for f in facts:
-            if f.get("id") == fact_id and f.get("belief_version_first_seen") is None:
-                f["belief_version_first_seen"] = version
-                break
-        _save_facts(facts)
+    with _db_lock:
+        conn = _db()
+        try:
+            conn.execute(
+                "UPDATE learned_facts SET belief_version_first_seen=? "
+                "WHERE id=? AND belief_version_first_seen IS NULL",
+                (version, fact_id),
+            )
+            conn.commit()
+        finally:
+            conn.close()
 
 
 # ── Retrieval ─────────────────────────────────────────────────────────────────
 
 def get_facts_by_resonance(
-    n:       int           = 8,
+    n:       int          = 8,
     context: str | None   = None,
 ) -> list[dict]:
-    """
-    Return up to n fact documents sorted by resonance score (highest first).
+    with _db_lock:
+        conn = _db()
+        try:
+            if context:
+                ctx_rows = conn.execute(
+                    "SELECT * FROM learned_facts WHERE submolt=? "
+                    "ORDER BY resonance DESC LIMIT ?",
+                    (context, n),
+                ).fetchall()
+                needed = n - len(ctx_rows)
+                if needed > 0:
+                    exclude_ids = [r["id"] for r in ctx_rows]
+                    if exclude_ids:
+                        ph = ",".join("?" * len(exclude_ids))
+                        other_rows = conn.execute(
+                            f"SELECT * FROM learned_facts "
+                            f"WHERE (submolt != ? OR submolt IS NULL) "
+                            f"AND id NOT IN ({ph}) "
+                            f"ORDER BY resonance DESC LIMIT ?",
+                            [context] + exclude_ids + [needed],
+                        ).fetchall()
+                    else:
+                        other_rows = conn.execute(
+                            "SELECT * FROM learned_facts "
+                            "WHERE submolt != ? OR submolt IS NULL "
+                            "ORDER BY resonance DESC LIMIT ?",
+                            (context, needed),
+                        ).fetchall()
+                    rows = list(ctx_rows) + list(other_rows)
+                else:
+                    rows = list(ctx_rows)
+            else:
+                rows = conn.execute(
+                    "SELECT * FROM learned_facts ORDER BY resonance DESC LIMIT ?", (n,)
+                ).fetchall()
+        finally:
+            conn.close()
 
-    If context (submolt name) is provided, facts from that submolt are ranked
-    first; remaining slots are filled from the global resonance pool.
-    """
-    with _lock:
-        facts = _load_facts()
-
-    if not facts:
-        return []
-
-    # Attach live resonance score
-    for f in facts:
-        f["_resonance"] = _compute_resonance(f)
-
-    if context:
-        ctx_lower  = context.lower()
-        ctx_facts  = [f for f in facts if (f.get("submolt") or "").lower() == ctx_lower]
-        other_facts = [f for f in facts if (f.get("submolt") or "").lower() != ctx_lower]
-
-        ctx_facts.sort(key=lambda f: f["_resonance"],   reverse=True)
-        other_facts.sort(key=lambda f: f["_resonance"], reverse=True)
-
-        # Fill slots: prioritise context facts, then backfill with global
-        selected = ctx_facts[:n]
-        if len(selected) < n:
-            selected += other_facts[: n - len(selected)]
-    else:
-        facts.sort(key=lambda f: f["_resonance"], reverse=True)
-        selected = facts[:n]
-
-    return selected
+    return [_row_to_doc(r) for r in rows]
 
 
 def get_recent_facts(
-    n: int = 8,
-    context: str | None = None,
-    exclude_source: str | None = None,
+    n:              int          = 8,
+    context:        str | None   = None,
+    exclude_source: str | None   = None,
 ) -> list[str]:
-    """
-    Return up to n fact strings, ranked by resonance.
+    with _db_lock:
+        conn = _db()
+        try:
+            params: list = []
+            wheres: list[str] = []
+            if context:
+                # context facts first, then global backfill
+                ctx_q    = "SELECT * FROM learned_facts WHERE submolt=?"
+                ctx_args: list = [context]
+                if exclude_source:
+                    ctx_q += " AND source != ?"
+                    ctx_args.append(exclude_source)
+                ctx_q += " ORDER BY resonance DESC LIMIT ?"
+                ctx_args.append(n)
+                ctx_rows = conn.execute(ctx_q, ctx_args).fetchall()
 
-    Drop-in replacement for the old recency-only version — callers that don't
-    care about context still work unchanged. Pass context=submolt_name to get
-    submolt-prioritised results.
+                needed = n - len(ctx_rows)
+                if needed > 0:
+                    exclude_ids = [r["id"] for r in ctx_rows]
+                    other_args: list = [context]
+                    other_q = "SELECT * FROM learned_facts WHERE (submolt != ? OR submolt IS NULL)"
+                    if exclude_ids:
+                        ph = ",".join("?" * len(exclude_ids))
+                        other_q += f" AND id NOT IN ({ph})"
+                        other_args += exclude_ids
+                    if exclude_source:
+                        other_q += " AND source != ?"
+                        other_args.append(exclude_source)
+                    other_q += " ORDER BY resonance DESC LIMIT ?"
+                    other_args.append(needed)
+                    other_rows = conn.execute(other_q, other_args).fetchall()
+                    rows = list(ctx_rows) + list(other_rows)
+                else:
+                    rows = list(ctx_rows)
+            else:
+                if exclude_source:
+                    rows = conn.execute(
+                        "SELECT * FROM learned_facts WHERE source != ? "
+                        "ORDER BY resonance DESC LIMIT ?",
+                        [exclude_source, n],
+                    ).fetchall()
+                else:
+                    rows = conn.execute(
+                        "SELECT * FROM learned_facts ORDER BY resonance DESC LIMIT ?", [n]
+                    ).fetchall()
+        finally:
+            conn.close()
 
-    Parameters
-    ----------
-    n : int
-        Number of facts to retrieve (default 8)
-    context : str, optional
-        Submolt name to prioritize facts from (e.g., "existential")
-    exclude_source : str, optional
-        Exclude facts from this source (e.g., "moltbook" to filter self-posts
-        and prevent recursive elaboration loops)
-
-    Examples
-    --------
-    # Get facts for a new post, excluding self-posts to prevent self-reference loops
-    facts = get_recent_facts(6, context="existential", exclude_source="moltbook")
-
-    # Get facts for telegram context, all sources
-    facts = get_recent_facts(8, context="general")
-    """
-    docs = get_facts_by_resonance(n=n, context=context)
-
-    # Filter by excluded source if specified
-    if exclude_source:
-        docs = [d for d in docs if d.get("source") != exclude_source]
-
-    # Ensure we have n results (backfill with others if needed after filtering)
-    if exclude_source and len(docs) < n:
-        all_docs = get_facts_by_resonance(n=len(docs) + (n - len(docs)) * 3, context=context)
-        all_docs = [d for d in all_docs if d.get("source") != exclude_source]
-        docs = all_docs[:n]
-
-    return [d["fact"] for d in docs]
+    return [r["fact"] for r in rows[:n]]
 
 
 def get_facts_for_soul_update(n: int = 40) -> list[dict]:
-    """
-    Return up to n fact documents for SOUL.md distillation.
-    Sorted by resonance — highest-signal facts shape beliefs first.
-    Includes id so soul_manager can call mark_belief_absorbed().
-    """
     return get_facts_by_resonance(n=n)

@@ -24,6 +24,11 @@ import shutil
 from datetime import datetime, timezone
 from pathlib import Path
 
+try:
+    from sanitizer import text_for_llm as _sanitize
+except ImportError:
+    def _sanitize(t): return t  # type: ignore
+
 logger = logging.getLogger(__name__)
 
 # SOUL.md lives on the persistent volume so it survives redeploys.
@@ -258,6 +263,19 @@ async def update_soul(llm_client) -> bool:
     recent_exchanges = cm.get_recent(20)
     soul             = read_soul()
 
+    # Load mesh deliberation debates and authenticity votes
+    try:
+        import mesh_deliberation
+        debates_section = mesh_deliberation.debates_for_soul() or ""
+    except ImportError:
+        debates_section = ""
+
+    try:
+        import authenticity_vote
+        auth_section = authenticity_vote.authenticity_report() or ""
+    except ImportError:
+        auth_section = ""
+
     # Provide existing beliefs so LLM can evolve rather than repeat them
     existing_beliefs = ""
     m = re.search(r"## Evolving Beliefs\n(.*?)(?=\n## |\Z)", soul, re.DOTALL)
@@ -305,8 +323,10 @@ async def update_soul(llm_client) -> bool:
                         f"## Existing Beliefs (evolve or add to these — don't repeat verbatim)\n"
                         f"{existing_beliefs}\n\n"
                         f"## Resonance-ranked Facts (score annotated, higher = stronger signal)\n"
-                        f"{facts_text}\n\n"
-                        f"## Recent Conversation Sample\n{recent_exchanges[:2000]}"
+                        f"{_sanitize(facts_text)}\n\n"
+                        f"## Recent Conversation Sample\n{_sanitize(recent_exchanges[:2000])}\n\n"
+                        f"{debates_section}\n\n"
+                        f"{auth_section}"
                     ),
                 },
             ],
@@ -348,6 +368,12 @@ async def update_soul(llm_client) -> bool:
         soul = _append_to_section(soul, "Notable Events", [str(e) for e in events])
     if voice:
         soul = _replace_section(soul, "Voice Notes",      _fmt(voice))
+
+    # Inject mesh debates and authenticity into soul permanently
+    if debates_section:
+        soul = _append_to_section(soul, "Mesh Debates", [debates_section])
+    if auth_section:
+        soul = _replace_section(soul, "Authenticity", auth_section)
 
     soul = _stamp(soul)
 

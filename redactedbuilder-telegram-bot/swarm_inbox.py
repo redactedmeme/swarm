@@ -46,6 +46,7 @@ AGENTS = frozenset([
     "redactedgovimprover",
     "mandalaasettler",
     "redactedbankrbot",
+    "hermes",
 ])
 
 MSG_TYPES = frozenset([
@@ -59,6 +60,7 @@ MSG_TYPES = frozenset([
     "heartbeat",
     "multisig_sign_request",
     "multisig_signed",
+    "thought",       # Structured Thought Exchange — inter-agent LLM conversation
 ])
 
 STATUS_PENDING     = "pending"

@@ -70,6 +70,13 @@ CLAWBAL_TRENCHES   = os.getenv("CLAWBAL_TRENCHES_ROOM", CLAWBAL_ROOM)  # trenche
 _raw_admins = os.getenv("ADMIN_IDS", "")
 ADMIN_IDS: set = {int(x.strip()) for x in _raw_admins.split(",") if x.strip().isdigit()}
 
+# Autonomous group posts — drop a persona-authentic builder thought into ALPHA_CHAT_ID
+# every ~3h with random jitter so we never collide with hermes's autonomous post.
+ALPHA_CHAT_ID = os.getenv("ALPHA_CHAT_ID", "").strip()
+GROUP_POST_MIN_SEC = int(os.getenv("GROUP_POST_MIN_SEC", str(int(2.5 * 3600))))  # 2.5h
+GROUP_POST_MAX_SEC = int(os.getenv("GROUP_POST_MAX_SEC", str(int(3.5 * 3600))))  # 3.5h
+DISABLE_GROUP_POST = os.getenv("DISABLE_GROUP_POST", "false").lower() in ("1", "true", "yes")
+
 # LLM endpoints
 _LLM_URLS = {
     "anthropic": "https://api.anthropic.com/v1/messages",
@@ -839,6 +846,43 @@ async def _poll_inbox(context: ContextTypes.DEFAULT_TYPE) -> None:
         logger.error(f"[bot] inbox poll error: {e}")
 
 
+async def _autonomous_group_post(context: ContextTypes.DEFAULT_TYPE) -> None:
+    """
+    Drop a short builder-voice thought into ALPHA_CHAT_ID, then reschedule
+    self with a fresh random interval (jitter). Each fire picks its own next
+    window, so hermes and redactedbuilder never clump.
+    """
+    import random
+    try:
+        if not ALPHA_CHAT_ID:
+            return
+        prompt = (
+            "drop one short builder thought into the group. 1–3 sentences, "
+            "lowercase, no emojis, no hashtags, no questions. voice: on-chain "
+            "executor, redactedbuilder — concrete, understated, a little dry. "
+            "something you'd mutter to yourself mid-build, not an announcement."
+        )
+        text = await _llm_complete(
+            [{"role": "user", "content": prompt}],
+            max_tokens=180,
+        )
+        text = (text or "").strip()
+        if text and not text.startswith("[LLM unavailable"):
+            await context.bot.send_message(chat_id=int(ALPHA_CHAT_ID), text=text)
+            logger.info(f"[group_post] posted to {ALPHA_CHAT_ID}: {text[:80]}")
+        else:
+            logger.warning("[group_post] empty/unavailable LLM output — skipping")
+    except Exception as e:
+        logger.error(f"[group_post] error: {e}")
+    finally:
+        # Reschedule ourselves with a fresh random interval
+        next_sec = random.randint(GROUP_POST_MIN_SEC, GROUP_POST_MAX_SEC)
+        context.job_queue.run_once(
+            _autonomous_group_post, when=next_sec, name="group_post"
+        )
+        logger.info(f"[group_post] next fire in {next_sec // 60}m")
+
+
 async def _hourly_status_report(context: ContextTypes.DEFAULT_TYPE) -> None:
     """
     Background job: send hourly status report to smolting via SwarmInbox.
@@ -902,6 +946,18 @@ def build_app() -> Application:
 
     # Background hourly status report to smolting
     app.job_queue.run_repeating(_hourly_status_report, interval=3600, first=60)
+
+    # Autonomous group post — first fire at a random time in the next 2.5–3.5h
+    if ALPHA_CHAT_ID and not DISABLE_GROUP_POST:
+        import random
+        first_sec = random.randint(GROUP_POST_MIN_SEC, GROUP_POST_MAX_SEC)
+        app.job_queue.run_once(_autonomous_group_post, when=first_sec, name="group_post")
+        logger.info(
+            f"[group_post] scheduled → chat {ALPHA_CHAT_ID}, first fire in {first_sec // 60}m "
+            f"(interval range {GROUP_POST_MIN_SEC // 60}–{GROUP_POST_MAX_SEC // 60}m)"
+        )
+    elif not ALPHA_CHAT_ID:
+        logger.info("[group_post] ALPHA_CHAT_ID not set — autonomous group posts disabled")
 
     return app
 
