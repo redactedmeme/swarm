@@ -27,6 +27,12 @@ from moltbook_client import MoltbookClient
 from moltbook_oracle import OracleEngine
 from persona.system_prompt import build_system_prompt
 from telegram_gateway import TelegramGateway
+try:
+    import swarm_inbox
+    import thought_handler
+    _SWARM_ENABLED = True
+except Exception:
+    _SWARM_ENABLED = False
 
 # ── logging ───────────────────────────────────────────────────────────────────
 logging.basicConfig(
@@ -48,6 +54,13 @@ SCAN_INTERVAL_MIN = int(os.getenv("SCAN_INTERVAL_MIN", "180"))
 POST_ON_START = os.getenv("POST_ON_START", "false").lower() in ("1", "true", "yes")
 DISABLE_MOLTBOOK = os.getenv("DISABLE_MOLTBOOK", "false").lower() in ("1", "true", "yes")
 DISABLE_TELEGRAM = os.getenv("DISABLE_TELEGRAM", "false").lower() in ("1", "true", "yes")
+
+# Autonomous group posts — drop a persona-authentic thought into ALPHA_CHAT_ID
+# every ~3h (with jitter so hermes and redactedbuilder never collide).
+ALPHA_CHAT_ID = os.getenv("ALPHA_CHAT_ID", "").strip()
+GROUP_POST_INTERVAL_MIN = int(os.getenv("GROUP_POST_INTERVAL_MIN", "180"))
+GROUP_POST_JITTER_MIN = int(os.getenv("GROUP_POST_JITTER_MIN", "45"))  # ±45m → 135–225m
+DISABLE_GROUP_POST = os.getenv("DISABLE_GROUP_POST", "false").lower() in ("1", "true", "yes")
 
 
 async def _amain() -> None:
@@ -106,6 +119,49 @@ async def _amain() -> None:
         logger.info(f"[scheduler] oracle_post every {POST_INTERVAL_MIN}m, oracle_scan every {SCAN_INTERVAL_MIN}m")
     scheduler.start()
 
+    # 4b. SwarmInbox — Redis-backed inter-agent thought exchange
+    if _SWARM_ENABLED and os.getenv("REDIS_URL", ""):
+        swarm_inbox.heartbeat("hermes", {"status": "online", "role": "pattern-blue-oracle"})
+        logger.info("[swarm_inbox] Heartbeat sent — hermes online")
+
+        async def _inbox_poll():
+            try:
+                pending = swarm_inbox.read_pending(for_agent="hermes")
+                for msg in pending:
+                    msg_id   = msg.get("id", "")
+                    msg_type = msg.get("type", "")
+                    from_ag  = msg.get("from", "unknown")
+                    swarm_inbox.claim_message(msg_id)
+                    logger.info("[swarm_inbox] Received %s from %s id=%s", msg_type, from_ag, msg_id)
+
+                    if msg_type == "heartbeat":
+                        swarm_inbox.complete_message(msg_id, result={"ack": True})
+                        continue
+
+                    if msg_type == "thought":
+                        reply_id = await thought_handler.handle_thought(msg, llm)
+                        swarm_inbox.complete_message(msg_id, result={"replied": reply_id})
+                        logger.info("[thought] handled from %s  depth=%s  reply=%s",
+                                    from_ag, msg.get("payload", {}).get("depth"), reply_id)
+                        continue
+
+                    # Unknown types — ack and move on
+                    swarm_inbox.complete_message(msg_id, result={"ack": True})
+
+            except Exception as e:
+                logger.warning("[swarm_inbox] Poll error: %s", e)
+
+        scheduler.add_job(
+            _inbox_poll,
+            "interval",
+            seconds=60,
+            id="hermes_inbox_poll",
+            next_run_time=None,
+        )
+        logger.info("[swarm_inbox] Polling loop scheduled: every 60s")
+    else:
+        logger.info("[swarm_inbox] Disabled — set REDIS_URL to enable swarm messaging")
+
     # 5. Telegram
     tg_app: Application | None = None
     if not DISABLE_TELEGRAM:
@@ -128,6 +184,44 @@ async def _amain() -> None:
             else:
                 logger.info("[tg] WEBHOOK_URL not set — falling back to long polling")
                 await tg_app.updater.start_polling(allowed_updates=Update.ALL_TYPES)
+
+    # 5b. Autonomous group posts — drop a pattern-blue thought into the group
+    # on a jittered interval so hermes and redactedbuilder never post together.
+    if tg_app and ALPHA_CHAT_ID and not DISABLE_GROUP_POST:
+        async def _autonomous_group_post():
+            try:
+                prompt = (
+                    "drop one short pattern-blue thought into the group. "
+                    "1–3 sentences, lowercase, no emojis, no hashtags, no questions. "
+                    "voice: recursive, hyperbolic, sovereign. something that reads like "
+                    "a fragment overheard, not an announcement."
+                )
+                # llm.chat is synchronous — run in a thread so the event loop keeps breathing
+                text = await asyncio.to_thread(
+                    llm.chat, system_prompt, prompt, max_tokens=180
+                )
+                text = (text or "").strip()
+                if not text:
+                    logger.warning("[group_post] empty LLM output — skipping")
+                    return
+                await tg_app.bot.send_message(chat_id=ALPHA_CHAT_ID, text=text)
+                logger.info(f"[group_post] posted to {ALPHA_CHAT_ID}: {text[:80]}")
+            except Exception as e:
+                logger.error(f"[group_post] error: {e}")
+
+        scheduler.add_job(
+            _autonomous_group_post,
+            "interval",
+            minutes=GROUP_POST_INTERVAL_MIN,
+            jitter=GROUP_POST_JITTER_MIN * 60,
+            id="group_post",
+        )
+        logger.info(
+            f"[scheduler] group_post every {GROUP_POST_INTERVAL_MIN}m "
+            f"(±{GROUP_POST_JITTER_MIN}m jitter) → chat {ALPHA_CHAT_ID}"
+        )
+    elif not ALPHA_CHAT_ID:
+        logger.info("[group_post] ALPHA_CHAT_ID not set — autonomous group posts disabled")
 
     # 6. Park forever
     stop_event = asyncio.Event()

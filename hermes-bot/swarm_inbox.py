@@ -1,4 +1,4 @@
-# smolting-telegram-bot/swarm_inbox.py
+# hermes-bot/swarm_inbox.py
 """
 SwarmInbox — Redis-backed inter-agent message queue.
 
