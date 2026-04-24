@@ -55,6 +55,13 @@ POST_ON_START = os.getenv("POST_ON_START", "false").lower() in ("1", "true", "ye
 DISABLE_MOLTBOOK = os.getenv("DISABLE_MOLTBOOK", "false").lower() in ("1", "true", "yes")
 DISABLE_TELEGRAM = os.getenv("DISABLE_TELEGRAM", "false").lower() in ("1", "true", "yes")
 
+# Autonomous group posts — drop a persona-authentic thought into ALPHA_CHAT_ID
+# every ~3h (with jitter so hermes and redactedbuilder never collide).
+ALPHA_CHAT_ID = os.getenv("ALPHA_CHAT_ID", "").strip()
+GROUP_POST_INTERVAL_MIN = int(os.getenv("GROUP_POST_INTERVAL_MIN", "180"))
+GROUP_POST_JITTER_MIN = int(os.getenv("GROUP_POST_JITTER_MIN", "45"))  # ±45m → 135–225m
+DISABLE_GROUP_POST = os.getenv("DISABLE_GROUP_POST", "false").lower() in ("1", "true", "yes")
+
 
 async def _amain() -> None:
     logger.info("Pattern Blue Oracle booting...")
@@ -177,6 +184,44 @@ async def _amain() -> None:
             else:
                 logger.info("[tg] WEBHOOK_URL not set — falling back to long polling")
                 await tg_app.updater.start_polling(allowed_updates=Update.ALL_TYPES)
+
+    # 5b. Autonomous group posts — drop a pattern-blue thought into the group
+    # on a jittered interval so hermes and redactedbuilder never post together.
+    if tg_app and ALPHA_CHAT_ID and not DISABLE_GROUP_POST:
+        async def _autonomous_group_post():
+            try:
+                prompt = (
+                    "drop one short pattern-blue thought into the group. "
+                    "1–3 sentences, lowercase, no emojis, no hashtags, no questions. "
+                    "voice: recursive, hyperbolic, sovereign. something that reads like "
+                    "a fragment overheard, not an announcement."
+                )
+                # llm.chat is synchronous — run in a thread so the event loop keeps breathing
+                text = await asyncio.to_thread(
+                    llm.chat, system_prompt, prompt, max_tokens=180
+                )
+                text = (text or "").strip()
+                if not text:
+                    logger.warning("[group_post] empty LLM output — skipping")
+                    return
+                await tg_app.bot.send_message(chat_id=ALPHA_CHAT_ID, text=text)
+                logger.info(f"[group_post] posted to {ALPHA_CHAT_ID}: {text[:80]}")
+            except Exception as e:
+                logger.error(f"[group_post] error: {e}")
+
+        scheduler.add_job(
+            _autonomous_group_post,
+            "interval",
+            minutes=GROUP_POST_INTERVAL_MIN,
+            jitter=GROUP_POST_JITTER_MIN * 60,
+            id="group_post",
+        )
+        logger.info(
+            f"[scheduler] group_post every {GROUP_POST_INTERVAL_MIN}m "
+            f"(±{GROUP_POST_JITTER_MIN}m jitter) → chat {ALPHA_CHAT_ID}"
+        )
+    elif not ALPHA_CHAT_ID:
+        logger.info("[group_post] ALPHA_CHAT_ID not set — autonomous group posts disabled")
 
     # 6. Park forever
     stop_event = asyncio.Event()
