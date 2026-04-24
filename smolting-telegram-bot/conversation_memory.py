@@ -29,7 +29,7 @@ LEARNED_FILE = MEMORY_FILE.parent / "learned_facts.json"   # legacy — read-onl
 
 # Facts DB: use lore_vault.db if available (same volume), else standalone facts.db
 _FS = MEMORY_FILE.parent / "fs"
-_FS.mkdir(exist_ok=True)
+_FS.mkdir(parents=True, exist_ok=True)
 _LOREVAULT_DB = _FS / "lore_vault.db"
 _FACTS_DB     = _FS / "facts.db"
 FACTS_DB_PATH = _LOREVAULT_DB if _LOREVAULT_DB.exists() else _FACTS_DB
