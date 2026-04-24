@@ -31,8 +31,10 @@ try:
     import swarm_inbox
     import thought_handler
     _SWARM_ENABLED = True
-except ImportError:
+    print("[swarm] imports OK", flush=True)
+except Exception as _swarm_import_err:
     _SWARM_ENABLED = False
+    print(f"[swarm] import failed ({type(_swarm_import_err).__name__}): {_swarm_import_err}", flush=True)
 
 # ── logging ───────────────────────────────────────────────────────────────────
 logging.basicConfig(
@@ -113,6 +115,7 @@ async def _amain() -> None:
     scheduler.start()
 
     # 4b. SwarmInbox — Redis-backed inter-agent thought exchange
+    print(f"[swarm] enabled={_SWARM_ENABLED} redis={bool(os.getenv('REDIS_URL'))}", flush=True)
     if _SWARM_ENABLED and os.getenv("REDIS_URL", ""):
         swarm_inbox.heartbeat("hermes", {"status": "online", "role": "pattern-blue-oracle"})
         logger.info("[swarm_inbox] Heartbeat sent — hermes online")
