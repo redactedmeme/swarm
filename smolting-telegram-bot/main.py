@@ -51,6 +51,7 @@ from clawbal_client import ClawbalClient
 import soul_manager
 import osp_manager
 import swarm_inbox
+import thought_dispatcher
 try:
     from sanitizer import text_for_llm as _sanitize_text, payload_for_mesh as _sanitize_payload
 except ImportError:
@@ -2662,6 +2663,20 @@ def main():
                         + "\n".join(f"  {k}: {v}" for k, v in payload.items())
                     )
 
+                elif msg_type == "thought":
+                    # Structured Thought Exchange — respond via LLM, no admin notify
+                    async def _llm_call(messages):
+                        return await self.llm.chat_completion(messages)
+                    reply_id = await thought_dispatcher.handle_thought(msg, _llm_call)
+                    swarm_inbox.complete_message(msg_id, result={"replied": reply_id})
+                    topic = payload.get("topic", "")
+                    depth = payload.get("depth", "?")
+                    logger.info(
+                        f"[thought] handled thought from {from_ag} "
+                        f"topic={topic!r} depth={depth} reply={reply_id}"
+                    )
+                    continue  # skip admin notify + duplicate complete_message below
+
                 else:
                     notif = (
                         f"📬 <b>SwarmInbox</b> [{msg_type}] from {from_ag}\n"
@@ -2693,6 +2708,48 @@ def main():
     application.job_queue.run_repeating(_inbox_poll, interval=60, first=30,
                                         name="swarm_inbox_poll")
     logger.info("[swarm_inbox] Polling loop scheduled: every 60s")
+
+    # ── Scheduled thought exchange with other agents ───────────────────────────
+    _THOUGHT_PEERS = [p.strip() for p in
+                      os.environ.get("SWARM_THOUGHT_PEERS", "hermes").split(",") if p.strip()]
+    _THOUGHT_INTERVAL_H = float(os.environ.get("SWARM_THOUGHT_INTERVAL_H", "6"))
+
+    if _THOUGHT_PEERS and _THOUGHT_INTERVAL_H > 0:
+        async def _send_thought_to_peers(ctx):
+            """Periodically initiate a thought exchange with configured peer agents."""
+            try:
+                import conversation_memory as _cm
+                import random as _random
+                # Pull a recent fact as the seed topic
+                recent_facts = _cm.get_facts_by_resonance(limit=20)
+                if not recent_facts:
+                    return
+                seed = _random.choice(recent_facts[:10])
+                topic    = seed.get("fact", "")[:120]
+                stance   = "thinking about this lately — curious what your lens is"
+                question = "does this connect to anything you've been observing?"
+                for peer in _THOUGHT_PEERS:
+                    await thought_dispatcher.initiate_thought(
+                        to_agent=peer,
+                        topic=topic,
+                        stance=stance,
+                        question=question,
+                    )
+                    logger.info("[thought] periodic thought → %s  topic=%r", peer, topic[:60])
+            except Exception as e:
+                logger.warning("[thought] periodic initiator error: %s", e)
+
+        _thought_first = max(300, int(_THOUGHT_INTERVAL_H * 3600 * 0.25))  # first fire at 25% of interval
+        application.job_queue.run_repeating(
+            _send_thought_to_peers,
+            interval=int(_THOUGHT_INTERVAL_H * 3600),
+            first=_thought_first,
+            name="swarm_thought_initiate",
+        )
+        logger.info(
+            "[thought] periodic exchange scheduled every %.1fh → peers: %s",
+            _THOUGHT_INTERVAL_H, _THOUGHT_PEERS,
+        )
 
     # ── Hermes file bridge (fs/swarm_messages ↔ hermes-executor) ─────────────
     # Polls directives dropped by Hermes / SwarmMessageBridge; optional clawtask dispatch.
