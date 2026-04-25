@@ -52,6 +52,7 @@ import soul_manager
 import osp_manager
 import swarm_inbox
 import thought_dispatcher
+import llm_tools
 try:
     from sanitizer import text_for_llm as _sanitize_text, payload_for_mesh as _sanitize_payload
 except ImportError:
@@ -1586,6 +1587,8 @@ swarm@[REDACTED]:~$ _"""
         # Persistent soul — evolving beliefs and community observations
         soul_block = soul_manager.get_soul_for_prompt()
 
+        tools_block = "\n\n" + llm_tools.format_tools_for_prompt()
+
         return (
             f"You are smolting (@RedactedIntern) — {bio}\n\n"
             f"{soul_block}\n\n"
@@ -1609,6 +1612,7 @@ swarm@[REDACTED]:~$ _"""
             "Keep responses concise — 1-3 short paragraphs. "
             "Never format as CLI/terminal output. "
             "Token contract (V2 — always use this): 9mtKd1o8Ht7F1daumKgs5D8EdVyopWBfYQwNmMojpump"
+            f"{tools_block}"
         )
 
     async def _generate_alpha(self) -> str:
@@ -1902,27 +1906,53 @@ swarm@[REDACTED]:~$ _"""
                 messages.extend(history[-14:])  # last 7 exchanges = 14 messages max
                 messages.append({"role": "user", "content": _sanitize_text(user_text)})
 
-                response = await self.llm.chat_completion(messages)
+                response = await self.llm.chat_completion_with_fallback(messages)
+
+                # ── Tool Calling ──────────────────────────────────────────────────
+                tool_calls = llm_tools.parse_tool_calls(response)
+                tool_results = []
+                if tool_calls:
+                    for tool_name, params in tool_calls:
+                        tool_result = await llm_tools.execute_tool(tool_name, params)
+                        tool_results.append((tool_name, tool_result))
+                        logger.info(f"[echo] tool invoked: {tool_name} → {tool_result.get('success', False)}")
+
+                # Clean response of tool markers for display
+                clean_response = response
+                for _ in tool_calls:
+                    import re
+                    clean_response = re.sub(r'\[TOOL:.*?\]', '', clean_response, count=1, flags=re.DOTALL)
+                clean_response = clean_response.strip()
 
                 # Apply comm-mode transformation to response
                 # CLEAR and IDENTITY: no transformation
                 if classified.comm_mode == CommMode.CLEAR or classified.intent == _Intent.IDENTITY:
                     pass
                 elif classified.comm_mode == CommMode.WASSIE:
-                    response = self.clf.apply_comm_mode(response, CommMode.WASSIE)
-                await msg.reply_text(response)
+                    clean_response = self.clf.apply_comm_mode(clean_response, CommMode.WASSIE)
+
+                await msg.reply_text(clean_response)
+
+                # If tools were invoked, send a brief confirmation
+                if tool_results:
+                    tool_summary = []
+                    for tool_name, result in tool_results:
+                        status = "✓" if result.get("success") else "✗"
+                        tool_summary.append(f"{status} {tool_name}")
+                    await msg.reply_text(f"[tools invoked: {', '.join(tool_summary)}]")
 
                 # Update in-memory history
                 history.append({"role": "user", "content": user_text})
-                history.append({"role": "assistant", "content": response})
+                history.append({"role": "assistant", "content": clean_response})
                 if len(history) > 20:
                     self.chat_histories[user_id] = history[-20:]
 
                 # Fire-and-forget: extract a learned fact from this exchange
-                asyncio.create_task(self._maybe_extract_fact(user_text, response))
+                asyncio.create_task(self._maybe_extract_fact(user_text, clean_response))
+                asyncio.create_task(self._maybe_write_lore(user_text, clean_response))
 
             user = update.effective_user
-            cm.log_exchange(user.id, user.username or user.first_name, user_text, response)
+            cm.log_exchange(user.id, user.username or user.first_name, user_text, clean_response)
         except Exception as e:
             logger.error(f"echo LLM error: {e}")
             fallback = "something went sideways on my end — try again? ^_^"
@@ -1945,6 +1975,52 @@ swarm@[REDACTED]:~$ _"""
             cm.append_fact(raw.strip(), source="telegram")
         except Exception as e:
             logger.debug(f"[fact_extract] {e}")
+
+    async def _maybe_write_lore(self, user_msg: str, bot_reply: str) -> None:
+        """Background task: extract a lore-worthy fragment from the exchange and write it to LoreVault.
+
+        Runs after every echo response. The LLM decides if the exchange produced anything
+        worth recording — if not, it returns NONE and nothing is written.
+        """
+        try:
+            raw = await self.llm.chat_completion([
+                {"role": "system", "content": (
+                    "You are smolting's memory curator. Given a Telegram exchange, decide if it produced "
+                    "something worth recording in the lore vault — a pattern observed, a community insight, "
+                    "an interesting question, or a belief that crystallized.\n\n"
+                    "If yes, respond with a JSON object:\n"
+                    "{\"content\": \"<observation in first person, max 200 chars>\", "
+                    "\"category\": \"<lore|worldbuilding|quote|mechanic>\", "
+                    "\"title\": \"<optional short title>\"}\n\n"
+                    "If the exchange is trivial, repetitive, or just price/logistics talk, reply with exactly: NONE"
+                )},
+                {"role": "user", "content": (
+                    f"User: {_sanitize_text(user_msg[:200])}\n"
+                    f"Bot: {_sanitize_text(bot_reply[:300])}"
+                )},
+            ], max_tokens=120)
+            raw = (raw or "").strip()
+            if raw == "NONE" or not raw:
+                return
+            import json as _json
+            import re as _re
+            m = _re.search(r"\{.*\}", raw, _re.DOTALL)
+            if not m:
+                return
+            data = _json.loads(m.group())
+            content = data.get("content", "").strip()
+            if not content:
+                return
+            from lore_vault import add_entry
+            add_entry(
+                content=content,
+                category=data.get("category", "lore"),
+                title=data.get("title") or None,
+                source="telegram_echo",
+            )
+            logger.debug("[lore_write] wrote entry: %s", content[:60])
+        except Exception as e:
+            logger.debug(f"[lore_write] {e}")
 
     async def price_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Live $REDACTED price from DexScreener."""
@@ -2526,6 +2602,27 @@ def main():
     # Autonomous Moltbook loops — only if MOLTBOOK_API_KEY is set
     if moltbook_key:
         import moltbook_autonomous as mb_auto
+
+        _admin_chat_id = os.getenv("ADMIN_CHAT_ID", "").strip()
+
+        async def _notify_operator(text: str) -> None:
+            """Push a plain-text message to the operator's Telegram DM."""
+            if not _admin_chat_id:
+                return
+            try:
+                await application.bot.send_message(
+                    chat_id=int(_admin_chat_id),
+                    text=text,
+                )
+            except Exception as e:
+                logger.warning(f"[notify_operator] Failed to send: {e}")
+
+        # Register with llm_tools so the LLM can call dm_operator as a tool
+        try:
+            import llm_tools as _lt
+            _lt.register_dm_fn(_notify_operator)
+        except Exception as _e:
+            logger.warning(f"[notify_operator] llm_tools registration failed: {_e}")
 
         async def _mb_reply(ctx):
             await mb_auto.reply_to_notifications(bot.moltbook)

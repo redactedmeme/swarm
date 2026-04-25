@@ -618,7 +618,7 @@ async def _comment_on_post(moltbook, post: dict, submolt: str, engaged: set,
     return False
 
 
-async def scan_and_comment(moltbook) -> None:
+async def scan_and_comment(moltbook, notify_fn=None) -> None:
     """
     Scan SCAN_SUBMOLTS for new posts we haven't engaged with.
     Priority pass: check all submolts for posts by PRIORITY_AGENTS first.
@@ -755,7 +755,7 @@ async def post_swarm_introspection(moltbook) -> Optional[str]:
     return None
 
 
-async def autonomous_post(moltbook, market_data_fn=None) -> None:
+async def autonomous_post(moltbook, market_data_fn=None, notify_fn=None) -> None:
     """
     Create an original post grounded in what the community is actually discussing.
     Submolt rotates hourly. Theme is generated dynamically from live context.
@@ -898,6 +898,18 @@ async def autonomous_post(moltbook, market_data_fn=None) -> None:
                     post_tracker.track_post(post_id, submolt, title, theme_hint=user_msg[:200])
                 except Exception:
                     pass
+            # Write to LoreVault as a timestamped event
+            try:
+                from lore_vault import add_event
+                add_event(
+                    body=f"[/{submolt}] {title}: {content[:300]}",
+                    title=title,
+                    tags=f"autonomous_post,moltbook,{submolt}",
+                    significance=4.0,
+                    source="moltbook_auto",
+                )
+            except Exception:
+                pass
         else:
             logger.warning(f"[moltbook_auto] Autonomous post to /{submolt} failed")
 
