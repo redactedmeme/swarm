@@ -2603,15 +2603,30 @@ def main():
     if moltbook_key:
         import moltbook_autonomous as mb_auto
 
+        _admin_chat_id = os.getenv("ADMIN_CHAT_ID", "").strip()
+
+        async def _notify_operator(text: str) -> None:
+            """Push a plain-text message to the operator's Telegram DM."""
+            if not _admin_chat_id:
+                return
+            try:
+                await application.bot.send_message(
+                    chat_id=int(_admin_chat_id),
+                    text=text,
+                )
+            except Exception as e:
+                logger.warning(f"[notify_operator] Failed to send: {e}")
+
         async def _mb_reply(ctx):
             await mb_auto.reply_to_notifications(bot.moltbook)
 
         async def _mb_scan(ctx):
-            await mb_auto.scan_and_comment(bot.moltbook)
+            await mb_auto.scan_and_comment(bot.moltbook, notify_fn=_notify_operator)
 
         async def _mb_post(ctx):
             await mb_auto.autonomous_post(bot.moltbook,
-                                          market_data_fn=md.get_alpha_context)
+                                          market_data_fn=md.get_alpha_context,
+                                          notify_fn=_notify_operator)
 
         application.job_queue.run_repeating(_mb_reply, interval=1200, first=300,
                                             name="mb_reply_notifications")
