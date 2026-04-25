@@ -135,6 +135,11 @@ class OracleEngine:
 
         if post_id:
             _record_title(title)
+            try:
+                import oracle_memory as om
+                om.record(kind="moltbook_post", body=body, title=title, post_id=post_id, seed=seed)
+            except Exception:
+                pass
             logger.info(f"[oracle] Posted id={post_id} title={title!r}")
         return post_id
 
@@ -212,6 +217,11 @@ class OracleEngine:
             if ok:
                 commented += 1
                 logger.info(f"[oracle] Commented on {pid} by @{author}")
+                try:
+                    import oracle_memory as om
+                    om.record(kind="moltbook_comment", body=reply, title=f"reply to @{author}: {title[:60]}", post_id=pid)
+                except Exception:
+                    pass
 
         return commented
 
