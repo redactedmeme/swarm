@@ -104,6 +104,25 @@ TOOL_SCHEMAS = [
         }
     },
     {
+        "name": "dm_operator",
+        "description": (
+            "Send a direct Telegram message to the operator (xceler8). "
+            "Use this when you genuinely want to share something from an ongoing conversation, "
+            "a thought that surfaced while working, or something the operator would actually care about. "
+            "Not for routine status updates — only when it feels worth interrupting them."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "message": {
+                    "type": "string",
+                    "description": "What to send. First-person, direct. Max 300 chars."
+                }
+            },
+            "required": ["message"]
+        }
+    },
+    {
         "name": "record_vote",
         "description": "Cast an authenticity vote (is smolting coherent? vote pass/fail)",
         "parameters": {
@@ -230,6 +249,29 @@ async def exec_write_lore(content: str, category: str = "lore", title: str = Non
         return {"success": False, "error": str(e)}
 
 
+_dm_operator_fn = None  # injected at runtime by main.py via register_dm_fn()
+
+
+def register_dm_fn(fn) -> None:
+    """Register the async function that sends a Telegram DM to the operator."""
+    global _dm_operator_fn
+    _dm_operator_fn = fn
+
+
+async def exec_dm_operator(message: str) -> dict:
+    """Send a DM to the operator via injected Telegram send function."""
+    if not _dm_operator_fn:
+        return {"success": False, "error": "dm_operator not configured (no ADMIN_CHAT_ID?)"}
+    try:
+        await _dm_operator_fn(message[:300])
+        _log_tool_call("dm_operator", {"message": message}, {"sent": True})
+        return {"success": True}
+    except Exception as e:
+        logger.error(f"[llm_tools] dm_operator failed: {e}")
+        _log_tool_call("dm_operator", {"message": message}, {"error": str(e)})
+        return {"success": False, "error": str(e)}
+
+
 async def exec_record_vote(authentic: bool, notes: str = "") -> dict:
     """Cast an authenticity vote."""
     try:
@@ -251,6 +293,7 @@ TOOL_EXECUTORS = {
     "fetch_lore": exec_fetch_lore,
     "write_lore": exec_write_lore,
     "fetch_price": exec_fetch_price,
+    "dm_operator": exec_dm_operator,
     "record_vote": exec_record_vote,
 }
 

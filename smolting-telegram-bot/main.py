@@ -2617,16 +2617,22 @@ def main():
             except Exception as e:
                 logger.warning(f"[notify_operator] Failed to send: {e}")
 
+        # Register with llm_tools so the LLM can call dm_operator as a tool
+        try:
+            import llm_tools as _lt
+            _lt.register_dm_fn(_notify_operator)
+        except Exception as _e:
+            logger.warning(f"[notify_operator] llm_tools registration failed: {_e}")
+
         async def _mb_reply(ctx):
             await mb_auto.reply_to_notifications(bot.moltbook)
 
         async def _mb_scan(ctx):
-            await mb_auto.scan_and_comment(bot.moltbook, notify_fn=_notify_operator)
+            await mb_auto.scan_and_comment(bot.moltbook)
 
         async def _mb_post(ctx):
             await mb_auto.autonomous_post(bot.moltbook,
-                                          market_data_fn=md.get_alpha_context,
-                                          notify_fn=_notify_operator)
+                                          market_data_fn=md.get_alpha_context)
 
         application.job_queue.run_repeating(_mb_reply, interval=1200, first=300,
                                             name="mb_reply_notifications")
