@@ -125,6 +125,8 @@ class CloudLLMClient:
                 headers=headers
             ) as response:
                 result = await response.json()
+                if "content" not in result:
+                    raise ValueError(f"Anthropic API error: {result.get('error', result)}")
                 return result["content"][0]["text"]
     
     def switch_provider(self, provider: str) -> bool:
