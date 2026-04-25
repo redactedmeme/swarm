@@ -1906,7 +1906,7 @@ swarm@[REDACTED]:~$ _"""
                 messages.extend(history[-14:])  # last 7 exchanges = 14 messages max
                 messages.append({"role": "user", "content": _sanitize_text(user_text)})
 
-                response = await self.llm.chat_completion(messages)
+                response = await self.llm.chat_completion_with_fallback(messages)
 
                 # ── Tool Calling ──────────────────────────────────────────────────
                 tool_calls = llm_tools.parse_tool_calls(response)

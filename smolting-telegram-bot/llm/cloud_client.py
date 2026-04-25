@@ -129,6 +129,40 @@ class CloudLLMClient:
                     raise ValueError(f"Anthropic API error: {result.get('error', result)}")
                 return result["content"][0]["text"]
     
+    async def chat_completion_with_fallback(self, messages: list, max_tokens: int = None) -> str:
+        """
+        Try providers in order: current → xai → anthropic → groq.
+        Skips providers with no API key. Raises if all fail.
+        """
+        import logging
+        _log = logging.getLogger(__name__)
+
+        # Build fallback chain starting from current provider
+        _chain = [self.provider] + [p for p in ("xai", "anthropic", "groq") if p != self.provider]
+
+        last_err = None
+        for provider in _chain:
+            key = {
+                "openai": os.getenv("OPENAI_API_KEY"),
+                "anthropic": os.getenv("ANTHROPIC_API_KEY"),
+                "together": os.getenv("TOGETHER_API_KEY"),
+                "xai": os.getenv("XAI_API_KEY"),
+                "groq": os.getenv("GROQ_API_KEY"),
+            }.get(provider, "")
+            if not key:
+                continue
+            try:
+                tmp = CloudLLMClient(provider=provider, max_tokens=max_tokens)
+                result = await tmp.chat_completion(messages, max_tokens=max_tokens)
+                if result:
+                    if provider != self.provider:
+                        _log.info(f"[llm] fallback succeeded via {provider}")
+                    return result
+            except Exception as e:
+                _log.warning(f"[llm] {provider} failed: {e}")
+                last_err = e
+        raise RuntimeError(f"all LLM providers failed — last error: {last_err}")
+
     def switch_provider(self, provider: str) -> bool:
         """
         Hot-swap LLM provider at runtime (session-only, resets on redeploy).
