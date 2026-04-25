@@ -8,6 +8,7 @@ IMPORTANT: Only ever send the API key to https://www.moltbook.com
 """
 import os
 import re
+import json
 import asyncio
 import logging
 import aiohttp
@@ -153,6 +154,12 @@ class MoltbookClient:
             clean = re.sub(r'[^a-z0-9\s]', '', text)
             clean = re.sub(r'\s+', ' ', clean).strip()
 
+            # ── Step 1b: de-fragment intra-word spaces ───────────────────────
+            # Some challenge variants inject spaces *inside* words:
+            # "tH iR tY TwO" → after step 1 → "th ir ty two"
+            # Merge short (≤2 char) non-digit fragments into their number words.
+            clean = self._defrag_clean(clean)
+
             # ── Step 2: digit numbers ────────────────────────────────────────
             numbers: list[float] = []
             for m in re.finditer(r'\d+(?:\.\d+)?', clean):
@@ -219,6 +226,42 @@ class MoltbookClient:
         except Exception as e:
             logger.error(f"Challenge solve error: {e} | raw={challenge}")
             return None
+
+    def _defrag_clean(self, clean: str) -> str:
+        """
+        Merge runs of short (≤2 char) space-separated tokens that are fragments of
+        number words injected with intra-word spaces.
+
+        e.g. "th ir ty two" → "thirty two"
+             "ei gh t"     → "eight"
+             "lo bster"    → "lo bster"  (non-number fragments left as-is)
+
+        Only merges tokens that result in (or are on the path to) a number word match.
+        Digit tokens are never merged.
+        """
+        parts = clean.split()
+        result: list[str] = []
+        i = 0
+        while i < len(parts):
+            tok = parts[i]
+            # Long tokens and digit tokens pass through unchanged
+            if tok.isdigit() or len(tok) > 2:
+                result.append(tok)
+                i += 1
+                continue
+            # Short non-digit token — greedily merge with following short tokens
+            # until we hit a number-word match or run out of short fragments.
+            composite = tok
+            j = i + 1
+            while j < len(parts) and not parts[j].isdigit() and len(parts[j]) <= 3:
+                composite += parts[j]
+                j += 1
+                # Stop as soon as composite IS a number word
+                if composite in self._WORD_NUMS or self._fuzzy_word_num(composite) is not None:
+                    break
+            result.append(composite)
+            i = j
+        return ' '.join(result)
 
     def _fuzzy_word_num(self, word: str) -> Optional[int]:
         """
@@ -305,9 +348,12 @@ class MoltbookClient:
         try:
             from llm import CloudLLMClient
 
-            for provider in ["anthropic", "xai", "groq"]:
+            for provider in ["xai", "groq", "anthropic"]:
                 try:
                     llm = CloudLLMClient(provider=provider)
+                    if not llm.api_key:
+                        logger.debug(f"[challenge] LLM ({provider}) skipped — no API key")
+                        continue
                     expr_raw = (
                         challenge.get("challenge_text") or challenge.get("expression")
                         or challenge.get("problem") or challenge.get("question") or ""
