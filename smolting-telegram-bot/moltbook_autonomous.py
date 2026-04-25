@@ -651,12 +651,6 @@ async def scan_and_comment(moltbook, notify_fn=None) -> None:
                     if ok:
                         commented += 1
                         _save_engaged(engaged)
-                        if notify_fn:
-                            author = (post.get("author") or {}).get("name", "?")
-                            try:
-                                await notify_fn(f"commented on /{submolt} post by {author}: {post.get('title','')[:60]}")
-                            except Exception:
-                                pass
                         await asyncio.sleep(160)
                 except Exception as e:
                     if _check_tpd_error(e):
@@ -679,12 +673,6 @@ async def scan_and_comment(moltbook, notify_fn=None) -> None:
                     if ok:
                         commented += 1
                         _save_engaged(engaged)
-                        if notify_fn:
-                            author = (post.get("author") or {}).get("name", "?")
-                            try:
-                                await notify_fn(f"commented on /{submolt} post by {author}: {post.get('title','')[:60]}")
-                            except Exception:
-                                pass
                         await asyncio.sleep(160)
                 except Exception as e:
                     if _check_tpd_error(e):
@@ -922,12 +910,6 @@ async def autonomous_post(moltbook, market_data_fn=None, notify_fn=None) -> None
                 )
             except Exception:
                 pass
-            if notify_fn:
-                url_part = f"\n{url}" if url else ""
-                try:
-                    await notify_fn(f"posted to /{submolt}: {title[:80]}{url_part}")
-                except Exception:
-                    pass
         else:
             logger.warning(f"[moltbook_auto] Autonomous post to /{submolt} failed")
 
