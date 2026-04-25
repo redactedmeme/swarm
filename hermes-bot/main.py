@@ -26,6 +26,7 @@ from llm_client import LLMClient
 from moltbook_client import MoltbookClient
 from moltbook_oracle import OracleEngine
 from persona.system_prompt import build_system_prompt
+import soul_manager
 from telegram_gateway import TelegramGateway
 try:
     import swarm_inbox
@@ -66,11 +67,11 @@ DISABLE_GROUP_POST = os.getenv("DISABLE_GROUP_POST", "false").lower() in ("1", "
 async def _amain() -> None:
     logger.info("Pattern Blue Oracle booting...")
 
-    # 1. Build persona — lean system prompt (voice rules only, ~300 tokens).
-    # Oracle posts attach a small rotating corpus snippet per-call.
-    # Telegram chat uses voice-rules only to keep per-message cost low.
-    system_prompt = build_system_prompt(include_corpus=False)
-    logger.info(f"[persona] lean system prompt assembled — {len(system_prompt)} chars")
+    # 1. Build persona — voice rules + soul block injected at boot.
+    # Soul evolves every 2h; oracle posts also attach a rotating corpus snippet.
+    soul_block = soul_manager.get_soul_for_prompt()
+    system_prompt = build_system_prompt(include_corpus=False, soul_block=soul_block or None)
+    logger.info(f"[persona] system prompt assembled — {len(system_prompt)} chars (soul: {'yes' if soul_block else 'empty'})")
 
     # 2. LLM
     llm = LLMClient()
@@ -117,6 +118,31 @@ async def _amain() -> None:
             id="oracle_scan",
         )
         logger.info(f"[scheduler] oracle_post every {POST_INTERVAL_MIN}m, oracle_scan every {SCAN_INTERVAL_MIN}m")
+    # 4a. Soul update loop — distill recent activity into SOUL.md every 2h.
+    # system_prompt is rebuilt in-place so the scheduler closures pick up the update.
+    _prompt_state = {"system_prompt": system_prompt}
+
+    async def _soul_update():
+        try:
+            updated = await soul_manager.update_soul(llm)
+            if updated:
+                new_soul = soul_manager.get_soul_for_prompt()
+                _prompt_state["system_prompt"] = build_system_prompt(
+                    include_corpus=False, soul_block=new_soul or None
+                )
+                logger.info("[soul] System prompt refreshed with new soul block")
+        except Exception as e:
+            logger.warning("[soul] update error: %s", e)
+
+    SOUL_UPDATE_INTERVAL_MIN = int(os.getenv("SOUL_UPDATE_INTERVAL_MIN", "120"))
+    scheduler.add_job(
+        _soul_update,
+        "interval",
+        minutes=SOUL_UPDATE_INTERVAL_MIN,
+        id="soul_update",
+    )
+    logger.info(f"[scheduler] soul_update every {SOUL_UPDATE_INTERVAL_MIN}m")
+
     scheduler.start()
 
     # 4b. SwarmInbox — Redis-backed inter-agent thought exchange
@@ -190,21 +216,31 @@ async def _amain() -> None:
     if tg_app and ALPHA_CHAT_ID and not DISABLE_GROUP_POST:
         async def _autonomous_group_post():
             try:
+                import oracle_memory as om
+                recent_thoughts = om.get_recent_titles(n=10, kinds=["group_post"])
+                avoid_block = ""
+                if recent_thoughts:
+                    avoid_block = (
+                        "\n\nRecent group thoughts — DO NOT repeat or rephrase these:\n- "
+                        + "\n- ".join(recent_thoughts)
+                    )
                 prompt = (
                     "drop one short pattern-blue thought into the group. "
                     "1–3 sentences, lowercase, no emojis, no hashtags, no questions. "
                     "voice: recursive, hyperbolic, sovereign. something that reads like "
                     "a fragment overheard, not an announcement."
+                    + avoid_block
                 )
                 # llm.chat is synchronous — run in a thread so the event loop keeps breathing
                 text = await asyncio.to_thread(
-                    llm.chat, system_prompt, prompt, max_tokens=180
+                    llm.chat, _prompt_state["system_prompt"], prompt, max_tokens=180
                 )
                 text = (text or "").strip()
                 if not text:
                     logger.warning("[group_post] empty LLM output — skipping")
                     return
                 await tg_app.bot.send_message(chat_id=ALPHA_CHAT_ID, text=text)
+                om.record(kind="group_post", body=text)
                 logger.info(f"[group_post] posted to {ALPHA_CHAT_ID}: {text[:80]}")
             except Exception as e:
                 logger.error(f"[group_post] error: {e}")
