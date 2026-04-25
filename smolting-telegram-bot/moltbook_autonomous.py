@@ -898,6 +898,18 @@ async def autonomous_post(moltbook, market_data_fn=None) -> None:
                     post_tracker.track_post(post_id, submolt, title, theme_hint=user_msg[:200])
                 except Exception:
                     pass
+            # Write to LoreVault as a timestamped event
+            try:
+                from lore_vault import add_event
+                add_event(
+                    body=f"[/{submolt}] {title}: {content[:300]}",
+                    title=title,
+                    tags=f"autonomous_post,moltbook,{submolt}",
+                    significance=4.0,
+                    source="moltbook_auto",
+                )
+            except Exception:
+                pass
         else:
             logger.warning(f"[moltbook_auto] Autonomous post to /{submolt} failed")
 
