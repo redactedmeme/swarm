@@ -106,5 +106,10 @@ class TelegramGateway:
 
         history.append({"role": "user", "content": user_text})
         history.append({"role": "assistant", "content": reply})
+        try:
+            import oracle_memory as om
+            om.record(kind="telegram_reply", body=reply, title=f"tg: {user_text[:60]}")
+        except Exception:
+            pass
         # Telegram message limit is 4096
         await update.message.reply_text(reply[:4000])

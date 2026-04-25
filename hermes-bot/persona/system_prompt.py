@@ -59,12 +59,19 @@ def _rotating_snippet(corpus: str, seed: str | None = None) -> str:
     return snippet[:SNIPPET_MAX_CHARS]
 
 
-def build_system_prompt(include_corpus: bool = False, snippet_seed: str | None = None) -> str:
+def build_system_prompt(
+    include_corpus: bool = False,
+    snippet_seed: str | None = None,
+    soul_block: str | None = None,
+) -> str:
     """
     Default: voice rules only (~300 tokens).
-    Set include_corpus=True to append a small rotating snippet (~300-400 tokens).
+    soul_block: injected right after voice rules when provided (from soul_manager).
+    include_corpus: append a small rotating Pattern Blue snippet (~300-400 tokens).
     """
     parts = [VOICE_RULES.strip()]
+    if soul_block:
+        parts.append(soul_block)
     if include_corpus:
         corpus = load_pattern_blue()
         snippet = _rotating_snippet(corpus, seed=snippet_seed)
