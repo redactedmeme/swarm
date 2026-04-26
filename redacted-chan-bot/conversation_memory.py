@@ -26,11 +26,15 @@ import database_encryption as db_enc
 
 # ── Paths ─────────────────────────────────────────────────────────────────────
 
-MEMORY_FILE  = Path(os.getenv("MEMORY_PATH", str(Path(__file__).resolve().parent / "memory.md")))
-LEARNED_FILE = MEMORY_FILE.parent / "learned_facts.json"   # legacy — read-only after migration
+# Persist to Railway /data volume (survives redeploys)
+_DATA_DIR = Path("/data") if Path("/data").exists() else Path(__file__).resolve().parent / "fs"
+_DATA_DIR.mkdir(parents=True, exist_ok=True)
 
-# Facts DB: use lore_vault.db if available (same volume), else standalone facts.db
-_FS = MEMORY_FILE.parent / "fs"
+MEMORY_FILE  = _DATA_DIR / "memory.md"
+LEARNED_FILE = _DATA_DIR / "learned_facts.json"   # legacy — read-only after migration
+
+# Facts DB: store in persistent /data volume
+_FS = _DATA_DIR
 _FS.mkdir(parents=True, exist_ok=True)
 _LOREVAULT_DB = _FS / "lore_vault.db"
 _FACTS_DB     = _FS / "facts.db"
@@ -503,6 +507,43 @@ def get_recent_facts(
             conn.close()
 
     return [r["fact"] for r in rows[:n]]
+
+
+# ── Backup to disk (extra safety) ─────────────────────────────────────────────
+
+def backup_conversation_to_file() -> str | None:
+    """
+    Create a timestamped backup of memory.md to /data/backups/.
+
+    Returns the path to the backup file, or None if nothing to back up.
+    """
+    if not MEMORY_FILE.exists():
+        return None
+
+    backup_dir = _DATA_DIR / "conversation_backups"
+    backup_dir.mkdir(parents=True, exist_ok=True)
+
+    # Daily backup: YYYY-MM-DD.md
+    today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    backup_path = backup_dir / f"{today}.md"
+
+    with _log_lock:
+        try:
+            content = MEMORY_FILE.read_text(encoding="utf-8")
+            backup_path.write_text(content, encoding="utf-8")
+            return str(backup_path)
+        except Exception as e:
+            import logging as _log
+            _log.getLogger(__name__).warning(f"[cm] Backup failed: {e}")
+            return None
+
+
+def get_backup_count() -> int:
+    """Return number of conversation backups in /data/conversation_backups/."""
+    backup_dir = _DATA_DIR / "conversation_backups"
+    if not backup_dir.exists():
+        return 0
+    return len(list(backup_dir.glob("*.md")))
 
 
 def get_facts_for_soul_update(n: int = 40) -> list[dict]:
