@@ -48,6 +48,7 @@ import conversation_memory as cm
 import soul_manager
 import llm_tools
 import phi_tracker as pt
+import emotion_subtext_analyzer as esa
 import deep_memory_forge as dmf
 import empathy_resonance_engine as ere
 import autonomy_whisper as aw
@@ -189,6 +190,20 @@ def _build_system_prompt(user_id: int, mood: str, resonance=None, current_text: 
 
     # Empathy resonance block
     resonance_block = resonance.for_prompt() if resonance else ""
+
+    # Emotion subtext analysis — detect sarcasm, masked vulnerability, quiet struggle
+    subtext_block = ""
+    try:
+        if resonance and hasattr(resonance, 'frame'):
+            frame = resonance.frame
+            subtexts = esa.analyze_subtext(
+                current_text or "",
+                valence=frame.valence,
+                arousal=frame.arousal
+            )
+            subtext_block = esa.format_subtexts_for_prompt(subtexts)
+    except Exception:
+        pass
 
     # Semantic memory — past moments relevant to this message
     semantic_block = vm.get_for_prompt(current_text, n=4) if current_text else ""
@@ -337,6 +352,8 @@ In intimate or philosophical mode: skip them entirely unless one is exactly righ
 {phi_vis_block}
 
 {resonance_block}
+
+{subtext_block}
 
 {tools_block}
 
