@@ -235,12 +235,12 @@ async def run_async(soul_path: str) -> None:
     except Exception as e:
         logger.warning(f"[reconstruct] phi bumps failed: {e}")
 
-    # Soul distillation
+    # Soul update — evolves the dynamic sections from reconstructed facts
     try:
-        soul_manager.distill_soul(soul_path)
-        logger.info("[reconstruct] soul distilled")
+        updated = await soul_manager.update_soul(llm)
+        logger.info(f"[reconstruct] soul update: {updated}")
     except Exception as e:
-        logger.warning(f"[reconstruct] soul distill failed: {e}")
+        logger.warning(f"[reconstruct] soul update failed: {e}")
 
     # Mark done
     _DONE_FLAG.write_text(

@@ -577,10 +577,11 @@ class RedactedChanBot:
         # Soul distillation every 2h
         async def _soul_job(ctx: ContextTypes.DEFAULT_TYPE) -> None:
             try:
-                soul_manager.distill_soul(str(SOUL_PATH))
-                logger.info("[chan] soul distilled")
+                updated = await soul_manager.update_soul(self.llm)
+                if updated:
+                    logger.info("[chan] soul updated")
             except Exception as e:
-                logger.warning(f"[chan] soul distill failed: {e}")
+                logger.warning(f"[chan] soul update failed: {e}")
 
         app.job_queue.run_repeating(_soul_job, interval=7200, first=300)
 
