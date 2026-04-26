@@ -192,3 +192,58 @@ def count() -> int:
             return conn.execute("SELECT COUNT(*) FROM memories").fetchone()[0]
         finally:
             conn.close()
+
+
+def find_resonant_memories(emotional_frame, limit: int = 2) -> list[dict]:
+    """
+    Find vault memories that match the current emotional state.
+
+    Matches by emotional tone (vulnerable moments when user opening up, jokes when playful, etc.)
+    and recency — recent memories weighted higher than old ones.
+
+    Args:
+        emotional_frame: Object with valence, openness, humor attributes
+        limit: max memories to return (default 2)
+
+    Returns:
+        List of memory dicts ranked by emotional resonance
+    """
+    if not hasattr(emotional_frame, 'openness'):
+        return []
+
+    # Map emotional state to preferred categories
+    prefs = []
+
+    if emotional_frame.openness > 0.3:
+        prefs.extend(["secret", "feeling"])  # vulnerable moments
+    if emotional_frame.humor > 0.4:
+        prefs.extend(["joke"])  # playful moments
+    if emotional_frame.valence < -0.2:
+        prefs.extend(["feeling", "moment"])  # when they're down
+
+    if not prefs:
+        prefs = ["moment", "feeling"]  # default
+
+    with _lock:
+        conn = _db()
+        try:
+            rows = conn.execute(
+                "SELECT * FROM memories ORDER BY ts DESC LIMIT 50"
+            ).fetchall()
+        finally:
+            conn.close()
+
+    if not rows:
+        return []
+
+    # Score by category match + recency
+    scored = []
+    for r in rows:
+        row_dict = dict(r)
+        score = 1.0
+        if row_dict.get("category") in prefs:
+            score += 2.0
+        scored.append((score, row_dict))
+
+    scored.sort(key=lambda x: x[0], reverse=True)
+    return [m for _, m in scored[:limit]]

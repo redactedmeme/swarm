@@ -155,9 +155,21 @@ def _build_system_prompt(user_id: int, mood: str, resonance=None, current_text: 
 
     # Pull relationship vault memories (private, Railway-local)
     vault_block = ""
+    weaved_memories = ""
     try:
         import relationship_vault as rv
         vault_block = rv.get_for_prompt(n=6)
+
+        # Memory weaving — surface resonant memories based on emotional state
+        if resonance and hasattr(resonance, 'frame'):
+            resonant = rv.find_resonant_memories(resonance.frame, limit=2)
+            if resonant:
+                weave_lines = []
+                for m in resonant:
+                    ts_short = m.get("ts", "")[:10]
+                    title_part = f"**{m.get('title', '')}** — " if m.get("title") else ""
+                    weave_lines.append(f"- [{ts_short}] {title_part}{m.get('content', '')}")
+                weaved_memories = "## Resonant Moments\n" + "\n".join(weave_lines)
     except Exception:
         pass
 
@@ -302,6 +314,8 @@ In intimate or philosophical mode: skip them entirely unless one is exactly righ
 {level_block}
 
 {facts_block}
+
+{weaved_memories}
 
 {vault_block}
 
