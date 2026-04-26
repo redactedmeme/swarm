@@ -22,6 +22,8 @@ import uuid
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
 
+import database_encryption as db_enc
+
 # ── Paths ─────────────────────────────────────────────────────────────────────
 
 MEMORY_FILE  = Path(os.getenv("MEMORY_PATH", str(Path(__file__).resolve().parent / "memory.md")))
@@ -67,8 +69,7 @@ CREATE INDEX IF NOT EXISTS idx_lf_ts        ON learned_facts (ts DESC);
 # ── DB helpers ────────────────────────────────────────────────────────────────
 
 def _db() -> sqlite3.Connection:
-    conn = sqlite3.connect(str(FACTS_DB_PATH), check_same_thread=False)
-    conn.row_factory = sqlite3.Row
+    conn = db_enc.get_encrypted_connection(FACTS_DB_PATH)
     conn.execute("PRAGMA journal_mode=WAL")
     conn.execute("PRAGMA synchronous=NORMAL")
     return conn
