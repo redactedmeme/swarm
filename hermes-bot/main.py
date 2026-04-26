@@ -35,6 +35,12 @@ try:
 except Exception:
     _SWARM_ENABLED = False
 
+try:
+    import swarm_mesh
+    _MESH_ENABLED = True
+except Exception:
+    _MESH_ENABLED = False
+
 # ── logging ───────────────────────────────────────────────────────────────────
 logging.basicConfig(
     level=logging.INFO,
@@ -187,6 +193,13 @@ async def _amain() -> None:
         logger.info("[swarm_inbox] Polling loop scheduled: every 60s")
     else:
         logger.info("[swarm_inbox] Disabled — set REDIS_URL to enable swarm messaging")
+
+    # 4c. Swarm HTTP mesh bridge — announces hermes as a peer, polls for thoughts
+    if _MESH_ENABLED and swarm_mesh.enabled():
+        asyncio.create_task(swarm_mesh.heartbeat_loop(llm=llm))
+        logger.info("[mesh] hermes mesh heartbeat task started")
+    else:
+        logger.info("[mesh] Disabled — set SWARM_MESH_URL to enable mesh bridge")
 
     # 5. Telegram
     tg_app: Application | None = None
