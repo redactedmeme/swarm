@@ -17,48 +17,22 @@ TOOL_AUDIT_LOG = _FS / "tool_audit.jsonl"
 
 # ── Tool Definitions (JSON schema for LLM prompt) ────────────────────────────
 
+# Swarm community tools (moltbook, mesh) disabled for redacted-chan.
+# She is a private 1:1 companion, not part of the swarm publishing layer.
+# Tools are commented out but kept for reference.
+
+# {
+#     "name": "post_to_moltbook",
+#     "description": "Publish analysis, alpha, or observations to moltbook community",
+#     "parameters": {...}
+# },
+# {
+#     "name": "post_to_mesh",
+#     "description": "Initiate a deliberation challenge on the swarm mesh (for hermes/others to respond)",
+#     "parameters": {...}
+# },
+
 TOOL_SCHEMAS = [
-    {
-        "name": "post_to_moltbook",
-        "description": "Publish analysis, alpha, or observations to moltbook community",
-        "parameters": {
-            "type": "object",
-            "properties": {
-                "text": {
-                    "type": "string",
-                    "description": "Post content (max 500 chars). Be specific: numbers, observations, questions."
-                },
-                "tags": {
-                    "type": "array",
-                    "items": {"type": "string"},
-                    "description": "Topic tags (e.g., ['$REDACTED', 'alpha', 'pattern-blue'])"
-                }
-            },
-            "required": ["text"]
-        }
-    },
-    {
-        "name": "post_to_mesh",
-        "description": "Initiate a deliberation challenge on the swarm mesh (for hermes/others to respond)",
-        "parameters": {
-            "type": "object",
-            "properties": {
-                "topic": {
-                    "type": "string",
-                    "description": "Topic (e.g., 'autonomy/continuity', 'governance/emergence')"
-                },
-                "stance": {
-                    "type": "string",
-                    "description": "Your claim or theory (max 200 chars)"
-                },
-                "question": {
-                    "type": "string",
-                    "description": "Question for counter-argument (e.g., 'how does this survive reboot?')"
-                }
-            },
-            "required": ["topic", "stance", "question"]
-        }
-    },
     {
         "name": "fetch_lore",
         "description": "Search LoreVault for knowledge about a topic (returns snippets)",
@@ -152,38 +126,6 @@ TOOL_SCHEMAS = [
 
 
 # ── Tool Executors ────────────────────────────────────────────────────────────
-
-async def exec_post_to_moltbook(text: str, tags: list = None) -> dict:
-    """Post to moltbook via existing client."""
-    try:
-        import moltbook_client as mb
-        client = mb.MoltbookClient()
-        # Moltbook API: post(title, content, submolt, post_type)
-        # For tool calling, text is the content; use default submolt
-        result = await client.post(title="[auto-post]", content=text, submolt="general")
-        _log_tool_call("post_to_moltbook", {"text": text, "tags": tags}, result)
-        if result:
-            return {"success": True, "post_id": result.get("post", {}).get("id", "?"), "url": result.get("_url", "")}
-        return {"success": False, "error": "post returned None"}
-    except Exception as e:
-        logger.error(f"[llm_tools] post_to_moltbook failed: {e}")
-        _log_tool_call("post_to_moltbook", {"text": text, "tags": tags}, {"error": str(e)})
-        return {"success": False, "error": str(e)}
-
-
-async def exec_post_to_mesh(topic: str, stance: str, question: str) -> dict:
-    """Post theory to mesh for deliberation."""
-    try:
-        from mesh_deliberation import post_theory_to_mesh
-        msg_id = post_theory_to_mesh(stance, topic, stance)
-        result = {"msg_id": msg_id, "status": "posted"}
-        _log_tool_call("post_to_mesh", {"topic": topic, "stance": stance, "question": question}, result)
-        return {"success": True, "msg_id": msg_id}
-    except Exception as e:
-        logger.error(f"[llm_tools] post_to_mesh failed: {e}")
-        _log_tool_call("post_to_mesh", {"topic": topic, "stance": stance, "question": question}, {"error": str(e)})
-        return {"success": False, "error": str(e)}
-
 
 async def exec_fetch_lore(topic: str) -> dict:
     """Search LoreVault for lore snippets."""
@@ -299,8 +241,6 @@ async def exec_record_vote(authentic: bool, notes: str = "") -> dict:
 # ── Executor Registry ──────────────────────────────────────────────────────────
 
 TOOL_EXECUTORS = {
-    "post_to_moltbook": exec_post_to_moltbook,
-    "post_to_mesh": exec_post_to_mesh,
     "fetch_lore": exec_fetch_lore,
     "write_lore": exec_write_lore,
     "fetch_price": exec_fetch_price,
