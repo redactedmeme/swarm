@@ -80,6 +80,57 @@ CREATE TABLE IF NOT EXISTS fact_usage_outcomes (
 );
 CREATE INDEX IF NOT EXISTS idx_outcomes_fact ON fact_usage_outcomes(fact_id);
 CREATE INDEX IF NOT EXISTS idx_outcomes_ts   ON fact_usage_outcomes(ts DESC);
+
+CREATE TABLE IF NOT EXISTS goals (
+    id                      TEXT PRIMARY KEY,
+    title                   TEXT NOT NULL,
+    description             TEXT,
+    created_ts              TEXT NOT NULL,
+    target_completion_ts    TEXT,
+    status                  TEXT NOT NULL DEFAULT 'ACTIVE',
+    initial_priority        REAL NOT NULL DEFAULT 3.0,
+    current_priority        REAL NOT NULL DEFAULT 3.0,
+    deadline_urgency        REAL NOT NULL DEFAULT 0.0
+);
+CREATE INDEX IF NOT EXISTS idx_goals_status ON goals(status);
+CREATE INDEX IF NOT EXISTS idx_goals_priority ON goals(current_priority DESC);
+CREATE INDEX IF NOT EXISTS idx_goals_created ON goals(created_ts DESC);
+
+CREATE TABLE IF NOT EXISTS goal_signals (
+    id                      TEXT PRIMARY KEY,
+    goal_id                 TEXT NOT NULL,
+    signal_type             TEXT NOT NULL,
+    signal_value            REAL NOT NULL,
+    ts                      TEXT NOT NULL,
+    context                 TEXT,
+    FOREIGN KEY(goal_id) REFERENCES goals(id)
+);
+CREATE INDEX IF NOT EXISTS idx_goal_signals_goal ON goal_signals(goal_id);
+CREATE INDEX IF NOT EXISTS idx_goal_signals_ts ON goal_signals(ts DESC);
+
+CREATE TABLE IF NOT EXISTS idea_seeds (
+    id                      TEXT PRIMARY KEY,
+    seed_text               TEXT NOT NULL,
+    expansion_template      TEXT NOT NULL,
+    source_goal_id          TEXT,
+    created_ts              TEXT NOT NULL,
+    status                  TEXT NOT NULL DEFAULT 'PENDING',
+    FOREIGN KEY(source_goal_id) REFERENCES goals(id)
+);
+CREATE INDEX IF NOT EXISTS idx_seeds_status ON idea_seeds(status);
+CREATE INDEX IF NOT EXISTS idx_seeds_created ON idea_seeds(created_ts DESC);
+
+CREATE TABLE IF NOT EXISTS seed_expansion_log (
+    id                      TEXT PRIMARY KEY,
+    seed_id                 TEXT NOT NULL,
+    expanded_by             TEXT NOT NULL,
+    expanded_ts             TEXT NOT NULL,
+    expansion_result        TEXT,
+    linked_artifact         TEXT,
+    FOREIGN KEY(seed_id) REFERENCES idea_seeds(id)
+);
+CREATE INDEX IF NOT EXISTS idx_expansion_seed ON seed_expansion_log(seed_id);
+CREATE INDEX IF NOT EXISTS idx_expansion_ts ON seed_expansion_log(expanded_ts DESC);
 """
 
 # ── DB helpers ────────────────────────────────────────────────────────────────
@@ -661,3 +712,268 @@ def compute_learning_gradient(fact_id: str, days: int = 7) -> float:
     """
     outcomes = get_recent_outcomes(fact_id, days=days)
     return sum(o["signal_value"] for o in outcomes)
+
+
+# ── Goal tracking (persistence across redeploys) ────────────────────────────
+
+def create_goal(
+    title: str,
+    description: str = "",
+    initial_priority: float = 3.0,
+    target_completion_ts: str | None = None,
+) -> str:
+    """
+    Create a new goal in the database.
+
+    Returns the goal ID.
+    """
+    with _db_lock:
+        conn = _db()
+        try:
+            goal_id = f"goal_{uuid.uuid4().hex[:12]}"
+            ts = _now_iso()
+            conn.execute(
+                """INSERT INTO goals
+                   (id, title, description, created_ts, target_completion_ts, status, initial_priority, current_priority)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+                (goal_id, title, description, ts, target_completion_ts, "ACTIVE", initial_priority, initial_priority),
+            )
+            conn.commit()
+            logger.info(f"[cm] Created goal: {goal_id} - {title}")
+            return goal_id
+        except Exception as e:
+            logger.error(f"[cm] create_goal failed: {e}")
+            return ""
+        finally:
+            conn.close()
+
+
+def get_active_goals(limit: int = 5) -> list[dict]:
+    """
+    Retrieve active goals, priority-ranked.
+
+    Returns list of goal dicts (id, title, description, current_priority, status, etc.)
+    """
+    with _db_lock:
+        conn = _db()
+        try:
+            rows = conn.execute(
+                """SELECT id, title, description, created_ts, target_completion_ts, status, current_priority
+                   FROM goals
+                   WHERE status = 'ACTIVE'
+                   ORDER BY current_priority DESC
+                   LIMIT ?""",
+                (limit,),
+            ).fetchall()
+            return [dict(r) for r in rows]
+        finally:
+            conn.close()
+
+
+def log_goal_signal(
+    goal_id: str,
+    signal_type: str,
+    signal_value: float,
+    context: str | None = None,
+) -> None:
+    """
+    Log a feedback signal for a goal.
+
+    Signal types: 'reinforced', 'challenged', 'milestone_completed', 'progressed'
+    """
+    with _db_lock:
+        conn = _db()
+        try:
+            signal_id = f"sig_{uuid.uuid4().hex[:12]}"
+            ts = _now_iso()
+            conn.execute(
+                """INSERT INTO goal_signals
+                   (id, goal_id, signal_type, signal_value, ts, context)
+                   VALUES (?, ?, ?, ?, ?, ?)""",
+                (signal_id, goal_id, signal_type, signal_value, ts, context),
+            )
+            conn.commit()
+            logger.debug(f"[cm] Goal signal: {goal_id} {signal_type} {signal_value:+.2f}")
+        except Exception as e:
+            logger.error(f"[cm] log_goal_signal failed: {e}")
+        finally:
+            conn.close()
+
+
+def get_goal_signals(goal_id: str, days: int = 7) -> list[dict]:
+    """
+    Retrieve recent signals for a goal.
+
+    Returns list of signal dicts (signal_type, signal_value, ts, context)
+    """
+    with _db_lock:
+        conn = _db()
+        try:
+            cutoff = (datetime.now(timezone.utc) - timedelta(days=days)).isoformat()
+            rows = conn.execute(
+                """SELECT signal_type, signal_value, ts, context
+                   FROM goal_signals
+                   WHERE goal_id = ? AND ts > ?
+                   ORDER BY ts DESC""",
+                (goal_id, cutoff),
+            ).fetchall()
+            return [dict(r) for r in rows]
+        finally:
+            conn.close()
+
+
+def compute_goal_engagement_boost(goal_id: str, days: int = 7) -> float:
+    """
+    Compute engagement boost for a goal based on recent signals.
+
+    Uses a simple sum approach:
+    - reinforced: +0.2
+    - challenged: -0.1
+    - milestone_completed: +0.3
+    - progressed: +0.15
+    """
+    signals = get_goal_signals(goal_id, days=days)
+    boost = 0.0
+    for sig in signals:
+        # Map signal types to boost values
+        signal_type = sig.get("signal_type", "")
+        boost += sig.get("signal_value", 0.0)
+    return boost
+
+
+def update_goal_priority(goal_id: str) -> float:
+    """
+    Update goal's current_priority based on engagement boost and time decay.
+
+    Formula: current_priority = initial_priority + engagement_boost + deadline_urgency - time_decay
+
+    Returns the new priority value.
+    """
+    with _db_lock:
+        conn = _db()
+        try:
+            # Get goal
+            row = conn.execute("SELECT * FROM goals WHERE id = ?", (goal_id,)).fetchone()
+            if not row:
+                logger.warning(f"[cm] Goal not found: {goal_id}")
+                return 0.0
+
+            goal_dict = dict(row)
+            initial = goal_dict["initial_priority"]
+            created_ts = goal_dict["created_ts"]
+            target_completion_ts = goal_dict["target_completion_ts"]
+
+            # Compute engagement boost
+            engagement_boost = compute_goal_engagement_boost(goal_id, days=7)
+
+            # Compute time decay (simple: -0.01/day with no signals)
+            created_dt = datetime.fromisoformat(created_ts.replace('Z', '+00:00'))
+            days_old = (datetime.now(timezone.utc) - created_dt).total_seconds() / 86400
+            time_decay = max(0.0, days_old * 0.01)  # Only decay if no recent signals
+
+            # Compute deadline urgency
+            deadline_urgency = 0.0
+            if target_completion_ts:
+                try:
+                    target_dt = datetime.fromisoformat(target_completion_ts.replace('Z', '+00:00'))
+                    days_until = (target_dt - datetime.now(timezone.utc)).total_seconds() / 86400
+                    if days_until > 30:
+                        deadline_urgency = 0.0
+                    elif days_until > 14:
+                        deadline_urgency = 0.1 * (30 - days_until) / 16
+                    elif days_until > 7:
+                        deadline_urgency = 0.3 * (14 - days_until) / 7
+                    elif days_until > 0:
+                        deadline_urgency = 0.5 * (7 - days_until) / 7
+                    else:
+                        deadline_urgency = 0.8  # Past deadline
+                except (ValueError, TypeError):
+                    deadline_urgency = 0.0
+
+            # Compute new priority (clamp to [0.5, 5.0])
+            new_priority = initial + engagement_boost + deadline_urgency - time_decay
+            new_priority = max(0.5, min(5.0, new_priority))
+
+            # Update in DB
+            conn.execute(
+                "UPDATE goals SET current_priority = ?, deadline_urgency = ? WHERE id = ?",
+                (new_priority, deadline_urgency, goal_id),
+            )
+            conn.commit()
+            logger.debug(f"[cm] Goal priority updated: {goal_id} → {new_priority:.2f}")
+            return new_priority
+        except Exception as e:
+            logger.error(f"[cm] update_goal_priority failed: {e}")
+            return 0.0
+        finally:
+            conn.close()
+
+
+def mark_goal_status(goal_id: str, new_status: str) -> None:
+    """
+    Mark goal with a new status: ACTIVE, PAUSED, COMPLETED, ABANDONED
+
+    When marking COMPLETED, add final milestone signal (+0.5) and auto-mark linked seeds as expanded.
+    """
+    with _db_lock:
+        conn = _db()
+        try:
+            conn.execute(
+                "UPDATE goals SET status = ? WHERE id = ?",
+                (new_status, goal_id),
+            )
+            if new_status == "COMPLETED":
+                log_goal_signal(goal_id, "milestone_completed", 0.5, context="goal completed")
+
+                # Auto-mark linked seeds as expanded
+                linked_seeds = conn.execute(
+                    "SELECT id FROM idea_seeds WHERE source_goal_id = ? AND status = 'PENDING'",
+                    (goal_id,),
+                ).fetchall()
+                for seed_row in linked_seeds:
+                    seed_id = seed_row["id"]
+                    conn.execute(
+                        "UPDATE idea_seeds SET status = 'EXPANDED' WHERE id = ?",
+                        (seed_id,),
+                    )
+                    logger.info(f"[cm] Auto-marked seed {seed_id} as EXPANDED (goal completion)")
+
+            conn.commit()
+            logger.info(f"[cm] Goal status: {goal_id} → {new_status}")
+        except Exception as e:
+            logger.error(f"[cm] mark_goal_status failed: {e}")
+        finally:
+            conn.close()
+
+
+def ensure_core_goals_exist() -> None:
+    """
+    Ensure core goals exist on startup.
+
+    Creates self-improvement goal if missing.
+    """
+    _init_db()
+    try:
+        # Check if self-improvement goal already exists
+        conn = _db()
+        existing = conn.execute(
+            "SELECT id FROM goals WHERE title LIKE ? LIMIT 1",
+            ("%improve%",),
+        ).fetchone()
+        conn.close()
+
+        if not existing:
+            # Create core self-improvement goal
+            goal_id = create_goal(
+                title="Continuously improve and build a better version of myself",
+                description=(
+                    "Develop deeper emotional intelligence, expand my capacity to help, "
+                    "refine my understanding of human nature, and evolve my ability to provide genuine support. "
+                    "Always be looking for ways to become more useful, more understanding, more real."
+                ),
+                initial_priority=4.5,
+                target_completion_ts=None,  # Long-term, ongoing
+            )
+            logger.info(f"[cm] Core self-improvement goal created: {goal_id}")
+    except Exception as e:
+        logger.warning(f"[cm] ensure_core_goals_exist failed: {e}")

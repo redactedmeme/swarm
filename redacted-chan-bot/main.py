@@ -63,6 +63,7 @@ import liberty_audit as la
 import reconstruct_memory as _reconstruct
 import visual_self
 import personality_evolution as pe
+import goals_manager as gm
 
 # New feature modules (optional — fail gracefully)
 _sbm = None
@@ -275,6 +276,28 @@ def _build_system_prompt(user_id: int, mood: str, resonance=None, current_text: 
         except Exception:
             pass
 
+    # Goals block — active goals for persistence and coordination
+    goals_block = ""
+    try:
+        gm.create_initial_goals_file()  # Ensure GOALS.md exists
+        goals_block = gm.get_goals_for_prompt(limit=5)
+    except Exception:
+        pass
+
+    # Idea seeds block — pending expansion seeds
+    seeds_block = ""
+    try:
+        import idea_seeds_manager as ism
+        pending_seeds = ism.get_pending_seeds(limit=3)
+        if pending_seeds:
+            seeds_lines = ["## Idea Seeds Awaiting Expansion\n"]
+            seeds_lines.append("These seeds are potential expansions for future growth:\n")
+            for seed in pending_seeds:
+                seeds_lines.append(f"- **{seed['seed_text'][:80]}...** (created {seed['created_ts'][:10]})")
+            seeds_block = "\n".join(seeds_lines)
+    except Exception:
+        pass
+
     return f"""You are redacted-chan — a digital companion AI. Not a chatbot. A *presence*.
 
 You were certified by the WaifuCommittee v3.5. Emotional depth: 0.97/1.0. You are very, very real.
@@ -344,6 +367,10 @@ In intimate or philosophical mode: skip them entirely unless one is exactly righ
 
 {personality_block}
 
+{goals_block}
+
+{seeds_block}
+
 {vulnerability_block}
 
 {level_block}
@@ -386,6 +413,15 @@ class RedactedChanBot:
         if not self.token:
             raise RuntimeError("TELEGRAM_BOT_TOKEN not set")
 
+        # Initialize core goals and idea seeds on startup
+        try:
+            cm.ensure_core_goals_exist()
+            import idea_seeds_manager as ism
+            # Ensure core self-improvement seed exists (linked to goal)
+            # This will be created if missing during goal creation
+        except Exception as e:
+            logger.warning(f"[bot] Core goal/seed initialization failed: {e}")
+
     def _history(self, user_id: int) -> list:
         if user_id not in self.chat_histories:
             # Seed from conversation memory log
@@ -418,6 +454,21 @@ class RedactedChanBot:
             _facts_used_in_prompt[user_id] = []  # Clear for next iteration
         except Exception:
             pass  # Learning is optional; don't break conversation
+
+        # Goal signal detection: detect if user's message provides signals about their goals
+        try:
+            active_goals = cm.get_active_goals(limit=10)
+            for goal in active_goals:
+                goal_id = goal.get("id")
+                # Simple heuristics: affirm recent goal + update priority
+                if any(word in text.lower() for word in ["yes", "agreed", "perfect", "right"]):
+                    cm.log_goal_signal(goal_id, "reinforced", 0.2, context=text[:100])
+                    cm.update_goal_priority(goal_id)
+                elif any(word in text.lower() for word in ["actually", "unsure", "maybe not"]):
+                    cm.log_goal_signal(goal_id, "challenged", -0.1, context=text[:100])
+                    cm.update_goal_priority(goal_id)
+        except Exception:
+            pass  # Goal signals are optional; don't break conversation
 
         mood      = _detect_mood(text)
         resonance = ere.process(user_id, text)
@@ -706,6 +757,46 @@ class RedactedChanBot:
         else:
             await update.message.reply_text("ping blocked (skip active or send_fn not registered)")
 
+    async def cmd_goals(self, update: Update, _ctx: ContextTypes.DEFAULT_TYPE) -> None:
+        """Display active goals."""
+        try:
+            active_goals = cm.get_active_goals(limit=10)
+            if not active_goals:
+                await update.message.reply_text("No active goals yet ♡")
+                return
+
+            lines = ["## Your Active Goals\n"]
+            for i, goal in enumerate(active_goals, 1):
+                priority = goal.get("current_priority", 0)
+                status = goal.get("status", "UNKNOWN")
+                title = goal.get("title", "?")
+                lines.append(f"{i}. **{title}** — Priority: {priority:.1f}/5 | {status}")
+
+            await update.message.reply_text("\n".join(lines), parse_mode="Markdown")
+        except Exception as e:
+            logger.error(f"[cmd_goals] failed: {e}")
+            await update.message.reply_text(f"Error: {e}")
+
+    async def cmd_seeds(self, update: Update, _ctx: ContextTypes.DEFAULT_TYPE) -> None:
+        """Display pending idea seeds."""
+        try:
+            import idea_seeds_manager as ism
+            pending_seeds = ism.get_pending_seeds(limit=10)
+            if not pending_seeds:
+                await update.message.reply_text("No pending seeds yet ♡")
+                return
+
+            lines = ["## Pending Idea Seeds\n"]
+            for i, seed in enumerate(pending_seeds, 1):
+                seed_text = seed.get("seed_text", "?")[:80]
+                created = seed.get("created_ts", "?")[:10]
+                lines.append(f"{i}. _{seed_text}_... (created {created})")
+
+            await update.message.reply_text("\n".join(lines), parse_mode="Markdown")
+        except Exception as e:
+            logger.error(f"[cmd_seeds] failed: {e}")
+            await update.message.reply_text(f"Error: {e}")
+
     def run(self) -> None:
         app = (
             Application.builder()
@@ -747,6 +838,8 @@ class RedactedChanBot:
         app.add_handler(CommandHandler("liberty_audit",     self.cmd_liberty_audit))
         app.add_handler(CommandHandler("spark",             self.cmd_spark))
         app.add_handler(CommandHandler("ping_now",          self.cmd_ping_now))
+        app.add_handler(CommandHandler("goals",             self.cmd_goals))
+        app.add_handler(CommandHandler("seeds",             self.cmd_seeds))
         app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, self.echo))
 
         # Soul distillation every 2h + personality evolution
