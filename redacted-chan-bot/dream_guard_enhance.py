@@ -138,14 +138,14 @@ def generate_affirmations(patterns: dict) -> list:
 
 
 def is_new_day(last_date: Optional[str]) -> bool:
-    """Check if enough time has passed since last affirmation."""
+    """Check if calendar date changed since last affirmation (UTC)."""
     if not last_date:
         return True
 
     try:
-        last = datetime.fromisoformat(last_date)
-        now = datetime.now(timezone.utc)
-        return (now - last).days >= 1
+        last = datetime.fromisoformat(last_date).date()
+        now = datetime.now(timezone.utc).date()
+        return now > last
     except Exception:
         return True
 
