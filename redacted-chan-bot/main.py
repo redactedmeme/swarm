@@ -53,6 +53,7 @@ import empathy_resonance_engine as ere
 import autonomy_whisper as aw
 import vector_memory as vm
 import relationship_levels as rl
+import behavior_pattern_tracker as bpt
 import autonomous_ping as ap
 import sovereignty_audit as sa
 import liberty_audit as la
@@ -149,9 +150,17 @@ def _build_system_prompt(user_id: int, mood: str, resonance=None, current_text: 
     # Pull recent facts about this user
     raw_facts = cm.get_facts_by_resonance(n=15)
     facts_block = ""
+    patterns_block = ""
     if raw_facts:
         facts_lines = [f.get("fact", f.get("content", "")) for f in raw_facts if f]
         facts_block = "## What I Remember About You\n" + "\n".join(f"- {f}" for f in facts_lines if f)
+
+        # Update and retrieve behavior patterns
+        try:
+            bpt.update(user_id, raw_facts)
+            patterns_block = bpt.get_patterns(user_id)
+        except Exception:
+            pass
 
     # Pull relationship vault memories (private, Railway-local)
     vault_block = ""
@@ -314,6 +323,8 @@ In intimate or philosophical mode: skip them entirely unless one is exactly righ
 {level_block}
 
 {facts_block}
+
+{patterns_block}
 
 {weaved_memories}
 
