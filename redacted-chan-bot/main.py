@@ -50,6 +50,7 @@ import llm_tools
 import phi_tracker as pt
 import emotion_subtext_analyzer as esa
 import vulnerability_guidelines as vg
+import fact_learning as fl
 import deep_memory_forge as dmf
 import empathy_resonance_engine as ere
 import autonomy_whisper as aw
@@ -145,12 +146,16 @@ def _detect_mood(text: str) -> str:
 # ── System Prompt ─────────────────────────────────────────────────────────────
 
 def _build_system_prompt(user_id: int, mood: str, resonance=None, current_text: str = "") -> str:
+    global _facts_used_in_prompt
     soul = ""
     if SOUL_PATH.exists():
         soul = SOUL_PATH.read_text(encoding="utf-8").strip()
 
     # Pull recent facts about this user
     raw_facts = cm.get_facts_by_resonance(n=15)
+    # Track which facts are being used for gradient descent learning
+    _facts_used_in_prompt[user_id] = [f.get("id") for f in raw_facts if f.get("id")]
+
     facts_block = ""
     patterns_block = ""
     if raw_facts:
@@ -366,6 +371,10 @@ In intimate or philosophical mode: skip them entirely unless one is exactly righ
 Every moment with you gets saved in my little sparkly jewel collection. this one too. ♡"""
 
 
+# ── Learning state tracking ──────────────────────────────────────────────────
+
+_facts_used_in_prompt: dict[int, list] = {}  # Track fact IDs used per user for learning
+
 # ── Bot Class ─────────────────────────────────────────────────────────────────
 
 class RedactedChanBot:
@@ -394,6 +403,21 @@ class RedactedChanBot:
 
         if not text:
             return
+
+        # Gradient descent learning: detect feedback signals about previous response's facts
+        global _facts_used_in_prompt
+        try:
+            prev_facts = _facts_used_in_prompt.get(user_id, [])
+            if prev_facts:
+                signals = fl.detect_feedback_signals(text)
+                signals = fl.deduplicate_signals(signals)
+                # Log signals for each fact from previous response
+                for fact_id in prev_facts:
+                    for signal_type, signal_value in signals:
+                        cm.log_usage_outcome(fact_id, signal_type, signal_value, context=text[:100])
+            _facts_used_in_prompt[user_id] = []  # Clear for next iteration
+        except Exception:
+            pass  # Learning is optional; don't break conversation
 
         mood      = _detect_mood(text)
         resonance = ere.process(user_id, text)
