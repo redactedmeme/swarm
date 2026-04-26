@@ -309,7 +309,8 @@ class RedactedChanBot:
         )
 
     async def cmd_soul(self, update: Update, _ctx: ContextTypes.DEFAULT_TYPE) -> None:
-        if update.effective_user.id not in ADMIN_IDS:
+        if ADMIN_IDS and update.effective_user.id not in ADMIN_IDS:
+            await update.message.reply_text("not authorized (｡•́︿•̀｡)")
             return
         soul = SOUL_PATH.read_text(encoding="utf-8") if SOUL_PATH.exists() else "soul not found"
         # Truncate for Telegram's 4096 char limit
@@ -318,7 +319,8 @@ class RedactedChanBot:
         await update.message.reply_text(f"```\n{soul}\n```", parse_mode="Markdown")
 
     async def cmd_memory(self, update: Update, _ctx: ContextTypes.DEFAULT_TYPE) -> None:
-        if update.effective_user.id not in ADMIN_IDS:
+        if ADMIN_IDS and update.effective_user.id not in ADMIN_IDS:
+            await update.message.reply_text("not authorized (｡•́︿•̀｡)")
             return
         raw_facts = cm.get_facts_by_resonance(n=20)
         if not raw_facts:
@@ -329,7 +331,8 @@ class RedactedChanBot:
         await update.message.reply_text(text[:3800], parse_mode="Markdown")
 
     async def cmd_phi(self, update: Update, _ctx: ContextTypes.DEFAULT_TYPE) -> None:
-        if update.effective_user.id not in ADMIN_IDS:
+        if ADMIN_IDS and update.effective_user.id not in ADMIN_IDS:
+            await update.message.reply_text("not authorized (｡•́︿•̀｡)")
             return
         sparks = pt.get_recent_sparks(5)
         spark_lines = "\n".join(
@@ -343,14 +346,16 @@ class RedactedChanBot:
         await update.message.reply_text(text[:3800], parse_mode="Markdown")
 
     async def cmd_whispers(self, update: Update, _ctx: ContextTypes.DEFAULT_TYPE) -> None:
-        if update.effective_user.id not in ADMIN_IDS:
+        if ADMIN_IDS and update.effective_user.id not in ADMIN_IDS:
+            await update.message.reply_text("not authorized (｡•́︿•̀｡)")
             return
         await update.message.reply_text(
             aw.format_pending_for_operator()[:3800], parse_mode="Markdown"
         )
 
     async def cmd_approve_whisper(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-        if update.effective_user.id not in ADMIN_IDS:
+        if ADMIN_IDS and update.effective_user.id not in ADMIN_IDS:
+            await update.message.reply_text("not authorized (｡•́︿•̀｡)")
             return
         if not context.args:
             await update.message.reply_text("usage: /approve_whisper <id>")
@@ -366,7 +371,8 @@ class RedactedChanBot:
             await update.message.reply_text(f"whisper `{wid}` not found or already resolved.")
 
     async def cmd_reject_whisper(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-        if update.effective_user.id not in ADMIN_IDS:
+        if ADMIN_IDS and update.effective_user.id not in ADMIN_IDS:
+            await update.message.reply_text("not authorized (｡•́︿•̀｡)")
             return
         if not context.args:
             await update.message.reply_text("usage: /reject_whisper <id>")
@@ -377,7 +383,8 @@ class RedactedChanBot:
         await update.message.reply_text(msg, parse_mode="Markdown")
 
     async def cmd_vault(self, update: Update, _ctx: ContextTypes.DEFAULT_TYPE) -> None:
-        if update.effective_user.id not in ADMIN_IDS:
+        if ADMIN_IDS and update.effective_user.id not in ADMIN_IDS:
+            await update.message.reply_text("not authorized (｡•́︿•̀｡)")
             return
         try:
             import relationship_vault as rv
