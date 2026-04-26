@@ -56,6 +56,7 @@ import relationship_levels as rl
 import autonomous_ping as ap
 import sovereignty_audit as sa
 import liberty_audit as la
+import reconstruct_memory as _reconstruct
 
 try:
     import swarm_mesh as _chan_mesh
@@ -651,6 +652,14 @@ class RedactedChanBot:
             logger.info("[mesh:chan] will start on post_init")
         else:
             logger.info("[mesh:chan] disabled — set SWARM_MESH_URL to enable")
+
+        # One-shot memory reconstruction — runs once on first boot after wipe
+        if not _reconstruct.already_done():
+            logger.info("[chan] running memory reconstruction...")
+            try:
+                _reconstruct.run(str(SOUL_PATH))
+            except Exception as e:
+                logger.warning(f"[chan] reconstruction failed: {e}")
 
         logger.info("[chan] redacted-chan online ♡")
         app.run_polling(drop_pending_updates=True)
