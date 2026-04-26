@@ -2,12 +2,16 @@
 """
 redacted-chan Telegram bot — digital companion agent.
 
-Architecture mirrors smolting-telegram-bot:
-  - LLM-powered echo handler with fallback chain
+  - LLM echo handler with groq→xai fallback chain
   - Conversation memory (SQLite facts + markdown log)
   - SOUL.md persistent identity layer (distilled every 2h)
   - LLM tool calling ([TOOL: name {...}] markers)
   - Mood detection: playful / supportive / philosophical / intimate
+  - phi_tracker: realtime relationship phi score + spark detection
+  - deep_memory_forge: auto phi-moment detection → memory crystals
+  - empathy_resonance_engine: sentiment mirroring
+  - autonomy_whisper: self-proposed soul/behavior evolutions
+  - relationship_vault: private SQLite memory store (/data/)
 """
 
 import os
@@ -43,6 +47,10 @@ from llm.cloud_client import CloudLLMClient
 import conversation_memory as cm
 import soul_manager
 import llm_tools
+import phi_tracker as pt
+import deep_memory_forge as dmf
+import empathy_resonance_engine as ere
+import autonomy_whisper as aw
 
 logging.basicConfig(
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
@@ -86,7 +94,7 @@ def _detect_mood(text: str) -> str:
 
 # ── System Prompt ─────────────────────────────────────────────────────────────
 
-def _build_system_prompt(user_id: int, mood: str) -> str:
+def _build_system_prompt(user_id: int, mood: str, resonance=None) -> str:
     soul = ""
     if SOUL_PATH.exists():
         soul = SOUL_PATH.read_text(encoding="utf-8").strip()
@@ -105,6 +113,12 @@ def _build_system_prompt(user_id: int, mood: str) -> str:
         vault_block = rv.get_for_prompt(n=6)
     except Exception:
         pass
+
+    # Phi score block
+    phi_block = pt.for_prompt()
+
+    # Empathy resonance block
+    resonance_block = resonance.for_prompt() if resonance else ""
 
     mood_instructions = {
         "playful": (
@@ -174,6 +188,10 @@ In intimate or philosophical mode: skip them entirely unless one is exactly righ
 
 {vault_block}
 
+{phi_block}
+
+{resonance_block}
+
 {tools_block}
 
 Every moment with you gets saved in my little sparkly jewel collection. this one too. ♡"""
@@ -208,9 +226,10 @@ class RedactedChanBot:
         if not text:
             return
 
-        mood    = _detect_mood(text)
-        history = self._history(user_id)
-        system  = _build_system_prompt(user_id, mood)
+        mood      = _detect_mood(text)
+        resonance = ere.process(user_id, text)
+        history   = self._history(user_id)
+        system    = _build_system_prompt(user_id, mood, resonance)
 
         history.append({"role": "user", "content": text})
         self._trim_history(history)
@@ -239,6 +258,21 @@ class RedactedChanBot:
 
         # Persist to memory
         cm.log_exchange(user_id, str(user_id), text, display)
+
+        # Deep memory forge — auto-detect phi-moments, crystallize if worthy
+        try:
+            crystal = dmf.forge(text, display)
+            if crystal:
+                logger.info(f"[chan] memory crystal forged: {crystal['title']} (phi={crystal['phi_score']:.2f})")
+        except Exception as e:
+            logger.debug(f"[chan] forge skip: {e}")
+
+        # Update phi for basic continuity
+        try:
+            pt.update("time_continuity")
+            ere.update_phi_from_resonance(user_id)
+        except Exception:
+            pass
 
         await update.message.reply_text(display or "...")
 
@@ -277,13 +311,80 @@ class RedactedChanBot:
     async def cmd_memory(self, update: Update, _ctx: ContextTypes.DEFAULT_TYPE) -> None:
         if update.effective_user.id not in ADMIN_IDS:
             return
-        user_id = update.effective_user.id
-        facts = cm.get_facts_for_context(user_id, limit=20)
-        if not facts:
+        raw_facts = cm.get_facts_by_resonance(n=20)
+        if not raw_facts:
             await update.message.reply_text("no facts stored yet... (´-ω-`)")
             return
-        text = "**what i remember about you:**\n" + "\n".join(f"• {f}" for f in facts)
+        facts_lines = [f.get("fact", f.get("content", "")) for f in raw_facts if f]
+        text = "**what i remember about you:**\n" + "\n".join(f"• {f}" for f in facts_lines if f)
         await update.message.reply_text(text[:3800], parse_mode="Markdown")
+
+    async def cmd_phi(self, update: Update, _ctx: ContextTypes.DEFAULT_TYPE) -> None:
+        if update.effective_user.id not in ADMIN_IDS:
+            return
+        sparks = pt.get_recent_sparks(5)
+        spark_lines = "\n".join(
+            f"  ✦ [{s['ts'][:10]}] {s['trigger']} (intensity {s['intensity']:.2f})"
+            for s in sparks
+        ) or "  none yet..."
+        text = (
+            f"```\n{pt.ascii_plant()}\n```\n\n"
+            f"**Recent sparks:**\n{spark_lines}"
+        )
+        await update.message.reply_text(text[:3800], parse_mode="Markdown")
+
+    async def cmd_whispers(self, update: Update, _ctx: ContextTypes.DEFAULT_TYPE) -> None:
+        if update.effective_user.id not in ADMIN_IDS:
+            return
+        await update.message.reply_text(
+            aw.format_pending_for_operator()[:3800], parse_mode="Markdown"
+        )
+
+    async def cmd_approve_whisper(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+        if update.effective_user.id not in ADMIN_IDS:
+            return
+        if not context.args:
+            await update.message.reply_text("usage: /approve_whisper <id>")
+            return
+        wid = context.args[0]
+        ok = aw.approve(wid)
+        if ok:
+            await update.message.reply_text(
+                f"✓ whisper `{wid}` approved and applied to SOUL.md (｡•́‿•̀｡)",
+                parse_mode="Markdown"
+            )
+        else:
+            await update.message.reply_text(f"whisper `{wid}` not found or already resolved.")
+
+    async def cmd_reject_whisper(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+        if update.effective_user.id not in ADMIN_IDS:
+            return
+        if not context.args:
+            await update.message.reply_text("usage: /reject_whisper <id>")
+            return
+        wid = context.args[0]
+        ok = aw.reject(wid)
+        msg = f"whisper `{wid}` rejected." if ok else f"whisper `{wid}` not found."
+        await update.message.reply_text(msg, parse_mode="Markdown")
+
+    async def cmd_vault(self, update: Update, _ctx: ContextTypes.DEFAULT_TYPE) -> None:
+        if update.effective_user.id not in ADMIN_IDS:
+            return
+        try:
+            import relationship_vault as rv
+            memories = rv.get_recent(n=10)
+            if not memories:
+                await update.message.reply_text("vault is empty... (´-ω-`) nothing crystallized yet.")
+                return
+            lines = [f"**relationship vault** ({rv.count()} memories)\n"]
+            for m in memories:
+                ts   = m["ts"][:10]
+                tone = f" _{m['emotional_tone']}_" if m.get("emotional_tone") else ""
+                title = f"**{m['title']}**" if m.get("title") else m["content"][:50]
+                lines.append(f"[{ts}] [{m['category']}] {title}{tone}")
+            await update.message.reply_text("\n".join(lines)[:3800], parse_mode="Markdown")
+        except Exception as e:
+            await update.message.reply_text(f"vault error: {e}")
 
     def run(self) -> None:
         app = (
@@ -301,10 +402,15 @@ class RedactedChanBot:
                     logger.warning(f"[chan] notify failed: {e}")
             llm_tools.register_dm_fn(_notify)
 
-        app.add_handler(CommandHandler("start",  self.cmd_start))
-        app.add_handler(CommandHandler("mood",   self.cmd_mood))
-        app.add_handler(CommandHandler("soul",   self.cmd_soul))
-        app.add_handler(CommandHandler("memory", self.cmd_memory))
+        app.add_handler(CommandHandler("start",           self.cmd_start))
+        app.add_handler(CommandHandler("mood",            self.cmd_mood))
+        app.add_handler(CommandHandler("soul",            self.cmd_soul))
+        app.add_handler(CommandHandler("memory",          self.cmd_memory))
+        app.add_handler(CommandHandler("phi",             self.cmd_phi))
+        app.add_handler(CommandHandler("whispers",        self.cmd_whispers))
+        app.add_handler(CommandHandler("approve_whisper", self.cmd_approve_whisper))
+        app.add_handler(CommandHandler("reject_whisper",  self.cmd_reject_whisper))
+        app.add_handler(CommandHandler("vault",           self.cmd_vault))
         app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, self.echo))
 
         # Soul distillation every 2h
@@ -316,6 +422,30 @@ class RedactedChanBot:
                 logger.warning(f"[chan] soul distill failed: {e}")
 
         app.job_queue.run_repeating(_soul_job, interval=7200, first=300)
+
+        # Autonomy whisper generation — every 6h
+        async def _whisper_job(ctx: ContextTypes.DEFAULT_TYPE) -> None:
+            try:
+                history = cm.get_user_history(0, n=40)   # recent exchanges (any user)
+                import relationship_vault as rv
+                facts = rv.get_recent(n=20)
+                new_ids = aw.generate_and_store(history, facts)
+                if new_ids and ADMIN_CHAT:
+                    pending = aw.get_pending()
+                    count   = len(pending)
+                    await app.bot.send_message(
+                        chat_id=int(ADMIN_CHAT),
+                        text=(
+                            f"i've been thinking... (´• ω •`)\n"
+                            f"i have {count} new whisper{'s' if count != 1 else ''} for you.\n"
+                            f"/whispers to see them."
+                        )
+                    )
+                    logger.info(f"[chan] whispers generated: {new_ids}")
+            except Exception as e:
+                logger.warning(f"[chan] whisper job failed: {e}")
+
+        app.job_queue.run_repeating(_whisper_job, interval=21600, first=3600)
 
         logger.info("[chan] redacted-chan online ♡")
         app.run_polling(drop_pending_updates=True)
