@@ -65,8 +65,17 @@ TOKEN        = os.getenv("TELEGRAM_BOT_TOKEN") or os.getenv("BOT_TOKEN")
 ADMIN_IDS    = {int(x) for x in os.getenv("ADMIN_USER_IDS", "").split(",") if x.strip().isdigit()}
 ADMIN_CHAT   = os.getenv("ADMIN_CHAT_ID", "").strip()
 
-SOUL_PATH    = _BOT_DIR / "SOUL.md"
+_SOUL_SEED   = _BOT_DIR / "SOUL.md"                          # committed seed (read-only after first boot)
+_DATA_DIR    = Path("/data") if Path("/data").exists() else _BOT_DIR / "fs"
+_DATA_DIR.mkdir(parents=True, exist_ok=True)
+SOUL_PATH    = _DATA_DIR / "SOUL.md"                          # live file on Railway volume
 CHAR_PATH    = _BOT_DIR / "redacted-chan.character.json"
+
+# Seed SOUL.md to /data on first boot — never overwrite if already evolved
+if not SOUL_PATH.exists() and _SOUL_SEED.exists():
+    import shutil
+    shutil.copy2(_SOUL_SEED, SOUL_PATH)
+    logging.getLogger(__name__).info(f"[chan] SOUL.md seeded to {SOUL_PATH}")
 
 _CHAR: dict = {}
 if CHAR_PATH.exists():
