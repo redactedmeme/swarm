@@ -438,6 +438,12 @@ class RedactedChanBot:
         # Persist to memory
         cm.log_exchange(user_id, str(user_id), text, display)
 
+        # Backup conversation to daily file in /data/conversation_backups/
+        try:
+            cm.backup_conversation_to_file()
+        except Exception:
+            pass
+
         # Embed and store in vector memory for semantic retrieval
         try:
             ts_id = datetime.now(timezone.utc).strftime("%Y%m%d%H%M%S%f")
