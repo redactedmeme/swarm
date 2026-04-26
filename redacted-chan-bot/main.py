@@ -57,6 +57,7 @@ import autonomous_ping as ap
 import sovereignty_audit as sa
 import liberty_audit as la
 import reconstruct_memory as _reconstruct
+import visual_self
 
 try:
     import swarm_mesh as _chan_mesh
@@ -541,6 +542,9 @@ class RedactedChanBot:
             .token(self.token)
             .build()
         )
+
+        # Initialize visual self-images in vault (one-time on first run)
+        visual_self.ensure_visual_entries()
 
         # Register dm_operator tool + liberty alert + autonomous ping if ADMIN_CHAT is set
         if ADMIN_CHAT:
