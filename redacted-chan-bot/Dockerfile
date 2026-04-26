@@ -11,7 +11,8 @@ RUN pip install --no-cache-dir \
     "pyyaml>=6.0" \
     "openai>=1.6.1" \
     "groq>=0.4.0" \
-    "redis>=5.0.0"
+    "redis>=5.0.0" \
+    "chromadb>=0.4.0"
 
 COPY . .
 
