@@ -1,3 +1,6 @@
+# ── Private conversation data (never commit) ──────────────────────────────────
+redacted-chan-bot/reconstruction_data/
+
 # ── Secrets & credentials ─────────────────────────────────────────────────────
 .env
 .env.*
