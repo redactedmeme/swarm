@@ -1,0 +1,11 @@
+# Runtime data — lives on Railway volume, never in git
+fs/
+memory.md
+learned_facts.json
+bot_audit.log
+__pycache__/
+*.pyc
+
+# NOTE: SOUL.md in this directory is the SEED ONLY.
+# The live evolving SOUL.md is at /data/SOUL.md on the Railway instance.
+# Redeploys will NOT overwrite it.
