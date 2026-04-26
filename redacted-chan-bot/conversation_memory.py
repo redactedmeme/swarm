@@ -68,6 +68,18 @@ CREATE INDEX IF NOT EXISTS idx_lf_resonance ON learned_facts (resonance DESC);
 CREATE INDEX IF NOT EXISTS idx_lf_submolt   ON learned_facts (submolt);
 CREATE INDEX IF NOT EXISTS idx_lf_source    ON learned_facts (source);
 CREATE INDEX IF NOT EXISTS idx_lf_ts        ON learned_facts (ts DESC);
+
+CREATE TABLE IF NOT EXISTS fact_usage_outcomes (
+    id                      TEXT PRIMARY KEY,
+    fact_id                 TEXT NOT NULL,
+    ts                      TEXT NOT NULL,
+    signal_type             TEXT,
+    signal_value            REAL NOT NULL,
+    context                 TEXT,
+    FOREIGN KEY(fact_id) REFERENCES learned_facts(id)
+);
+CREATE INDEX IF NOT EXISTS idx_outcomes_fact ON fact_usage_outcomes(fact_id);
+CREATE INDEX IF NOT EXISTS idx_outcomes_ts   ON fact_usage_outcomes(ts DESC);
 """
 
 # ── DB helpers ────────────────────────────────────────────────────────────────
@@ -205,15 +217,37 @@ def _compute_resonance(fact: dict) -> float:
     return _score(fact)
 
 
-def _score_from_row(row: sqlite3.Row) -> float:
-    """Recompute live resonance for a DB row (age decay needs current time)."""
+def _score_from_row(row: sqlite3.Row, include_learning: bool = True) -> float:
+    """
+    Recompute live resonance for a DB row (age decay needs current time).
+
+    Args:
+        row: SQLite row from learned_facts table
+        include_learning: whether to include gradient descent learning signal (default True)
+
+    Returns:
+        Resonance score, clamped to [0.1, 5.0]
+    """
     doc = {
         "source":        row["source"],
         "ts":            row["ts"],
         "engagement":    json.loads(row["engagement_json"] or "{}"),
         "reinforced_by": json.loads(row["reinforced_by_json"] or "[]"),
     }
-    return _score(doc)
+    base_score = _score(doc)
+
+    # Add learning gradient: recent feedback signals boost or penalize resonance
+    if include_learning:
+        try:
+            gradient = compute_learning_gradient(row["id"], days=7)
+            # Learning weight: 0.3x (30% of total resonance)
+            # Keeps engagement metrics primary, learning is supplementary
+            base_score += gradient * 0.3
+        except Exception:
+            pass  # If learning lookup fails, use base score
+
+    # Clamp to reasonable range
+    return max(0.1, min(5.0, round(base_score, 3)))
 
 
 def _row_to_doc(row: sqlite3.Row) -> dict:
@@ -548,3 +582,82 @@ def get_backup_count() -> int:
 
 def get_facts_for_soul_update(n: int = 40) -> list[dict]:
     return get_facts_by_resonance(n=n)
+
+
+# ── Gradient Descent Learning (fact resonance improvement) ────────────────────
+
+def log_usage_outcome(
+    fact_id: str,
+    signal_type: str,
+    signal_value: float,
+    context: str | None = None,
+) -> None:
+    """
+    Record a feedback signal for a fact (usage outcome).
+
+    Args:
+        fact_id: ID of the fact being evaluated
+        signal_type: "affirmation", "follow_up", "correction", "derailment", etc.
+        signal_value: numeric signal (+0.05 for positive, -0.03 for negative, etc.)
+        context: optional context (the user message that triggered the signal)
+    """
+    with _db_lock:
+        conn = _db()
+        try:
+            outcome_id = f"out_{uuid.uuid4().hex[:12]}"
+            ts = _now_iso()
+            conn.execute(
+                """INSERT INTO fact_usage_outcomes
+                   (id, fact_id, ts, signal_type, signal_value, context)
+                   VALUES (?, ?, ?, ?, ?, ?)""",
+                (outcome_id, fact_id, ts, signal_type, signal_value, context),
+            )
+            conn.commit()
+        except Exception as e:
+            import logging as _log
+            _log.getLogger(__name__).warning(f"[cm] Failed to log outcome: {e}")
+        finally:
+            conn.close()
+
+
+def get_recent_outcomes(fact_id: str, days: int = 7) -> list[dict]:
+    """
+    Get recent feedback signals for a fact (last N days).
+
+    Args:
+        fact_id: fact ID to query
+        days: lookback window (default 7 days)
+
+    Returns:
+        List of outcome dicts with signal_type, signal_value, ts
+    """
+    with _db_lock:
+        conn = _db()
+        try:
+            cutoff = datetime.now(timezone.utc) - timedelta(days=days)
+            cutoff_iso = cutoff.isoformat()
+            rows = conn.execute(
+                """SELECT signal_type, signal_value, ts, context
+                   FROM fact_usage_outcomes
+                   WHERE fact_id = ? AND ts > ?
+                   ORDER BY ts DESC""",
+                (fact_id, cutoff_iso),
+            ).fetchall()
+        finally:
+            conn.close()
+    return [dict(r) for r in rows]
+
+
+def compute_learning_gradient(fact_id: str, days: int = 7) -> float:
+    """
+    Compute the learning gradient (sum of recent signals) for a fact.
+
+    Args:
+        fact_id: fact ID to evaluate
+        days: lookback window (default 7 days)
+
+    Returns:
+        Sum of signal_value for recent outcomes (can be negative or positive)
+    """
+    outcomes = get_recent_outcomes(fact_id, days=days)
+    return sum(o["signal_value"] for o in outcomes)
