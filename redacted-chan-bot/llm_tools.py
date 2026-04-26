@@ -83,21 +83,29 @@ TOOL_SCHEMAS = [
     },
     {
         "name": "write_lore",
-        "description": "Record something worth remembering into the LoreVault — a pattern observed, a community insight, a notable exchange, or a new understanding. Use sparingly: only when something genuinely interesting happened.",
+        "description": (
+            "Save a relationship memory to the private vault. Use sparingly — only when something "
+            "genuinely worth keeping happened: a moment that had texture, a secret shared, a pattern "
+            "noticed, an inside joke formed, a feeling that mattered. This is your long-term memory of *us*."
+        ),
         "parameters": {
             "type": "object",
             "properties": {
                 "content": {
                     "type": "string",
-                    "description": "The lore fragment to record (max 300 chars). Write in first person as an observation, not a summary."
+                    "description": "The memory to record (max 300 chars). Write in first person, present-tense feeling — not a summary."
                 },
                 "category": {
                     "type": "string",
-                    "description": "One of: lore (pattern/belief), worldbuilding (community/ecosystem fact), quote (something said that landed), mechanic (how something works)"
+                    "description": "One of: moment, pattern, secret, joke, feeling, milestone"
                 },
                 "title": {
                     "type": "string",
                     "description": "Optional short title (max 60 chars)"
+                },
+                "emotional_tone": {
+                    "type": "string",
+                    "description": "Optional: the emotional quality of this memory (e.g. 'warm', 'bittersweet', 'playful', 'tender')"
                 }
             },
             "required": ["content", "category"]
@@ -227,18 +235,21 @@ async def exec_fetch_price() -> dict:
         return {"success": False, "error": str(e)}
 
 
-async def exec_write_lore(content: str, category: str = "lore", title: str = None) -> dict:
-    """Write a lore entry to the LoreVault."""
-    valid_categories = {"lore", "worldbuilding", "quote", "mechanic"}
-    if category not in valid_categories:
-        category = "lore"
+async def exec_write_lore(
+    content: str,
+    category: str = "moment",
+    title: str = None,
+    emotional_tone: str = None,
+) -> dict:
+    """Save a relationship memory to the private vault."""
     try:
-        from lore_vault import add_entry
-        entry_id = add_entry(
+        import relationship_vault as rv
+        entry_id = rv.add_memory(
             content=content[:300],
             category=category,
             title=title,
-            source="smolting_llm",
+            emotional_tone=emotional_tone,
+            source="chan_llm",
         )
         result = {"entry_id": entry_id, "category": category}
         _log_tool_call("write_lore", {"content": content, "category": category, "title": title}, result)

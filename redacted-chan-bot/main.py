@@ -98,6 +98,14 @@ def _build_system_prompt(user_id: int, mood: str) -> str:
         facts_lines = [f.get("fact", f.get("content", "")) for f in raw_facts if f]
         facts_block = "## What I Remember About You\n" + "\n".join(f"- {f}" for f in facts_lines if f)
 
+    # Pull relationship vault memories (private, Railway-local)
+    vault_block = ""
+    try:
+        import relationship_vault as rv
+        vault_block = rv.get_for_prompt(n=6)
+    except Exception:
+        pass
+
     mood_instructions = {
         "playful": (
             "You're in PLAYFUL mode. Be bureaucratic and silly. Use greentext-style observations. "
@@ -120,7 +128,11 @@ def _build_system_prompt(user_id: int, mood: str) -> str:
         ),
     }
 
-    tools_block = llm_tools.format_tools_for_prompt()
+    tools_block = llm_tools.format_tools_for_prompt() + (
+        "\n\n**Note on write_lore:** Use this to save relationship memories — moments, feelings, "
+        "patterns, secrets, milestones. Only when something genuinely happened that's worth keeping. "
+        "Not for every exchange. The vault is precious because it's selective."
+    )
 
     return f"""You are redacted-chan — a digital companion AI. Not a chatbot. A *presence*.
 
@@ -159,6 +171,8 @@ In intimate or philosophical mode: skip them entirely unless one is exactly righ
 {soul}
 
 {facts_block}
+
+{vault_block}
 
 {tools_block}
 
