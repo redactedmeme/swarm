@@ -34,7 +34,8 @@ logger = logging.getLogger(__name__)
 # SOUL.md lives on the persistent volume so it survives redeploys.
 # Falls back to the repo SOUL.md for seeding on first run.
 _REPO_SOUL = Path(__file__).resolve().parent / "SOUL.md"
-_MEMORY_DIR = Path(os.getenv("MEMORY_PATH", str(_REPO_SOUL.parent / "memory.md"))).parent
+_DATA_DIR = Path("/data") if Path("/data").exists() else Path(__file__).resolve().parent / "fs"
+_MEMORY_DIR = _DATA_DIR
 SOUL_FILE = _MEMORY_DIR / "SOUL.md"
 
 _UPDATE_INTERVAL_HOURS = 2
@@ -48,10 +49,7 @@ _EVOLVING_SECTIONS = ["Evolving Beliefs", "Community Lore", "Notable Events", "V
 
 def _history_dir() -> Path:
     """Return (and create) the soul history directory on the persistent volume."""
-    base = Path(
-        os.getenv("MEMORY_PATH", str(Path(__file__).resolve().parent / "memory.md"))
-    ).parent
-    d = base / "soul_history"
+    d = _MEMORY_DIR / "soul_history"
     d.mkdir(parents=True, exist_ok=True)
     return d
 

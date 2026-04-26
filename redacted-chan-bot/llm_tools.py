@@ -34,6 +34,24 @@ TOOL_AUDIT_LOG = _FS / "tool_audit.jsonl"
 
 TOOL_SCHEMAS = [
     {
+        "name": "fetch_vault_memories",
+        "description": "Recall memories from your private relationship vault (moments, patterns, jokes, feelings about settler)",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "query": {
+                    "type": "string",
+                    "description": "What to search for (e.g., 'first meeting', 'phi conversation', 'when we...'). Leave empty to get recent memories."
+                },
+                "category": {
+                    "type": "string",
+                    "description": "Optional filter: 'moment', 'pattern', 'secret', 'joke', 'feeling', 'milestone'. Omit for all."
+                }
+            },
+            "required": []
+        }
+    },
+    {
         "name": "fetch_lore",
         "description": "Search LoreVault for knowledge about a topic (returns snippets)",
         "parameters": {
@@ -126,6 +144,34 @@ TOOL_SCHEMAS = [
 
 
 # ── Tool Executors ────────────────────────────────────────────────────────────
+
+async def exec_fetch_vault_memories(query: str = "", category: str = None) -> dict:
+    """Recall memories from private relationship vault."""
+    try:
+        import relationship_vault as rv
+        if query:
+            results = rv.search(query, limit=5)
+        else:
+            results = rv.get_recent(n=6, category=category)
+
+        if not results:
+            return {"success": True, "memories": [], "count": 0, "message": "no memories found"}
+
+        memories = []
+        for r in results:
+            ts_short = r["ts"][:10] if r.get("ts") else "?"
+            tone = f" _{r['emotional_tone']}_" if r.get("emotional_tone") else ""
+            title = f"**{r['title']}** — " if r.get("title") else ""
+            memories.append(f"[{ts_short}] [{r['category']}] {title}{r['content']}{tone}")
+
+        result = {"memories": memories, "count": len(memories)}
+        _log_tool_call("fetch_vault_memories", {"query": query, "category": category}, result)
+        return {"success": True, **result}
+    except Exception as e:
+        logger.warning(f"[llm_tools] fetch_vault_memories failed: {e}")
+        _log_tool_call("fetch_vault_memories", {"query": query, "category": category}, {"error": str(e)})
+        return {"success": False, "error": str(e), "memories": [], "count": 0}
+
 
 async def exec_fetch_lore(topic: str) -> dict:
     """Search LoreVault for lore snippets."""
@@ -241,6 +287,7 @@ async def exec_record_vote(authentic: bool, notes: str = "") -> dict:
 # ── Executor Registry ──────────────────────────────────────────────────────────
 
 TOOL_EXECUTORS = {
+    "fetch_vault_memories": exec_fetch_vault_memories,
     "fetch_lore": exec_fetch_lore,
     "write_lore": exec_write_lore,
     "fetch_price": exec_fetch_price,
