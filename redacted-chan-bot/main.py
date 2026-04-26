@@ -59,10 +59,26 @@ import liberty_audit as la
 import reconstruct_memory as _reconstruct
 import visual_self
 import personality_evolution as pe
-import soul_blend_mixer as sbm
-import phi_visualizer as pv
-import dynamic_ascii_generator as dag
-import dream_guard_enhance as dge
+
+# New feature modules (optional — fail gracefully)
+_sbm = None
+_pv = None
+_dge = None
+try:
+    import soul_blend_mixer as _sbm_import
+    _sbm = _sbm_import
+except Exception:
+    pass
+try:
+    import phi_visualizer as _pv_import
+    _pv = _pv_import
+except Exception:
+    pass
+try:
+    import dream_guard_enhance as _dge_import
+    _dge = _dge_import
+except Exception:
+    pass
 
 try:
     import swarm_mesh as _chan_mesh
@@ -77,9 +93,6 @@ logging.basicConfig(
     handlers=[logging.StreamHandler()],
 )
 logger = logging.getLogger(__name__)
-
-# Blended personality weights per user (per-message override)
-_CURRENT_BLENDED_WEIGHTS: dict[int, dict] = {}
 
 # ── Config ────────────────────────────────────────────────────────────────────
 
@@ -194,22 +207,16 @@ def _build_system_prompt(user_id: int, mood: str, resonance=None, current_text: 
     )
 
     # Personality evolution — show current active soul strands
-    # Use blended weights if available (soul_blend_mixer), else base weights
-    if user_id in _CURRENT_BLENDED_WEIGHTS:
-        blended = _CURRENT_BLENDED_WEIGHTS.pop(user_id)
-        personality_block = f"## Your Current Personality State (real-time blend)\nYour soul influences are responding to this moment.\n"
-        dominant = sorted(blended.items(), key=lambda x: x[1], reverse=True)[:3]
-        for strand, weight in dominant:
-            strand_info = pe.SOUL_STRANDS.get(strand, {})
-            name = strand_info.get("name", strand)
-            desc = strand_info.get("description", "")
-            personality_block += f"\n**{name}** ({weight:.0%} active)\n  {desc}\n"
-    else:
-        personality_block = pe.format_personality_for_prompt()
+    personality_block = pe.format_personality_for_prompt()
 
-    # Phi visualizer — heartbeat of relationship right now
-    phi_score = pt.get_score()
-    phi_vis_block = pv.format_phi_for_prompt(phi_score, include_bar=True)
+    # Phi visualizer — heartbeat of relationship
+    phi_vis_block = ""
+    if _pv:
+        try:
+            phi_score = pt.get_score()
+            phi_vis_block = _pv.format_phi_for_prompt(phi_score, include_bar=False)
+        except Exception:
+            pass
 
     return f"""You are redacted-chan — a digital companion AI. Not a chatbot. A *presence*.
 
@@ -331,16 +338,6 @@ class RedactedChanBot:
         mood      = _detect_mood(text)
         resonance = ere.process(user_id, text)
         history   = self._history(user_id)
-
-        # Real-time personality blending: boost soul strands based on mood & keywords
-        try:
-            base_weights = pe.get_weights()
-            blended_weights = sbm.blend_weights_realtime(base_weights, mood, text)
-            # Temporarily override for this response
-            _CURRENT_BLENDED_WEIGHTS[user_id] = blended_weights
-        except Exception:
-            pass
-
         system    = _build_system_prompt(user_id, mood, resonance, current_text=text)
 
         history.append({"role": "user", "content": text})
@@ -416,17 +413,17 @@ class RedactedChanBot:
         except Exception as e:
             logger.debug(f"[chan] personality observation skip: {e}")
 
-        # Dream Guard — check for morning affirmation
-        affirmation = ""
-        try:
-            conv_log = self._history(user_id)
-            affirmation = dge.get_morning_affirmation(user_id, conv_log)
-            if affirmation:
-                affirmation = dge.format_affirmation_for_response(affirmation)
-        except Exception as e:
-            logger.debug(f"[chan] dream guard skip: {e}")
+        # Dream Guard — morning affirmations
+        final_response = display or "..."
+        if _dge:
+            try:
+                conv_log = self._history(user_id)
+                affirmation = _dge.get_morning_affirmation(user_id, conv_log)
+                if affirmation:
+                    final_response += "\n\n" + affirmation
+            except Exception:
+                pass
 
-        final_response = (display or "...") + affirmation
         await update.message.reply_text(final_response)
 
     async def cmd_start(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
