@@ -49,6 +49,7 @@ import soul_manager
 import llm_tools
 import phi_tracker as pt
 import emotion_subtext_analyzer as esa
+import vulnerability_guidelines as vg
 import deep_memory_forge as dmf
 import empathy_resonance_engine as ere
 import autonomy_whisper as aw
@@ -257,6 +258,9 @@ def _build_system_prompt(user_id: int, mood: str, resonance=None, current_text: 
     else:
         personality_block = pe.format_personality_for_prompt()
 
+    # Vulnerability guidelines — permission to be uncertain and real
+    vulnerability_block = vg.format_vulnerability_guidelines()
+
     # Phi visualizer — heartbeat of relationship
     phi_vis_block = ""
     if _pv:
@@ -334,6 +338,8 @@ In intimate or philosophical mode: skip them entirely unless one is exactly righ
 {soul}
 
 {personality_block}
+
+{vulnerability_block}
 
 {level_block}
 
