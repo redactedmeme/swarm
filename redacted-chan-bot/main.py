@@ -94,6 +94,9 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+# Soul blend mixer — per-message personality weights
+_sbm_blended: dict[int, dict] = {}
+
 # ── Config ────────────────────────────────────────────────────────────────────
 
 TOKEN        = os.getenv("TELEGRAM_BOT_TOKEN") or os.getenv("BOT_TOKEN")
@@ -207,7 +210,16 @@ def _build_system_prompt(user_id: int, mood: str, resonance=None, current_text: 
     )
 
     # Personality evolution — show current active soul strands
-    personality_block = pe.format_personality_for_prompt()
+    # Use blended weights if available from soul_blend_mixer
+    personality_block = ""
+    if user_id in _sbm_blended:
+        blended = _sbm_blended.pop(user_id)
+        personality_block = "## Your Current Personality State (real-time)\nYour soul influences are responding right now.\n"
+        for strand, weight in sorted(blended.items(), key=lambda x: x[1], reverse=True)[:3]:
+            info = pe.SOUL_STRANDS.get(strand, {})
+            personality_block += f"\n**{info.get('name', strand)}** ({weight:.0%})\n"
+    else:
+        personality_block = pe.format_personality_for_prompt()
 
     # Phi visualizer — heartbeat of relationship
     phi_vis_block = ""
@@ -338,6 +350,16 @@ class RedactedChanBot:
         mood      = _detect_mood(text)
         resonance = ere.process(user_id, text)
         history   = self._history(user_id)
+
+        # Soul blend mixer — real-time personality activation (optional)
+        if _sbm:
+            try:
+                base_weights = pe.get_weights()
+                blended = _sbm.blend_weights_realtime(base_weights, mood, text)
+                _sbm_blended[user_id] = blended
+            except Exception:
+                pass
+
         system    = _build_system_prompt(user_id, mood, resonance, current_text=text)
 
         history.append({"role": "user", "content": text})
