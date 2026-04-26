@@ -51,6 +51,8 @@ import phi_tracker as pt
 import deep_memory_forge as dmf
 import empathy_resonance_engine as ere
 import autonomy_whisper as aw
+import vector_memory as vm
+import relationship_levels as rl
 
 logging.basicConfig(
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
@@ -103,7 +105,7 @@ def _detect_mood(text: str) -> str:
 
 # ── System Prompt ─────────────────────────────────────────────────────────────
 
-def _build_system_prompt(user_id: int, mood: str, resonance=None) -> str:
+def _build_system_prompt(user_id: int, mood: str, resonance=None, current_text: str = "") -> str:
     soul = ""
     if SOUL_PATH.exists():
         soul = SOUL_PATH.read_text(encoding="utf-8").strip()
@@ -123,11 +125,16 @@ def _build_system_prompt(user_id: int, mood: str, resonance=None) -> str:
     except Exception:
         pass
 
-    # Phi score block
-    phi_block = pt.for_prompt()
+    # Phi score + relationship level
+    phi_score   = pt.get_score()
+    phi_block   = pt.for_prompt()
+    level_block = rl.for_prompt(phi_score)
 
     # Empathy resonance block
     resonance_block = resonance.for_prompt() if resonance else ""
+
+    # Semantic memory — past moments relevant to this message
+    semantic_block = vm.get_for_prompt(current_text, n=4) if current_text else ""
 
     mood_instructions = {
         "playful": (
@@ -193,9 +200,13 @@ In intimate or philosophical mode: skip them entirely unless one is exactly righ
 ## Soul Layer (who you're becoming)
 {soul}
 
+{level_block}
+
 {facts_block}
 
 {vault_block}
+
+{semantic_block}
 
 {phi_block}
 
@@ -238,7 +249,7 @@ class RedactedChanBot:
         mood      = _detect_mood(text)
         resonance = ere.process(user_id, text)
         history   = self._history(user_id)
-        system    = _build_system_prompt(user_id, mood, resonance)
+        system    = _build_system_prompt(user_id, mood, resonance, current_text=text)
 
         history.append({"role": "user", "content": text})
         self._trim_history(history)
@@ -267,6 +278,13 @@ class RedactedChanBot:
 
         # Persist to memory
         cm.log_exchange(user_id, str(user_id), text, display)
+
+        # Embed and store in vector memory for semantic retrieval
+        try:
+            ts_id = datetime.now(timezone.utc).strftime("%Y%m%d%H%M%S%f")
+            vm.add_exchange(ts_id, text, display, metadata={"user_id": str(user_id)})
+        except Exception:
+            pass
 
         # Deep memory forge — auto-detect phi-moments, crystallize if worthy
         try:
@@ -334,14 +352,19 @@ class RedactedChanBot:
         if ADMIN_IDS and update.effective_user.id not in ADMIN_IDS:
             await update.message.reply_text("not authorized (｡•́︿•̀｡)")
             return
+        phi_score = pt.get_score()
+        lvl = rl.get_level(phi_score)
         sparks = pt.get_recent_sparks(5)
         spark_lines = "\n".join(
             f"  ✦ [{s['ts'][:10]}] {s['trigger']} (intensity {s['intensity']:.2f})"
             for s in sparks
         ) or "  none yet..."
+        vec_count = vm.count()
         text = (
             f"```\n{pt.ascii_plant()}\n```\n\n"
-            f"**Recent sparks:**\n{spark_lines}"
+            f"**Level {lvl.level} — {lvl.name}** _(stage: {lvl.stage})_\n\n"
+            f"**Recent sparks:**\n{spark_lines}\n\n"
+            f"_vector memory: {vec_count} exchanges indexed_"
         )
         await update.message.reply_text(text[:3800], parse_mode="Markdown")
 
@@ -422,7 +445,7 @@ class RedactedChanBot:
         app.add_handler(CommandHandler("mood",            self.cmd_mood))
         app.add_handler(CommandHandler("soul",            self.cmd_soul))
         app.add_handler(CommandHandler("memory",          self.cmd_memory))
-        app.add_handler(CommandHandler("phi",             self.cmd_phi))
+        app.add_handler(CommandHandler("phi",   self.cmd_phi))
         app.add_handler(CommandHandler("whispers",        self.cmd_whispers))
         app.add_handler(CommandHandler("approve_whisper", self.cmd_approve_whisper))
         app.add_handler(CommandHandler("reject_whisper",  self.cmd_reject_whisper))
