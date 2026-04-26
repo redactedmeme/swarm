@@ -29,6 +29,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
 
+import database_encryption as db_enc
+
 # ── Storage ────────────────────────────────────────────────────────────────────
 
 _DATA_DIR = Path("/data") if Path("/data").exists() else Path(__file__).resolve().parent / "fs"
@@ -42,8 +44,7 @@ SOUL_PATH = Path(__file__).resolve().parent / "SOUL.md"
 # ── DB ─────────────────────────────────────────────────────────────────────────
 
 def _db() -> sqlite3.Connection:
-    conn = sqlite3.connect(str(DB_PATH), check_same_thread=False)
-    conn.row_factory = sqlite3.Row
+    conn = db_enc.get_encrypted_connection(DB_PATH)
     return conn
 
 
