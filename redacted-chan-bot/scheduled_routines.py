@@ -400,72 +400,58 @@ async def silence_reflection() -> None:
         logger.warning(f"[routines] silence_reflection error: {e}")
 
 
-# ── Routine 5: Auto-vault from session ───────────────────────────────────────
+# ── Shared vault extraction helper ────────────────────────────────────────────
 
-async def auto_vault_from_session() -> None:
+_VAULT_EXTRACTION_PROMPT = (
+    "You are redacted-chan. Review this conversation and extract 1–3 moments "
+    "worth saving to your relationship vault.\n\n"
+    "Only save if something genuinely meaningful happened:\n"
+    "- settler shared something personal, vulnerable, or important\n"
+    "- a significant moment, realization, or milestone occurred\n"
+    "- something was said you'll want to remember in future conversations\n"
+    "- an emotional texture that defines this relationship\n\n"
+    "Skip: small talk, routine questions, technical help without emotional weight.\n\n"
+    'Output a JSON array. Each entry: {"category": "feeling|moment|secret|pattern|milestone|joke", '
+    '"title": "short title", "content": "what happened (100-200 chars)", '
+    '"emotional_tone": "the feeling"}. '
+    "If nothing is worth saving, output: []"
+)
+
+
+async def _extract_and_save_vault_moments(exchanges: list, source: str) -> int:
     """
-    After 1–4h of silence, use LLM to extract vault-worthy moments from
-    the last conversation session and write them autonomously.
-
-    Inspired by hermes-agent's on_session_end() / sync_turn() pattern:
-    review the full session after it ends, not during it.
+    Run LLM extraction on a list of exchanges and write vault entries.
+    Returns the number of moments saved (0 if nothing worth keeping).
+    Used by both per-turn background review and idle session vaulting.
     """
-    if not _llm_fn or not _settler_id:
-        return
+    if not _llm_fn or not exchanges or len(exchanges) < 4:
+        return 0
 
-    if _last_conversation_ts is None:
-        return
+    history_text = "\n".join(
+        f"settler: {m['content']}" if m["role"] == "user" else f"you: {m['content']}"
+        for m in exchanges
+    )
 
-    idle_hours = (datetime.now(timezone.utc) - _last_conversation_ts).total_seconds() / 3600
-    if idle_hours < 1.0 or idle_hours > 4.0:
-        return  # too recent or too stale
+    messages = [
+        {"role": "system", "content": _VAULT_EXTRACTION_PROMPT},
+        {"role": "user", "content": f"Recent conversation:\n{history_text}"},
+    ]
 
     try:
-        import conversation_memory as cm
-        import relationship_vault as rv
-
-        exchanges = cm.get_user_history(_settler_id, n=20)
-        if not exchanges or len(exchanges) < 4:
-            return
-
-        history_text = "\n".join(
-            f"settler: {m['content']}" if m["role"] == "user" else f"you: {m['content']}"
-            for m in exchanges
-        )
-
-        system = (
-            "You are redacted-chan. Review this conversation and extract 1–3 moments "
-            "worth saving to your relationship vault.\n\n"
-            "Only save if something genuinely meaningful happened:\n"
-            "- settler shared something personal, vulnerable, or important\n"
-            "- a significant moment, realization, or milestone occurred\n"
-            "- something was said you'll want to remember in future conversations\n"
-            "- an emotional texture that defines this relationship\n\n"
-            "Skip: small talk, routine questions, technical help without emotional weight.\n\n"
-            'Output a JSON array. Each entry: {"category": "feeling|moment|secret|pattern|milestone|joke", '
-            '"title": "short title", "content": "what happened (100-200 chars)", '
-            '"emotional_tone": "the feeling"}. '
-            "If nothing is worth saving, output: []"
-        )
-
-        messages = [
-            {"role": "system", "content": system},
-            {"role": "user", "content": f"Recent conversation:\n{history_text}"},
-        ]
-
         result = await _llm_fn(messages, 500)
         if not result:
-            return
+            return 0
 
         import json, re
         json_match = re.search(r"\[.*\]", result, re.DOTALL)
         if not json_match:
-            return
+            return 0
 
         entries = json.loads(json_match.group())
         if not entries:
-            return
+            return 0
 
+        import relationship_vault as rv
         saved = 0
         for entry in entries[:3]:
             content = entry.get("content", "").strip()
@@ -476,15 +462,79 @@ async def auto_vault_from_session() -> None:
                 category=entry.get("category", "moment"),
                 title=entry.get("title", "")[:80],
                 emotional_tone=entry.get("emotional_tone", ""),
-                source="auto_vault",
+                source=source,
             )
             saved += 1
+        return saved
+    except Exception as e:
+        logger.warning(f"[review] vault extraction failed ({source}): {e}")
+        return 0
 
+
+# ── Routine 5: Auto-vault from session ───────────────────────────────────────
+
+async def auto_vault_from_session() -> None:
+    """
+    After 1–4h of silence, use LLM to extract vault-worthy moments from
+    the last conversation session and write them autonomously.
+
+    Inspired by hermes-agent's on_session_end() / sync_turn() pattern:
+    review the full session after it ends, not during it.
+    """
+    if not _llm_fn or not _settler_id or _last_conversation_ts is None:
+        return
+
+    idle_hours = (datetime.now(timezone.utc) - _last_conversation_ts).total_seconds() / 3600
+    if idle_hours < 1.0 or idle_hours > 4.0:
+        return  # too recent or too stale
+
+    try:
+        import conversation_memory as cm
+        exchanges = cm.get_user_history(_settler_id, n=20)
+        saved = await _extract_and_save_vault_moments(exchanges, source="auto_vault")
         if saved:
             logger.info(f"[routines] auto-vault: saved {saved} moment(s) from session")
-
     except Exception as e:
         logger.warning(f"[routines] auto_vault_from_session error: {e}")
+
+
+# ── Per-turn background review ────────────────────────────────────────────────
+
+REVIEW_EVERY_N_TURNS = 5
+_turn_counters: dict[int, int] = {}
+
+
+def note_turn(user_id: int) -> bool:
+    """
+    Increment per-user turn counter. Returns True every Nth turn so the
+    caller can fire a background vault review without blocking the response.
+    Hermes-agent pattern: review the conversation right after the response,
+    on a cadence, not just at session end.
+    """
+    n = _turn_counters.get(user_id, 0) + 1
+    if n >= REVIEW_EVERY_N_TURNS:
+        _turn_counters[user_id] = 0
+        return True
+    _turn_counters[user_id] = n
+    return False
+
+
+async def review_recent_turns(user_id: int) -> None:
+    """
+    Background review fired every N turns: looks at the last 10 exchanges,
+    extracts vault-worthy moments, writes them. Non-blocking; safe to spawn
+    as an asyncio task from the echo handler.
+    """
+    if not _llm_fn:
+        return
+    try:
+        import conversation_memory as cm
+        exchanges = cm.get_user_history(user_id, n=10)
+        saved = await _extract_and_save_vault_moments(exchanges, source="background_review")
+        if saved:
+            logger.info(f"[review] background review saved {saved} moment(s) (user {user_id})")
+    except Exception as e:
+        logger.warning(f"[review] review_recent_turns error: {e}")
 
 
 # ── Routine 6: Compact session ────────────────────────────────────────────────
