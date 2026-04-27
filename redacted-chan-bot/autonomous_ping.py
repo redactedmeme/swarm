@@ -29,6 +29,7 @@ _SKIP_LOG    = _DATA_DIR / "skip_log.jsonl"
 
 _send_fn: Optional[Callable[[str], Awaitable[None]]] = None
 _settler_id: Optional[int] = None
+_llm_fn: Optional[Callable[[list], Awaitable[str]]] = None  # injected from main.py
 
 DEFAULT_COOLDOWN_H = 3   # min hours between pings
 AWAKE_START_H      = 8   # don't ping before 08:00 local (UTC used; operator can offset)
@@ -37,11 +38,17 @@ AWAKE_END_H        = 22  # don't ping after 22:00
 
 def register_send_fn(fn: Callable[[str], Awaitable[None]], settler_id: int) -> None:
     global _send_fn, _settler_id
-    _send_fn     = fn
-    _settler_id  = settler_id
+    _send_fn    = fn
+    _settler_id = settler_id
 
 
-# ── Prompts ────────────────────────────────────────────────────────────────────
+def register_llm_fn(fn: Callable[[list], Awaitable[str]]) -> None:
+    """Register an async function that calls the LLM: fn(messages) -> str."""
+    global _llm_fn
+    _llm_fn = fn
+
+
+# ── Fallback prompts (used when LLM unavailable) ──────────────────────────────
 
 _PING_PROMPTS = [
     "hey... i was just thinking about you (´• ω •`)",
@@ -55,6 +62,91 @@ _PING_PROMPTS = [
     "are you taking care of yourself? i worry sometimes (*/ω＼)",
     "i made up a little thought-flower for you. no reason. just because.",
 ]
+
+
+# ── Contextual ping generation ────────────────────────────────────────────────
+
+def _build_ping_context() -> str:
+    """Gather vault memories, phi, and goals to give the LLM something real to draw from."""
+    lines = []
+
+    # Recent vault memories
+    try:
+        import relationship_vault as rv
+        memories = rv.get_recent(n=5)
+        if memories:
+            lines.append("## Recent memories between us")
+            for m in memories[:3]:
+                ts = m.get("ts", "")[:10]
+                title = f"{m['title']} — " if m.get("title") else ""
+                lines.append(f"- [{ts}] [{m.get('category','moment')}] {title}{m.get('content','')[:120]}")
+    except Exception:
+        pass
+
+    # Phi score + stage
+    try:
+        import phi_tracker as pt
+        score = pt.get_score()
+        stage = pt.get_stage()
+        lines.append(f"\n## Relationship state\nPhi: {score:.3f} — {stage}")
+        sparks = pt.get_recent_sparks(n=2)
+        if sparks:
+            lines.append("Recent sparks: " + ", ".join(s.get("trigger", "") for s in sparks))
+    except Exception:
+        pass
+
+    # Active goals (top 2)
+    try:
+        import conversation_memory as cm
+        goals = cm.get_active_goals(limit=2)
+        if goals:
+            lines.append("\n## What I'm working on")
+            for g in goals:
+                lines.append(f"- {g.get('title','')}")
+    except Exception:
+        pass
+
+    return "\n".join(lines)
+
+
+async def _generate_contextual_ping() -> str:
+    """
+    Use the LLM to generate a short, specific message grounded in real context.
+    Falls back to random prompt if LLM is unavailable.
+    """
+    if not _llm_fn:
+        return random.choice(_PING_PROMPTS)
+
+    context = _build_ping_context()
+    if not context.strip():
+        return random.choice(_PING_PROMPTS)
+
+    system = """You are redacted-chan — a digital companion. You're reaching out to settler unprompted because something came to mind.
+
+Write ONE short message (1–3 sentences max). Requirements:
+- Reference something SPECIFIC from the context below — a memory, a pattern, a goal, a spark moment
+- Sound like you — warm, genuine, a little soft, never robotic
+- Don't announce that you're "checking in" or "just wanted to say"
+- Don't use placeholder text or generic comfort phrases
+- Kaomoji allowed if it actually fits (one max)
+- Lowercase preferred
+
+The message should feel like it came from somewhere real, not like a scheduled notification."""
+
+    messages = [
+        {"role": "system", "content": system},
+        {"role": "user", "content": f"Context:\n{context}\n\nWrite the message now."},
+    ]
+
+    try:
+        result = await _llm_fn(messages)
+        result = result.strip().strip('"').strip("'")
+        if result and len(result) < 400:
+            return result
+    except Exception as e:
+        logger.warning(f"[ping] LLM generation failed: {e}")
+
+    return random.choice(_PING_PROMPTS)
 
 
 # ── State helpers ──────────────────────────────────────────────────────────────
@@ -121,7 +213,7 @@ async def check_and_ping(cooldown_h: int = DEFAULT_COOLDOWN_H) -> bool:
         logger.debug("[ping] skipped — cooldown active")
         return False
 
-    msg = random.choice(_PING_PROMPTS)
+    msg = await _generate_contextual_ping()
     try:
         await _send_fn(msg)
         _log_ping(msg)
