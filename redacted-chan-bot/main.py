@@ -610,6 +610,13 @@ class RedactedChanBot:
         # Reset silence clock for scheduled_routines
         sr.mark_conversation()
 
+        # Per-turn background vault review (hermes-agent pattern)
+        # Every N turns, spawn a non-blocking task to extract vault-worthy
+        # moments from recent exchanges. Runs after the response is delivered,
+        # never competes with it for latency.
+        if sr.note_turn(user_id):
+            asyncio.create_task(sr.review_recent_turns(user_id))
+
         # Backup conversation to daily file in /data/conversation_backups/
         try:
             cm.backup_conversation_to_file()
