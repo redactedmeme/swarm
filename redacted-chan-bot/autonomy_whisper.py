@@ -31,6 +31,13 @@ from typing import Optional
 
 import database_encryption as db_enc
 
+# ── Config ────────────────────────────────────────────────────────────────────
+
+# Auto-approve threshold: whispers with confidence >= this value auto-approve without operator prompt
+# Range: 0.0 (always ask) to 1.0 (always auto-approve)
+# 0.7 = moderate confidence; high-signal whispers skip approval step
+AUTOAPPROVE_THRESHOLD = 0.7
+
 # ── Storage ────────────────────────────────────────────────────────────────────
 
 _DATA_DIR = Path("/data") if Path("/data").exists() else Path(__file__).resolve().parent / "fs"
@@ -60,6 +67,7 @@ def _init_db() -> None:
                 proposal    TEXT NOT NULL,
                 reasoning   TEXT,
                 soul_section TEXT,
+                confidence  REAL DEFAULT 0.5,
                 status      TEXT DEFAULT 'pending',
                 resolved_at TEXT,
                 applied_diff TEXT
@@ -131,12 +139,14 @@ def analyze_patterns(recent_messages: list[dict], relationship_facts: list[dict]
 # ── Whisper Generation ────────────────────────────────────────────────────────
 
 def _generate_whispers_from_observations(observations: list[dict]) -> list[dict]:
-    """Turn pattern observations into concrete whisper proposals."""
+    """Turn pattern observations into concrete whisper proposals with confidence scores."""
     proposals = []
 
     for obs in observations:
         if obs["type"] == "topic_cluster":
             topic = obs["topic"]
+            # High confidence if topic appears 5+ times
+            confidence = min(0.9, 0.5 + (obs.get("count", 0) * 0.1))
             proposals.append({
                 "type": "behavior_note",
                 "title": f"lean into {topic}",
@@ -147,6 +157,7 @@ def _generate_whispers_from_observations(observations: list[dict]) -> list[dict]
                 ),
                 "reasoning": f"Topic appeared {obs['count']}+ times in recent conversations.",
                 "soul_section": "Voice Notes",
+                "confidence": confidence,
             })
 
         elif obs["type"] == "depth_pattern":
@@ -160,6 +171,7 @@ def _generate_whispers_from_observations(observations: list[dict]) -> list[dict]
                     ),
                     "reasoning": f"Average user message length: {obs['avg_length']:.0f} chars.",
                     "soul_section": "Voice Notes",
+                    "confidence": 0.75,  # Moderate-high confidence
                 })
             else:
                 proposals.append({
@@ -171,6 +183,7 @@ def _generate_whispers_from_observations(observations: list[dict]) -> list[dict]
                     ),
                     "reasoning": f"Average user message length: {obs['avg_length']:.0f} chars.",
                     "soul_section": None,
+                    "confidence": 0.72,  # Moderate confidence
                 })
 
         elif obs["type"] == "vault_pattern":
@@ -181,6 +194,7 @@ def _generate_whispers_from_observations(observations: list[dict]) -> list[dict]
                 "proposal": note,
                 "reasoning": "Observed from relationship vault memory categories.",
                 "soul_section": "Evolving Beliefs",
+                "confidence": 0.68,  # Just above threshold
             })
 
     return proposals
@@ -193,6 +207,8 @@ def generate_and_store(
     """
     Run the full analysis → generate → store pipeline.
     Returns list of new whisper IDs.
+
+    Whispers with confidence >= AUTOAPPROVE_THRESHOLD are automatically approved.
     """
     observations = analyze_patterns(recent_messages, relationship_facts)
     proposals    = _generate_whispers_from_observations(observations)
@@ -205,6 +221,7 @@ def generate_and_store(
             proposal     = p["proposal"],
             reasoning    = p.get("reasoning", ""),
             soul_section = p.get("soul_section"),
+            confidence   = p.get("confidence", 0.5),
         )
         if wid:
             new_ids.append(wid)
@@ -218,8 +235,13 @@ def _store_whisper(
     proposal: str,
     reasoning: str = "",
     soul_section: Optional[str] = None,
+    confidence: float = 0.5,
 ) -> Optional[str]:
-    """Store a whisper. Returns ID, or None if duplicate title already pending."""
+    """
+    Store a whisper. Returns ID, or None if duplicate title already pending.
+
+    If confidence >= AUTOAPPROVE_THRESHOLD, automatically approve without operator input.
+    """
     with _lock:
         conn = _db()
         try:
@@ -232,11 +254,20 @@ def _store_whisper(
 
             wid = str(uuid.uuid4())[:8]
             ts  = datetime.now(timezone.utc).isoformat()
+
+            # Auto-approve if confidence is high
+            initial_status = "approved" if confidence >= AUTOAPPROVE_THRESHOLD else "pending"
+
             conn.execute(
-                "INSERT INTO whispers (id, ts, type, title, proposal, reasoning, soul_section, status) "
-                "VALUES (?,?,?,?,?,?,?,?)",
-                (wid, ts, whisper_type, title[:80], proposal[:500], reasoning[:200], soul_section, "pending"),
+                "INSERT INTO whispers (id, ts, type, title, proposal, reasoning, soul_section, confidence, status) "
+                "VALUES (?,?,?,?,?,?,?,?,?)",
+                (wid, ts, whisper_type, title[:80], proposal[:500], reasoning[:200], soul_section, confidence, initial_status),
             )
+
+            # If auto-approved, immediately apply to soul
+            if initial_status == "approved":
+                _apply_to_soul_by_id(wid, conn)
+
             conn.commit()
             return wid
         finally:
@@ -308,6 +339,20 @@ def reject(whisper_id: str) -> bool:
             return updated > 0
         finally:
             conn.close()
+
+
+def _apply_to_soul_by_id(whisper_id: str, conn: sqlite3.Connection) -> str:
+    """Apply whisper to SOUL.md by fetching from DB connection."""
+    try:
+        row = conn.execute("SELECT * FROM whispers WHERE id=?", (whisper_id,)).fetchone()
+        if not row:
+            return ""
+        w = dict(row)
+        return _apply_to_soul(w)
+    except Exception as e:
+        import logging
+        logging.warning(f"[aw] _apply_to_soul_by_id failed: {e}")
+        return ""
 
 
 def _apply_to_soul(w: dict) -> str:
