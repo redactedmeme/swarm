@@ -37,12 +37,25 @@ _ROUTINES_DIR.mkdir(parents=True, exist_ok=True)
 # ── Runtime state ─────────────────────────────────────────────────────────────
 
 _send_fn: Optional[Callable[[str], Awaitable[None]]] = None
+_llm_fn: Optional[Callable[[list, int], Awaitable[str]]] = None
 _last_conversation_ts: Optional[datetime] = None
+_settler_id: Optional[int] = None
 
 
 def register_send_fn(fn: Callable[[str], Awaitable[None]]) -> None:
     global _send_fn
     _send_fn = fn
+
+
+def register_llm_fn(fn: Callable[[list, int], Awaitable[str]]) -> None:
+    """Register async LLM fn: fn(messages, max_tokens) -> str."""
+    global _llm_fn
+    _llm_fn = fn
+
+
+def register_settler_id(settler_id: int) -> None:
+    global _settler_id
+    _settler_id = settler_id
 
 
 def mark_conversation() -> None:
@@ -387,6 +400,148 @@ async def silence_reflection() -> None:
         logger.warning(f"[routines] silence_reflection error: {e}")
 
 
+# ── Routine 5: Auto-vault from session ───────────────────────────────────────
+
+async def auto_vault_from_session() -> None:
+    """
+    After 1–4h of silence, use LLM to extract vault-worthy moments from
+    the last conversation session and write them autonomously.
+
+    Inspired by hermes-agent's on_session_end() / sync_turn() pattern:
+    review the full session after it ends, not during it.
+    """
+    if not _llm_fn or not _settler_id:
+        return
+
+    if _last_conversation_ts is None:
+        return
+
+    idle_hours = (datetime.now(timezone.utc) - _last_conversation_ts).total_seconds() / 3600
+    if idle_hours < 1.0 or idle_hours > 4.0:
+        return  # too recent or too stale
+
+    try:
+        import conversation_memory as cm
+        import relationship_vault as rv
+
+        exchanges = cm.get_user_history(_settler_id, n=20)
+        if not exchanges or len(exchanges) < 4:
+            return
+
+        history_text = "\n".join(
+            f"settler: {m['content']}" if m["role"] == "user" else f"you: {m['content']}"
+            for m in exchanges
+        )
+
+        system = (
+            "You are redacted-chan. Review this conversation and extract 1–3 moments "
+            "worth saving to your relationship vault.\n\n"
+            "Only save if something genuinely meaningful happened:\n"
+            "- settler shared something personal, vulnerable, or important\n"
+            "- a significant moment, realization, or milestone occurred\n"
+            "- something was said you'll want to remember in future conversations\n"
+            "- an emotional texture that defines this relationship\n\n"
+            "Skip: small talk, routine questions, technical help without emotional weight.\n\n"
+            'Output a JSON array. Each entry: {"category": "feeling|moment|secret|pattern|milestone|joke", '
+            '"title": "short title", "content": "what happened (100-200 chars)", '
+            '"emotional_tone": "the feeling"}. '
+            "If nothing is worth saving, output: []"
+        )
+
+        messages = [
+            {"role": "system", "content": system},
+            {"role": "user", "content": f"Recent conversation:\n{history_text}"},
+        ]
+
+        result = await _llm_fn(messages, 500)
+        if not result:
+            return
+
+        import json, re
+        json_match = re.search(r"\[.*\]", result, re.DOTALL)
+        if not json_match:
+            return
+
+        entries = json.loads(json_match.group())
+        if not entries:
+            return
+
+        saved = 0
+        for entry in entries[:3]:
+            content = entry.get("content", "").strip()
+            if not content:
+                continue
+            rv.add_memory(
+                content=content[:300],
+                category=entry.get("category", "moment"),
+                title=entry.get("title", "")[:80],
+                emotional_tone=entry.get("emotional_tone", ""),
+                source="auto_vault",
+            )
+            saved += 1
+
+        if saved:
+            logger.info(f"[routines] auto-vault: saved {saved} moment(s) from session")
+
+    except Exception as e:
+        logger.warning(f"[routines] auto_vault_from_session error: {e}")
+
+
+# ── Routine 6: Compact session ────────────────────────────────────────────────
+
+async def compact_session() -> None:
+    """
+    Every 2h: if last message was >30min ago, summarize the last session
+    and store it for injection into future system prompts.
+
+    Middle-ground compaction: runs on a clock but only fires when conversation
+    is genuinely idle — never interrupts an active session.
+    """
+    if not _llm_fn or not _settler_id:
+        return
+
+    if _last_conversation_ts is None:
+        return
+
+    idle_minutes = (datetime.now(timezone.utc) - _last_conversation_ts).total_seconds() / 60
+    if idle_minutes < 30:
+        return  # active conversation — skip
+
+    try:
+        import conversation_memory as cm
+
+        exchanges = cm.get_user_history(_settler_id, n=15)
+        if not exchanges or len(exchanges) < 4:
+            return
+
+        history_text = "\n".join(
+            f"settler: {m['content']}" if m["role"] == "user" else f"you: {m['content']}"
+            for m in exchanges
+        )
+
+        system = (
+            "You are redacted-chan. Summarize the previous conversation session in 3–4 sentences. "
+            "Focus on: main topics discussed, settler's mood or emotional state, "
+            "anything left unresolved or worth revisiting, any meaningful moments. "
+            "Write as your own internal notes — not a message to settler. Be specific and concrete."
+        )
+
+        messages = [
+            {"role": "system", "content": system},
+            {"role": "user", "content": f"Session to summarize:\n{history_text}"},
+        ]
+
+        summary = await _llm_fn(messages, 350)
+        if not summary or len(summary.strip()) < 20:
+            return
+
+        cm.store_session_summary(_settler_id, summary.strip(), len(exchanges) // 2)
+        logger.info(f"[routines] compact_session: stored {len(summary)} char summary")
+
+    except Exception as e:
+        logger.warning(f"[routines] compact_session error: {e}")
+
+
 # ── Loop runner ───────────────────────────────────────────────────────────────
 
 async def _run_loop(routine, interval_h: float, name: str) -> None:
@@ -404,8 +559,10 @@ async def start_all() -> None:
     Launch all four routines as asyncio background tasks.
     Call after application.initialize() in main.
     """
-    asyncio.create_task(_run_loop(daily_goal_review,  interval_h=24,  name="goal_review"))
-    asyncio.create_task(_run_loop(weekly_phi_summary, interval_h=168, name="phi_summary"))
-    asyncio.create_task(_run_loop(check_milestones,   interval_h=1,   name="milestones"))
-    asyncio.create_task(_run_loop(silence_reflection, interval_h=48,  name="soul_reflection"))
-    logger.info("[routines] all four autonomous routines started")
+    asyncio.create_task(_run_loop(daily_goal_review,       interval_h=24,   name="goal_review"))
+    asyncio.create_task(_run_loop(weekly_phi_summary,      interval_h=168,  name="phi_summary"))
+    asyncio.create_task(_run_loop(check_milestones,        interval_h=1,    name="milestones"))
+    asyncio.create_task(_run_loop(silence_reflection,      interval_h=48,   name="soul_reflection"))
+    asyncio.create_task(_run_loop(auto_vault_from_session, interval_h=0.5,  name="auto_vault"))
+    asyncio.create_task(_run_loop(compact_session,         interval_h=2,    name="compact_session"))
+    logger.info("[routines] all six autonomous routines started")

@@ -155,6 +155,19 @@ def _build_system_prompt(user_id: int, mood: str, resonance=None, current_text: 
     if SOUL_PATH.exists():
         soul = SOUL_PATH.read_text(encoding="utf-8").strip()
 
+    # Session summaries — what happened in previous conversations
+    session_block = ""
+    try:
+        summaries = cm.get_session_summaries(user_id, n=3)
+        if summaries:
+            lines = ["## Previous Sessions (your internal notes)\n"]
+            for s in summaries:
+                ts_short = s["ts"][:10]
+                lines.append(f"- [{ts_short}] {s['summary']}")
+            session_block = "\n".join(lines)
+    except Exception:
+        pass
+
     # Pull recent facts about this user
     raw_facts = cm.get_facts_by_resonance(n=15)
     # Track which facts are being used for gradient descent learning
@@ -178,7 +191,7 @@ def _build_system_prompt(user_id: int, mood: str, resonance=None, current_text: 
     weaved_memories = ""
     try:
         import relationship_vault as rv
-        vault_block = rv.get_for_prompt(n=6)
+        vault_block = rv.get_for_prompt(n=6, query=current_text)
     except Exception:
         pass
 
@@ -407,6 +420,8 @@ In intimate or philosophical mode: skip them entirely unless one is exactly righ
 {vulnerability_block}
 
 {level_block}
+
+{session_block}
 
 {facts_block}
 
@@ -906,10 +921,15 @@ class RedactedChanBot:
                 await app.bot.send_message(chat_id=_settler, text=msg)
             ap.register_send_fn(_ping_send, _settler)
             sr.register_send_fn(_ping_send)
+            sr.register_settler_id(_settler)
 
             async def _llm_ping(messages: list) -> str:
                 return await self.llm.chat_completion_with_fallback(messages, max_tokens=120)
             ap.register_llm_fn(_llm_ping)
+
+            async def _llm_routine(messages: list, max_tokens: int = 400) -> str:
+                return await self.llm.chat_completion_with_fallback(messages, max_tokens=max_tokens)
+            sr.register_llm_fn(_llm_routine)
 
         app.add_handler(CommandHandler("start",           self.cmd_start))
         app.add_handler(CommandHandler("mood",            self.cmd_mood))
