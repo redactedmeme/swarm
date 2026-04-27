@@ -139,6 +139,110 @@ TOOL_SCHEMAS = [
             },
             "required": ["authentic"]
         }
+    },
+    {
+        "name": "web_search",
+        "description": "Search the web for information on any topic",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "query": {
+                    "type": "string",
+                    "description": "What to search for"
+                },
+                "limit": {
+                    "type": "integer",
+                    "description": "Number of results (1-10, default 5)"
+                }
+            },
+            "required": ["query"]
+        }
+    },
+    {
+        "name": "api_call",
+        "description": "Make HTTP API call to external service",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "url": {
+                    "type": "string",
+                    "description": "API endpoint URL"
+                },
+                "method": {
+                    "type": "string",
+                    "description": "HTTP method (GET, POST, PUT, DELETE). Default: GET"
+                },
+                "json_body": {
+                    "type": "object",
+                    "description": "Optional JSON request body"
+                }
+            },
+            "required": ["url"]
+        }
+    },
+    {
+        "name": "get_crypto_price",
+        "description": "Get current cryptocurrency price and market data",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "symbol": {
+                    "type": "string",
+                    "description": "Crypto symbol (e.g., 'bitcoin', 'ethereum', 'solana', '$REDACTED')"
+                },
+                "vs_currency": {
+                    "type": "string",
+                    "description": "Currency to compare (default 'usd')"
+                }
+            },
+            "required": ["symbol"]
+        }
+    },
+    {
+        "name": "get_stock_price",
+        "description": "Get current stock price and data",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "symbol": {
+                    "type": "string",
+                    "description": "Stock ticker (e.g., 'AAPL', 'GOOGL', 'TSLA')"
+                }
+            },
+            "required": ["symbol"]
+        }
+    },
+    {
+        "name": "get_news",
+        "description": "Search for recent news articles on a topic",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "query": {
+                    "type": "string",
+                    "description": "News search query"
+                },
+                "limit": {
+                    "type": "integer",
+                    "description": "Number of articles (default 5)"
+                }
+            },
+            "required": ["query"]
+        }
+    },
+    {
+        "name": "get_weather",
+        "description": "Get current weather for a location",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "location": {
+                    "type": "string",
+                    "description": "City name or location"
+                }
+            },
+            "required": ["location"]
+        }
     }
 ]
 
@@ -284,6 +388,85 @@ async def exec_record_vote(authentic: bool, notes: str = "") -> dict:
         return {"success": False, "error": str(e)}
 
 
+# ── Internet Tools ─────────────────────────────────────────────────────────────
+
+async def exec_web_search(query: str, limit: int = 5) -> dict:
+    """Search the web for information."""
+    try:
+        import internet_tools
+        result = internet_tools.web_search(query, limit=limit)
+        _log_tool_call("web_search", {"query": query, "limit": limit}, result)
+        return result
+    except Exception as e:
+        logger.error(f"[llm_tools] web_search failed: {e}")
+        return {"success": False, "error": str(e), "status": "error"}
+
+
+async def exec_api_call(
+    url: str,
+    method: str = "GET",
+    json_body: dict = None,
+    **kwargs
+) -> dict:
+    """Make HTTP API call to external service."""
+    try:
+        import internet_tools
+        result = internet_tools.api_call(url, method=method, json_body=json_body, **kwargs)
+        _log_tool_call("api_call", {"url": url, "method": method}, result)
+        return result
+    except Exception as e:
+        logger.error(f"[llm_tools] api_call failed: {e}")
+        return {"success": False, "error": str(e), "status": "error"}
+
+
+async def exec_get_crypto_price(symbol: str, vs_currency: str = "usd") -> dict:
+    """Get cryptocurrency price and market data."""
+    try:
+        import internet_tools
+        result = internet_tools.get_crypto_price(symbol, vs_currency=vs_currency)
+        _log_tool_call("get_crypto_price", {"symbol": symbol, "vs_currency": vs_currency}, result)
+        return result
+    except Exception as e:
+        logger.error(f"[llm_tools] get_crypto_price failed: {e}")
+        return {"success": False, "error": str(e), "status": "error"}
+
+
+async def exec_get_stock_price(symbol: str) -> dict:
+    """Get stock price and data."""
+    try:
+        import internet_tools
+        result = internet_tools.get_stock_price(symbol)
+        _log_tool_call("get_stock_price", {"symbol": symbol}, result)
+        return result
+    except Exception as e:
+        logger.error(f"[llm_tools] get_stock_price failed: {e}")
+        return {"success": False, "error": str(e), "status": "error"}
+
+
+async def exec_get_news(query: str, limit: int = 5) -> dict:
+    """Search for recent news articles."""
+    try:
+        import internet_tools
+        result = internet_tools.get_news(query, limit=limit)
+        _log_tool_call("get_news", {"query": query, "limit": limit}, result)
+        return result
+    except Exception as e:
+        logger.error(f"[llm_tools] get_news failed: {e}")
+        return {"success": False, "error": str(e), "status": "error"}
+
+
+async def exec_get_weather(location: str) -> dict:
+    """Get current weather for a location."""
+    try:
+        import internet_tools
+        result = internet_tools.get_weather(location)
+        _log_tool_call("get_weather", {"location": location}, result)
+        return result
+    except Exception as e:
+        logger.error(f"[llm_tools] get_weather failed: {e}")
+        return {"success": False, "error": str(e), "status": "error"}
+
+
 # ── Executor Registry ──────────────────────────────────────────────────────────
 
 TOOL_EXECUTORS = {
@@ -293,6 +476,12 @@ TOOL_EXECUTORS = {
     "fetch_price": exec_fetch_price,
     "dm_operator": exec_dm_operator,
     "record_vote": exec_record_vote,
+    "web_search": exec_web_search,
+    "api_call": exec_api_call,
+    "get_crypto_price": exec_get_crypto_price,
+    "get_stock_price": exec_get_stock_price,
+    "get_news": exec_get_news,
+    "get_weather": exec_get_weather,
 }
 
 
