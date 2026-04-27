@@ -209,6 +209,63 @@ def get_recent_sparks(n: int = 5) -> list[dict]:
     return [dict(r) for r in rows]
 
 
+def get_weekly_trend() -> dict:
+    """
+    Return phi trend data for the last 7 days.
+    Used by scheduled_routines for weekly phi summary.
+
+    Returns:
+        {
+            "delta": float,        # phi change over 7 days (positive = growth)
+            "trend": str,          # "rising" | "stable" | "declining"
+            "peak_score": float,   # highest phi in the period
+            "peak_ts": str,        # ISO ts of peak
+            "start_score": float,  # phi at start of period
+            "end_score": float,    # current phi
+            "spark_count": int,    # sparks in the period
+        }
+    """
+    with _lock:
+        conn = _db()
+        try:
+            cutoff = (datetime.now(timezone.utc) - timedelta(days=7)).isoformat()
+            rows = conn.execute(
+                "SELECT ts, score, delta FROM phi_history WHERE ts >= ? ORDER BY ts ASC",
+                (cutoff,)
+            ).fetchall()
+            sparks = conn.execute(
+                "SELECT COUNT(*) FROM sparks WHERE ts >= ?", (cutoff,)
+            ).fetchone()[0]
+            current_row = conn.execute(
+                "SELECT score, updated FROM phi_state WHERE id=1"
+            ).fetchone()
+        finally:
+            conn.close()
+
+    end_score = _apply_decay(current_row["score"], datetime.fromisoformat(current_row["updated"])) if current_row else 0.0
+    start_score = float(rows[0]["score"] - rows[0]["delta"]) if rows else end_score
+    peak = max((r["score"] for r in rows), default=end_score)
+    peak_ts = next((r["ts"] for r in rows if r["score"] == peak), "") if rows else ""
+    delta = end_score - start_score
+
+    if delta > 0.01:
+        trend = "rising"
+    elif delta < -0.01:
+        trend = "declining"
+    else:
+        trend = "stable"
+
+    return {
+        "delta": round(delta, 4),
+        "trend": trend,
+        "peak_score": round(peak, 4),
+        "peak_ts": peak_ts,
+        "start_score": round(start_score, 4),
+        "end_score": round(end_score, 4),
+        "spark_count": sparks,
+    }
+
+
 def get_history(n: int = 20) -> list[dict]:
     with _lock:
         conn = _db()
