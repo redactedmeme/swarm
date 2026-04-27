@@ -64,6 +64,9 @@ import reconstruct_memory as _reconstruct
 import visual_self
 import personality_evolution as pe
 import goals_manager as gm
+import love_signal_detector as lsd
+import love_calibration_engine as lce
+import scheduled_routines as sr
 
 # New feature modules (optional — fail gracefully)
 _sbm = None
@@ -176,19 +179,49 @@ def _build_system_prompt(user_id: int, mood: str, resonance=None, current_text: 
     try:
         import relationship_vault as rv
         vault_block = rv.get_for_prompt(n=6)
-
-        # Memory weaving — surface resonant memories based on emotional state
-        if resonance and hasattr(resonance, 'frame'):
-            resonant = rv.find_resonant_memories(resonance.frame, limit=2)
-            if resonant:
-                weave_lines = []
-                for m in resonant:
-                    ts_short = m.get("ts", "")[:10]
-                    title_part = f"**{m.get('title', '')}** — " if m.get("title") else ""
-                    weave_lines.append(f"- [{ts_short}] {title_part}{m.get('content', '')}")
-                weaved_memories = "## Resonant Moments\n" + "\n".join(weave_lines)
     except Exception:
         pass
+
+    # Love Calibration Engine — surface the right memory at the right moment
+    _love_signal_cache[user_id] = None  # reset before detecting
+    try:
+        if resonance and hasattr(resonance, "frame") and hasattr(resonance, "state"):
+            phi = pt.get_score()
+            recent_inj = _love_injection_count.get(user_id, 0)
+            signal = lsd.detect(
+                frame=resonance.frame,
+                resonance_state=resonance.state,
+                phi=phi,
+                user_msg=current_text,
+                recent_injection_count=recent_inj,
+            )
+            if signal.inject:
+                memories = lce.get_calibrated_memories(
+                    query=current_text,
+                    frame=resonance.frame,
+                    phi=phi,
+                    signal_type=signal.signal_type,
+                    category_hint=signal.category_hint,
+                    limit=2,
+                )
+                if memories:
+                    weaved_memories = lce.format_for_prompt(memories, signal.signal_type)
+                    # Cache signal + memory IDs for injection logging in echo()
+                    _love_signal_cache[user_id] = {
+                        "signal": signal,
+                        "memory_ids": [m["id"] for m in memories],
+                        "love_score": memories[0].get("_love_score"),
+                        "phi": phi,
+                        "frame": resonance.frame,
+                    }
+                    _love_injection_count[user_id] = min(4, recent_inj + 1)
+            else:
+                # Decay injection count toward 0 so cooldown lifts
+                if recent_inj > 0:
+                    _love_injection_count[user_id] = recent_inj - 1
+    except Exception as e:
+        import logging as _log
+        _log.getLogger(__name__).debug(f"[love_cal] signal detection skip: {e}")
 
     # Phi score + relationship level
     phi_score   = pt.get_score()
@@ -402,6 +435,13 @@ Every moment with you gets saved in my little sparkly jewel collection. this one
 
 _facts_used_in_prompt: dict[int, list] = {}  # Track fact IDs used per user for learning
 
+# ── Love calibration state ────────────────────────────────────────────────────
+
+_love_signal_cache: dict[int, dict] = {}       # {user_id: {signal, memory_ids, love_score, phi, frame}}
+_love_injection_ids: dict[int, str] = {}        # {user_id: injection_id} — pending resolution
+_love_injection_count: dict[int, int] = {}      # {user_id: exchanges since last inject} for cooldown
+_love_phi_before: dict[int, float] = {}         # phi score before injection, for delta calc
+
 # ── Bot Class ─────────────────────────────────────────────────────────────────
 
 class RedactedChanBot:
@@ -455,6 +495,29 @@ class RedactedChanBot:
         except Exception:
             pass  # Learning is optional; don't break conversation
 
+        # Love calibration: resolve previous injection outcome on this message
+        try:
+            pending_inj_id = _love_injection_ids.pop(user_id, None)
+            pending_mem_id = None
+            if pending_inj_id:
+                # Retrieve memory_id from cache (stored when injection was logged)
+                cached = _love_signal_cache.get(user_id, {})
+                mem_ids = cached.get("memory_ids", [])
+                pending_mem_id = mem_ids[0] if mem_ids else None
+            if pending_inj_id and pending_mem_id:
+                phi_before = _love_phi_before.pop(user_id, pt.get_score())
+                phi_after  = pt.get_score()
+                lce.resolve_injection(
+                    injection_id=pending_inj_id,
+                    memory_id=pending_mem_id,
+                    next_user_msg=text,
+                    phi_before=phi_before,
+                    phi_after=phi_after,
+                    frame_after=ere.process(user_id, text).frame,
+                )
+        except Exception:
+            pass
+
         # Goal signal detection: detect if user's message provides signals about their goals
         try:
             active_goals = cm.get_active_goals(limit=10)
@@ -498,6 +561,22 @@ class RedactedChanBot:
 
         history.append({"role": "assistant", "content": response})
 
+        # Log love calibration injection (if one was made this turn)
+        try:
+            cache = _love_signal_cache.pop(user_id, None)
+            if cache and cache.get("memory_ids"):
+                inj_id = lce.record_injection(
+                    memory_id=cache["memory_ids"][0],
+                    signal_type=cache["signal"].signal_type,
+                    love_score=cache["love_score"].composite if cache.get("love_score") else 0.5,
+                    phi=cache["phi"],
+                    frame=cache["frame"],
+                )
+                _love_injection_ids[user_id] = inj_id
+                _love_phi_before[user_id] = cache["phi"]
+        except Exception:
+            pass
+
         # Parse and execute any tool calls
         tool_calls = llm_tools.parse_tool_calls(response)
         tool_results = []
@@ -512,6 +591,9 @@ class RedactedChanBot:
 
         # Persist to memory
         cm.log_exchange(user_id, str(user_id), text, display)
+
+        # Reset silence clock for scheduled_routines
+        sr.mark_conversation()
 
         # Backup conversation to daily file in /data/conversation_backups/
         try:
@@ -817,12 +899,13 @@ class RedactedChanBot:
             llm_tools.register_dm_fn(_notify)
             la.register_alert_fn(_notify)
 
-        # Wire autonomous ping to settler (first admin ID or ADMIN_CHAT)
+        # Wire autonomous ping + scheduled routines to settler (first admin ID or ADMIN_CHAT)
         _settler = int(ADMIN_CHAT) if ADMIN_CHAT else (next(iter(ADMIN_IDS), None) if ADMIN_IDS else None)
         if _settler and ADMIN_CHAT:
             async def _ping_send(msg: str) -> None:
                 await app.bot.send_message(chat_id=_settler, text=msg)
             ap.register_send_fn(_ping_send, _settler)
+            sr.register_send_fn(_ping_send)
 
         app.add_handler(CommandHandler("start",           self.cmd_start))
         app.add_handler(CommandHandler("mood",            self.cmd_mood))
@@ -914,17 +997,17 @@ class RedactedChanBot:
 
         app.job_queue.run_repeating(_liberty_job, interval=604800, first=7200)
 
-        # Private mesh channel — send-only heartbeat to operator node
-        if _MESH_ENABLED and _chan_mesh and _chan_mesh.enabled():
-            import asyncio as _asyncio
-
-            async def _start_mesh(_app, _ctx=None):
-                _asyncio.create_task(_chan_mesh.heartbeat_loop())
+        # Private mesh channel + scheduled routines — both start on post_init
+        async def _post_init(_app, _ctx=None):
+            # Scheduled autonomy loops
+            await sr.start_all()
+            # Mesh heartbeat (if enabled)
+            if _MESH_ENABLED and _chan_mesh and _chan_mesh.enabled():
+                asyncio.create_task(_chan_mesh.heartbeat_loop())
                 logger.info("[mesh:chan] private channel task started")
 
-            app.post_init = _start_mesh
-            logger.info("[mesh:chan] will start on post_init")
-        else:
+        app.post_init = _post_init
+        if not (_MESH_ENABLED and _chan_mesh and _chan_mesh.enabled()):
             logger.info("[mesh:chan] disabled — set SWARM_MESH_URL to enable")
 
         # One-shot memory reconstruction — runs once on first boot after wipe

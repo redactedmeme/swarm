@@ -330,6 +330,25 @@ def create_default_goals_if_missing() -> None:
     create_initial_goals_file()
 
 
+def get_stale_goals(days: int = 7) -> list[dict]:
+    """
+    Return active goals that have had no signals in the last `days` days.
+    Used by scheduled_routines to detect decaying goals.
+    """
+    try:
+        import conversation_memory as cm
+        goals = cm.get_active_goals(limit=20)
+        stale = []
+        for goal in goals:
+            signals = cm.get_goal_signals(goal["id"], days=days)
+            if not signals:
+                stale.append(goal)
+        return stale
+    except Exception as e:
+        logger.warning(f"[goals] get_stale_goals failed: {e}")
+        return []
+
+
 def load_goals_from_file() -> list[Goal]:
     """
     Parse GOALS.md and return list of active Goal objects.

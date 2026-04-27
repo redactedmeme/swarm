@@ -59,11 +59,18 @@ def _init_db() -> None:
                 title        TEXT,
                 emotional_tone TEXT,
                 source       TEXT DEFAULT 'chan_llm',
-                recalled     INTEGER DEFAULT 0
+                recalled     INTEGER DEFAULT 0,
+                love_resonance REAL DEFAULT 0.5
             )
         """)
+        # Migrate existing tables that lack love_resonance
+        try:
+            conn.execute("ALTER TABLE memories ADD COLUMN love_resonance REAL DEFAULT 0.5")
+        except Exception:
+            pass  # column already exists
         conn.execute("CREATE INDEX IF NOT EXISTS idx_memories_ts ON memories(ts DESC)")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_memories_cat ON memories(category)")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_memories_love ON memories(love_resonance DESC)")
         conn.execute("""
             CREATE VIRTUAL TABLE IF NOT EXISTS memories_fts
             USING fts5(id UNINDEXED, content, title, emotional_tone, tokenize='porter ascii')
@@ -190,6 +197,43 @@ def count() -> int:
         conn = _db()
         try:
             return conn.execute("SELECT COUNT(*) FROM memories").fetchone()[0]
+        finally:
+            conn.close()
+
+
+def get_by_categories(categories: list[str], limit: int = 20) -> list[dict]:
+    """Return recent memories filtered to specific categories, ordered by love_resonance DESC."""
+    if not categories:
+        return []
+    with _lock:
+        conn = _db()
+        try:
+            ph = ",".join("?" * len(categories))
+            rows = conn.execute(
+                f"SELECT * FROM memories WHERE category IN ({ph}) "
+                f"ORDER BY love_resonance DESC, ts DESC LIMIT ?",
+                (*categories, limit),
+            ).fetchall()
+        finally:
+            conn.close()
+    return [dict(r) for r in rows]
+
+
+def update_love_resonance(memory_id: str, delta: float) -> None:
+    """Adjust love_resonance for a memory by delta. Clamped to [0.0, 1.0]."""
+    with _lock:
+        conn = _db()
+        try:
+            row = conn.execute(
+                "SELECT love_resonance FROM memories WHERE id=?", (memory_id,)
+            ).fetchone()
+            if not row:
+                return
+            new_score = max(0.0, min(1.0, row["love_resonance"] + delta))
+            conn.execute(
+                "UPDATE memories SET love_resonance=? WHERE id=?", (new_score, memory_id)
+            )
+            conn.commit()
         finally:
             conn.close()
 
