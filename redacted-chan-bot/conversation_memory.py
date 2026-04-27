@@ -21,6 +21,7 @@ import threading
 import uuid
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
+from typing import Optional
 
 import database_encryption as db_enc
 
@@ -131,6 +132,20 @@ CREATE TABLE IF NOT EXISTS seed_expansion_log (
 );
 CREATE INDEX IF NOT EXISTS idx_expansion_seed ON seed_expansion_log(seed_id);
 CREATE INDEX IF NOT EXISTS idx_expansion_ts ON seed_expansion_log(expanded_ts DESC);
+
+CREATE TABLE IF NOT EXISTS last_seen (
+    user_id                 INTEGER PRIMARY KEY,
+    ts                      TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS session_summaries (
+    id                      TEXT PRIMARY KEY,
+    user_id                 INTEGER NOT NULL,
+    ts                      TEXT NOT NULL,
+    summary                 TEXT NOT NULL,
+    exchange_count          INTEGER DEFAULT 0
+);
+CREATE INDEX IF NOT EXISTS idx_sessions_user ON session_summaries(user_id, ts DESC);
 """
 
 # ── DB helpers ────────────────────────────────────────────────────────────────
@@ -342,6 +357,77 @@ def log_exchange(user_id: int, username: str, user_msg: str, bot_reply: str) -> 
         text = MEMORY_FILE.read_text(encoding="utf-8") if MEMORY_FILE.exists() else _HEADER
         text = _prune(text + entry)
         MEMORY_FILE.write_text(text, encoding="utf-8")
+    update_last_seen(user_id)
+
+
+def update_last_seen(user_id: int) -> None:
+    """Track the timestamp of the most recent exchange per user."""
+    with _db_lock:
+        conn = _db()
+        try:
+            conn.execute(
+                "INSERT OR REPLACE INTO last_seen (user_id, ts) VALUES (?, ?)",
+                (user_id, _now_iso()),
+            )
+            conn.commit()
+        finally:
+            conn.close()
+
+
+def get_last_seen(user_id: int) -> Optional[datetime]:
+    """Return datetime of last exchange for user, or None."""
+    with _db_lock:
+        conn = _db()
+        try:
+            row = conn.execute(
+                "SELECT ts FROM last_seen WHERE user_id=?", (user_id,)
+            ).fetchone()
+        finally:
+            conn.close()
+    if not row:
+        return None
+    try:
+        ts = datetime.fromisoformat(row["ts"])
+        if ts.tzinfo is None:
+            ts = ts.replace(tzinfo=timezone.utc)
+        return ts
+    except Exception:
+        return None
+
+
+def store_session_summary(user_id: int, summary: str, exchange_count: int = 0) -> None:
+    """Store a session summary for injection into future prompts."""
+    sid = "ss_" + uuid.uuid4().hex[:10]
+    with _db_lock:
+        conn = _db()
+        try:
+            conn.execute(
+                "INSERT INTO session_summaries (id, user_id, ts, summary, exchange_count) VALUES (?,?,?,?,?)",
+                (sid, user_id, _now_iso(), summary.strip()[:800], exchange_count),
+            )
+            # Keep only 10 most recent summaries per user
+            conn.execute(
+                "DELETE FROM session_summaries WHERE user_id=? AND id NOT IN "
+                "(SELECT id FROM session_summaries WHERE user_id=? ORDER BY ts DESC LIMIT 10)",
+                (user_id, user_id),
+            )
+            conn.commit()
+        finally:
+            conn.close()
+
+
+def get_session_summaries(user_id: int, n: int = 3) -> list[dict]:
+    """Return n most recent session summaries for a user."""
+    with _db_lock:
+        conn = _db()
+        try:
+            rows = conn.execute(
+                "SELECT * FROM session_summaries WHERE user_id=? ORDER BY ts DESC LIMIT ?",
+                (user_id, n),
+            ).fetchall()
+        finally:
+            conn.close()
+    return [dict(r) for r in rows]
 
 
 def get_recent(n: int = 10) -> str:

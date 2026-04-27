@@ -14,7 +14,7 @@ Never committed to git. Never logged externally.
 import sqlite3
 import threading
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from pathlib import Path
 from typing import Optional
 
@@ -158,14 +158,66 @@ def search(query: str, limit: int = 5) -> list[dict]:
     return [dict(r) for r in rows]
 
 
-def get_for_prompt(n: int = 6) -> str:
+def _relevance_score(memory: dict, query: str, now: datetime) -> float:
     """
-    Return a formatted block of recent memories for injection into system prompt.
-    Marks recalled memories so they don't dominate every conversation.
+    Score a vault memory for relevance to the current message.
+    Combines keyword overlap, love_resonance, and recency.
+    Inspired by Holographic trust-scoring + Honcho query-length heuristics.
     """
-    rows = get_recent(n)
+    # Recency: half-life ~20 days
+    try:
+        ts = datetime.fromisoformat(memory["ts"].replace("Z", "+00:00"))
+        if ts.tzinfo is None:
+            ts = ts.replace(tzinfo=timezone.utc)
+        days_old = max(0, (now - ts).total_seconds() / 86400)
+    except Exception:
+        days_old = 30
+    recency = 1.0 / (1.0 + days_old * 0.05)
+
+    # Love resonance — learned signal of which memories actually land
+    love = float(memory.get("love_resonance", 0.5))
+
+    # Keyword overlap (Jaccard) between query and memory text
+    overlap = 0.0
+    if query:
+        q_words = set(query.lower().split())
+        m_text = (memory.get("content", "") + " " + memory.get("title", "")).lower()
+        m_words = set(m_text.split())
+        if q_words and m_words:
+            overlap = len(q_words & m_words) / max(1, len(q_words | m_words))
+            overlap = min(1.0, overlap * 4)  # amplify small matches
+
+    # Composite: relevance 35%, love 35%, recency 30%
+    return overlap * 0.35 + love * 0.35 + recency * 0.30
+
+
+def get_for_prompt(n: int = 6, query: str = "") -> str:
+    """
+    Return a formatted block of memories scored by relevance to current message.
+    When query is provided, fetches a broad candidate pool and ranks by relevance
+    (keyword overlap + love_resonance + recency) instead of pure recency.
+    """
+    # Fetch broader candidate pool so ranking has something to work with
+    pool_size = max(n * 5, 40)
+    with _lock:
+        conn = _db()
+        try:
+            rows = conn.execute(
+                "SELECT * FROM memories ORDER BY ts DESC LIMIT ?", (pool_size,)
+            ).fetchall()
+        finally:
+            conn.close()
+
     if not rows:
         return ""
+
+    rows = [dict(r) for r in rows]
+
+    if query:
+        now = datetime.now(timezone.utc)
+        rows = sorted(rows, key=lambda m: _relevance_score(m, query, now), reverse=True)
+
+    rows = rows[:n]
 
     lines = []
     for r in rows:
