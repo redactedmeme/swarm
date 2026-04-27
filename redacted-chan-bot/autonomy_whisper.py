@@ -45,7 +45,7 @@ _DATA_DIR.mkdir(parents=True, exist_ok=True)
 DB_PATH = _DATA_DIR / "whispers.db"
 _lock   = threading.Lock()
 
-SOUL_PATH = Path(__file__).resolve().parent / "SOUL.md"
+SOUL_PATH = _DATA_DIR / "SOUL.md"
 
 
 # ── DB ─────────────────────────────────────────────────────────────────────────
