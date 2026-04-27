@@ -907,6 +907,10 @@ class RedactedChanBot:
             ap.register_send_fn(_ping_send, _settler)
             sr.register_send_fn(_ping_send)
 
+            async def _llm_ping(messages: list) -> str:
+                return await self.llm.chat_completion_with_fallback(messages, max_tokens=120)
+            ap.register_llm_fn(_llm_ping)
+
         app.add_handler(CommandHandler("start",           self.cmd_start))
         app.add_handler(CommandHandler("mood",            self.cmd_mood))
         app.add_handler(CommandHandler("soul",            self.cmd_soul))
