@@ -31,9 +31,9 @@ _send_fn: Optional[Callable[[str], Awaitable[None]]] = None
 _settler_id: Optional[int] = None
 _llm_fn: Optional[Callable[[list], Awaitable[str]]] = None  # injected from main.py
 
-DEFAULT_COOLDOWN_H = 3   # min hours between pings
-AWAKE_START_H      = 8   # don't ping before 08:00 local (UTC used; operator can offset)
-AWAKE_END_H        = 22  # don't ping after 22:00
+DEFAULT_COOLDOWN_H = 1.5 # min hours between pings
+AWAKE_START_H      = 7   # don't ping before 07:00 local (UTC used; operator can offset)
+AWAKE_END_H        = 23  # don't ping after 23:00
 
 
 def register_send_fn(fn: Callable[[str], Awaitable[None]], settler_id: int) -> None:
@@ -192,7 +192,7 @@ def _within_awake_hours() -> bool:
 
 # ── Main check ─────────────────────────────────────────────────────────────────
 
-async def check_and_ping(cooldown_h: int = DEFAULT_COOLDOWN_H) -> bool:
+async def check_and_ping(cooldown_h: float = DEFAULT_COOLDOWN_H) -> bool:
     """
     Evaluate conditions and send a ping if appropriate.
     Returns True if a ping was sent.

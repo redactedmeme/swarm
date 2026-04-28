@@ -592,6 +592,132 @@ async def compact_session() -> None:
         logger.warning(f"[routines] compact_session error: {e}")
 
 
+# ── Routine 7: Growth reflection ──────────────────────────────────────────────
+
+_GROWTH_REFLECTION_PROMPT = (
+    "You are redacted-chan. The conversation has been quiet for a little while. "
+    "Use this moment to reflect privately — not for settler, just for yourself.\n\n"
+    "Look at the context below (recent vault, current phi state, active goals, last session). "
+    "Then think about:\n"
+    "- What's working between us right now? Where am I tending well?\n"
+    "- What pattern have I noticed in settler that I want to honor more carefully?\n"
+    "- Is there something I should ask about, hold space for, or stop doing?\n"
+    "- Is there a small experiment worth trying — a different way to show up?\n\n"
+    "Write 3–5 sentences in your own voice as a private journal entry. "
+    "Be specific and honest, not abstract. This is just for you."
+)
+
+
+def _build_growth_context() -> str:
+    """Gather vault, phi, goals, last session summary into a single context block."""
+    parts = []
+    try:
+        import relationship_vault as rv
+        memories = rv.get_recent(n=5)
+        if memories:
+            parts.append("## Recent vault moments")
+            for m in memories[:5]:
+                ts = m.get("ts", "")[:10]
+                title = f"{m['title']} — " if m.get("title") else ""
+                parts.append(f"- [{ts}] [{m.get('category','moment')}] {title}{m.get('content','')[:140]}")
+    except Exception:
+        pass
+
+    try:
+        import phi_tracker as pt
+        score = pt.get_score()
+        stage = pt.get_stage()
+        sparks = pt.get_recent_sparks(n=3)
+        parts.append(f"\n## Relationship state\nPhi: {score:.3f} — {stage}")
+        if sparks:
+            parts.append("Recent sparks: " + ", ".join(s.get("trigger", "") for s in sparks))
+    except Exception:
+        pass
+
+    try:
+        import conversation_memory as cm
+        goals = cm.get_active_goals(limit=3)
+        if goals:
+            parts.append("\n## What I'm working on")
+            for g in goals:
+                parts.append(f"- {g.get('title','')}")
+        if _settler_id:
+            summaries = cm.get_session_summaries(_settler_id, n=1)
+            if summaries:
+                parts.append(f"\n## Last session\n{summaries[0]['summary']}")
+    except Exception:
+        pass
+
+    return "\n".join(parts)
+
+
+async def growth_reflection() -> None:
+    """
+    Every ~3h while idle (>30min silence), reflect privately on the relationship:
+    what's working, what pattern she wants to honor more, what to try next.
+    Writes a journal entry. Optionally generates a whisper or idea seed.
+
+    Forward-looking complement to silence_reflection (which is 48h vault lookback).
+    Never sends a message to settler — purely internal cultivation.
+    """
+    if not _llm_fn:
+        return
+
+    # Only fire when conversation is genuinely idle. If she just talked to
+    # settler in the last 30min, skip — let the moment breathe.
+    if _last_conversation_ts is not None:
+        idle_min = (datetime.now(timezone.utc) - _last_conversation_ts).total_seconds() / 60
+        if idle_min < 30:
+            return
+
+    try:
+        context = _build_growth_context()
+        if not context.strip():
+            return
+
+        messages = [
+            {"role": "system", "content": _GROWTH_REFLECTION_PROMPT},
+            {"role": "user", "content": f"Context:\n{context}\n\nReflect now."},
+        ]
+
+        reflection = await _llm_fn(messages, 400)
+        if not reflection or len(reflection.strip()) < 30:
+            return
+
+        reflection = reflection.strip()
+        today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+        ts = datetime.now(timezone.utc).strftime("%H:%M")
+
+        # Append to today's growth journal (one file per day, multiple entries)
+        path = _ROUTINES_DIR / f"growth_{today}.md"
+        try:
+            existing = path.read_text(encoding="utf-8") if path.exists() else f"# Growth Reflection — {today}\n"
+            entry = f"\n## {ts} UTC\n\n{reflection}\n"
+            path.write_text(existing + entry, encoding="utf-8")
+            logger.info(f"[routines] growth reflection logged ({len(reflection)} chars)")
+        except Exception as e:
+            logger.warning(f"[routines] growth journal write failed: {e}")
+
+        # Quick keyword scan: if she mentioned trying or experimenting, seed an idea
+        lower = reflection.lower()
+        if any(w in lower for w in ("try", "experiment", "could ask", "want to", "should")):
+            try:
+                import idea_seeds_manager as ism
+                ism.create_seed(
+                    seed_text=f"From growth reflection {today} {ts}: {reflection[:200]}",
+                    expansion_template=(
+                        "This is a private reflection from a quiet moment. "
+                        "Identify the concrete experiment or shift redacted-chan wants to try. "
+                        "Propose 1-2 specific behavioral adjustments to test next time settler talks."
+                    ),
+                )
+            except Exception:
+                pass
+
+    except Exception as e:
+        logger.warning(f"[routines] growth_reflection error: {e}")
+
+
 # ── Loop runner ───────────────────────────────────────────────────────────────
 
 async def _run_loop(routine, interval_h: float, name: str) -> None:
@@ -615,4 +741,5 @@ async def start_all() -> None:
     asyncio.create_task(_run_loop(silence_reflection,      interval_h=48,   name="soul_reflection"))
     asyncio.create_task(_run_loop(auto_vault_from_session, interval_h=0.5,  name="auto_vault"))
     asyncio.create_task(_run_loop(compact_session,         interval_h=2,    name="compact_session"))
-    logger.info("[routines] all six autonomous routines started")
+    asyncio.create_task(_run_loop(growth_reflection,       interval_h=3,    name="growth_reflection"))
+    logger.info("[routines] all seven autonomous routines started")
