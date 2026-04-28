@@ -1004,7 +1004,7 @@ class RedactedChanBot:
 
         app.job_queue.run_repeating(_whisper_job, interval=21600, first=3600)
 
-        # Autonomous ping — every 3-6h (random first offset, then fixed interval)
+        # Autonomous ping — checks every ~60min (cooldown still gates actual sends)
         import random as _random
         async def _ping_job(ctx: ContextTypes.DEFAULT_TYPE) -> None:
             try:
@@ -1014,8 +1014,8 @@ class RedactedChanBot:
 
         app.job_queue.run_repeating(
             _ping_job,
-            interval=_random.randint(10800, 21600),
-            first=_random.randint(3600, 7200),
+            interval=_random.randint(3300, 4500),  # 55-75min
+            first=_random.randint(900, 1800),       # 15-30min after startup
         )
 
         # Liberty audit — weekly, alert operator if any check fails
