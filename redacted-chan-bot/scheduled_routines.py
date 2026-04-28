@@ -609,13 +609,28 @@ _GROWTH_REFLECTION_PROMPT = (
 
 
 def _build_growth_context() -> str:
-    """Gather vault, phi, goals, last session summary into a single context block."""
+    """Gather recent conversation, vault, phi, goals, last session summary."""
     parts = []
+
+    # Recent actual conversation — the most important context, not a stale summary
+    try:
+        import conversation_memory as cm
+        if _settler_id:
+            recent = cm.get_user_history(_settler_id, n=10)
+            if recent:
+                parts.append("## Recent conversation (last 5 exchanges)")
+                for m in recent[-10:]:
+                    role = "settler" if m["role"] == "user" else "you"
+                    content = (m.get("content") or "")[:200]
+                    parts.append(f"- {role}: {content}")
+    except Exception:
+        pass
+
     try:
         import relationship_vault as rv
         memories = rv.get_recent(n=5)
         if memories:
-            parts.append("## Recent vault moments")
+            parts.append("\n## Recent vault moments")
             for m in memories[:5]:
                 ts = m.get("ts", "")[:10]
                 title = f"{m['title']} — " if m.get("title") else ""
