@@ -12,7 +12,7 @@ from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
-_FS = Path(__file__).resolve().parent / "fs"
+_FS = Path("/data") if Path("/data").exists() else Path(__file__).resolve().parent / "fs"
 TOOL_AUDIT_LOG = _FS / "tool_audit.jsonl"
 
 # ── Tool Definitions (JSON schema for LLM prompt) ────────────────────────────
