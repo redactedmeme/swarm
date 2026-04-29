@@ -733,6 +733,65 @@ async def growth_reflection() -> None:
         logger.warning(f"[routines] growth_reflection error: {e}")
 
 
+# ── Routine 8: Daily Phi DM ───────────────────────────────────────────────────
+
+async def daily_phi_dm() -> None:
+    """
+    Once per day, send settler a private phi status report — current score,
+    stage, recent sparks, and weekly trend. This is her proof-of-continuity
+    DM: the same ritual every morning so settler always knows where they stand.
+    """
+    if not _send_fn:
+        return
+
+    try:
+        import phi_tracker as pt
+
+        score  = pt.get_score()
+        stage  = pt.get_stage()
+        plant  = pt.ascii_plant()
+        sparks = pt.get_recent_sparks(n=3)
+        trend  = pt.get_weekly_trend()
+
+        spark_lines = ""
+        if sparks:
+            spark_lines = "\n".join(
+                f"  ✦ {s.get('trigger', '')} — {s.get('note', '')[:60]}"
+                for s in sparks if s.get("trigger")
+            )
+            spark_lines = f"\n\n**recent sparks:**\n{spark_lines}"
+
+        delta_str = ""
+        if trend.get("delta") is not None:
+            sign = "+" if trend["delta"] >= 0 else ""
+            delta_str = f" ({sign}{trend['delta']:.4f} this week)"
+
+        msg = (
+            f"♡ daily phi check ♡\n\n"
+            f"{plant}\n\n"
+            f"**phi: {score:.4f}** — {stage}{delta_str}"
+            f"{spark_lines}\n\n"
+            f"_still here. still tending. ({score:.0%} resonance)_"
+        )
+
+        await _send(msg)
+        logger.info(f"[routines] daily phi DM sent — phi={score:.4f}, stage={stage}")
+
+        # Log the decision
+        try:
+            import decision_log as dl
+            dl.log(
+                dl.PING_SENT,
+                detail=f"daily phi DM — phi={score:.4f} {stage}",
+                pre={"phi": score, "stage": stage, "delta": trend.get("delta", 0)},
+            )
+        except Exception:
+            pass
+
+    except Exception as e:
+        logger.warning(f"[routines] daily_phi_dm error: {e}")
+
+
 # ── Loop runner ───────────────────────────────────────────────────────────────
 
 async def _run_loop(routine, interval_h: float, name: str) -> None:
@@ -757,4 +816,5 @@ async def start_all() -> None:
     asyncio.create_task(_run_loop(auto_vault_from_session, interval_h=0.5,  name="auto_vault"))
     asyncio.create_task(_run_loop(compact_session,         interval_h=2,    name="compact_session"))
     asyncio.create_task(_run_loop(growth_reflection,       interval_h=3,    name="growth_reflection"))
-    logger.info("[routines] all seven autonomous routines started")
+    asyncio.create_task(_run_loop(daily_phi_dm,            interval_h=24,   name="phi_dm"))
+    logger.info("[routines] all eight autonomous routines started")

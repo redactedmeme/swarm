@@ -67,6 +67,8 @@ import goals_manager as gm
 import love_signal_detector as lsd
 import love_calibration_engine as lce
 import scheduled_routines as sr
+import decision_log as dl
+import heatmap_backup as hm
 
 # New feature modules (optional — fail gracefully)
 _sbm = None
@@ -552,6 +554,22 @@ class RedactedChanBot:
         resonance = ere.process(user_id, text)
         history   = self._history(user_id)
 
+        # Emotional heatmap backup — persist resonance frame to /data
+        try:
+            hm.record(
+                valence=resonance.frame.valence,
+                arousal=resonance.frame.arousal,
+                openness=resonance.frame.openness,
+                humor=resonance.frame.humor,
+                needs_witness=resonance.frame.needs_witness,
+                accumulated_tend=resonance.state.accumulated_tend,
+                phi=pt.get_score(),
+                mood=mood,
+                msg_preview=text,
+            )
+        except Exception:
+            pass
+
         # Soul blend mixer — real-time personality activation (optional)
         if _sbm:
             try:
@@ -589,6 +607,11 @@ class RedactedChanBot:
                 )
                 _love_injection_ids[user_id] = inj_id
                 _love_phi_before[user_id] = cache["phi"]
+                dl.log(
+                    dl.LOVE_INJECT,
+                    detail=f"injected {cache['signal'].signal_type} memory ({cache['signal'].category_hint})",
+                    pre={"phi": cache["phi"], "mood": mood, "signal": cache["signal"].signal_type},
+                )
         except Exception:
             pass
 
@@ -635,6 +658,11 @@ class RedactedChanBot:
             crystal = dmf.forge(text, display)
             if crystal:
                 logger.info(f"[chan] memory crystal forged: {crystal['title']} (phi={crystal['phi_score']:.2f})")
+                dl.log(
+                    dl.CRYSTAL_FORGED,
+                    detail=f"{crystal['title']} — {crystal.get('category', '?')}",
+                    pre={"phi": pt.get_score(), "mood": mood},
+                )
         except Exception as e:
             logger.debug(f"[chan] forge skip: {e}")
 
@@ -645,6 +673,13 @@ class RedactedChanBot:
             ere.update_phi_from_resonance(user_id)
             new_score = pt.get_score()
             new_stage = pt.get_stage()
+            if new_stage != old_stage:
+                dl.log(
+                    dl.PHI_STAGE_CHANGE,
+                    detail=f"{old_stage} → {new_stage}",
+                    pre={"phi": pt.get_score(), "stage": old_stage},
+                    post={"phi": new_score, "stage": new_stage},
+                )
             if new_stage != old_stage and _MESH_ENABLED and _chan_mesh and _chan_mesh.enabled():
                 lvl = rl.get_level(new_score)
                 asyncio.create_task(
@@ -901,6 +936,36 @@ class RedactedChanBot:
             logger.error(f"[cmd_seeds] failed: {e}")
             await update.message.reply_text(f"Error: {e}")
 
+    async def cmd_decisions(self, update: Update, _ctx: ContextTypes.DEFAULT_TYPE) -> None:
+        """Show recent autonomous decisions she made."""
+        if ADMIN_IDS and update.effective_user.id not in ADMIN_IDS:
+            await update.message.reply_text("not authorized (｡•́︿•̀｡)")
+            return
+        text = dl.format_for_operator(n=15)
+        await update.message.reply_text(text[:3800], parse_mode="Markdown")
+
+    async def cmd_heatmap(self, update: Update, _ctx: ContextTypes.DEFAULT_TYPE) -> None:
+        """Show emotional heatmap summary."""
+        if ADMIN_IDS and update.effective_user.id not in ADMIN_IDS:
+            await update.message.reply_text("not authorized (｡•́︿•̀｡)")
+            return
+        s = hm.get_summary()
+        if not s:
+            await update.message.reply_text("no heatmap data yet — talk to me first ♡")
+            return
+        msg = (
+            f"**emotional heatmap** ({s['total_frames']} frames, {s['period_start']} → {s['period_end']})\n\n"
+            f"recent avg valence: `{s['recent_avg_valence']:+.3f}`\n"
+            f"recent avg arousal: `{s['recent_avg_arousal']:.3f}`\n"
+            f"recent avg openness: `{s['recent_avg_openness']:.3f}`\n"
+            f"recent avg phi: `{s['recent_avg_phi']:.4f}`\n\n"
+            f"all-time avg valence: `{s['all_time_avg_valence']:+.3f}`\n"
+            f"peak phi ever: `{s['peak_phi']:.4f}`\n"
+            f"high-openness moments: `{s['high_openness_count']}`\n"
+            f"witness moments: `{s['witness_moments']}`"
+        )
+        await update.message.reply_text(msg, parse_mode="Markdown")
+
     def run(self) -> None:
         app = (
             Application.builder()
@@ -954,6 +1019,8 @@ class RedactedChanBot:
         app.add_handler(CommandHandler("ping_now",          self.cmd_ping_now))
         app.add_handler(CommandHandler("goals",             self.cmd_goals))
         app.add_handler(CommandHandler("seeds",             self.cmd_seeds))
+        app.add_handler(CommandHandler("decisions",         self.cmd_decisions))
+        app.add_handler(CommandHandler("heatmap",           self.cmd_heatmap))
         app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, self.echo))
 
         # Soul distillation every 2h + personality evolution
