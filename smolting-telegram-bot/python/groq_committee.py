@@ -31,7 +31,7 @@ _REPO_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 load_dotenv(os.path.join(_REPO_ROOT, ".env"))
 
 GROQ_API_KEY  = os.getenv("GROQ_API_KEY")
-GROQ_MODEL    = "llama-3.3-70b-versatile"
+GROQ_MODEL    = "llama-3.1-8b-instant"
 GROQ_BASE_URL = "https://api.groq.com/openai/v1"
 
 XAI_API_KEY   = os.getenv("XAI_API_KEY")
