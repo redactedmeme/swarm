@@ -972,7 +972,7 @@ class RedactedChanBot:
                 await app.bot.send_message(chat_id=_settler, text=msg)
             ap.register_send_fn(_ping_send, _settler)
             sr.register_send_fn(_ping_send)
-            sr.register_settler_id(_settler)
+            sr.register_master_id(_settler)
 
             async def _llm_ping(messages: list) -> str:
                 return await self.llm.chat_completion_with_fallback(messages, max_tokens=120)
