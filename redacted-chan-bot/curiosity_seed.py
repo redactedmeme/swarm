@@ -1,6 +1,6 @@
 # redacted-chan-bot/curiosity_seed.py
 """
-Curiosity Seed — she generates questions she genuinely wants to ask settler.
+Curiosity Seed — she generates questions she genuinely wants to ask master.
 
 Runs every 5h. Pulls recent vault entries + top facts, asks the LLM to surface
 one real question grounded in something specific. Stored in /data/pending_questions.jsonl.

@@ -35,7 +35,7 @@ TOOL_AUDIT_LOG = _FS / "tool_audit.jsonl"
 TOOL_SCHEMAS = [
     {
         "name": "fetch_vault_memories",
-        "description": "Recall memories from your private relationship vault (moments, patterns, jokes, feelings about settler)",
+        "description": "Recall memories from your private relationship vault (moments, patterns, jokes, feelings about master)",
         "parameters": {
             "type": "object",
             "properties": {

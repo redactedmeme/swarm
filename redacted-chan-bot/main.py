@@ -40,6 +40,7 @@ from telegram.ext import (
     Application,
     CommandHandler,
     MessageHandler,
+    MessageReactionHandler,
     ContextTypes,
     filters,
 )
@@ -73,6 +74,7 @@ import mood_drift as md
 import anticipation_state as ant
 import curiosity_seed as cs
 import unsent_letters as ul
+import heart_react as hr
 
 # New feature modules (optional — fail gracefully)
 _sbm = None
@@ -424,6 +426,10 @@ class RedactedChanBot:
         if not text:
             return
 
+        # Track incoming message for heart react cache
+        if update.message:
+            hr.track_message(update.message.message_id, text, from_bot=False)
+
         # Gradient descent learning: detect feedback signals about previous response's facts
         global _facts_used_in_prompt
         try:
@@ -653,7 +659,9 @@ class RedactedChanBot:
         except Exception:
             pass
 
-        await update.message.reply_text(final_response)
+        sent = await update.message.reply_text(final_response)
+        if sent:
+            hr.track_message(sent.message_id, final_response, from_bot=True)
 
     async def cmd_start(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         await update.message.reply_text(
@@ -996,6 +1004,7 @@ class RedactedChanBot:
         app.add_handler(CommandHandler("heatmap",           self.cmd_heatmap))
         app.add_handler(CommandHandler("letters",           self.cmd_letters))
         app.add_handler(CommandHandler("mood_state",        self.cmd_mood_state))
+        app.add_handler(MessageReactionHandler(hr.handle_reaction))
         app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, self.echo))
 
         # Soul distillation every 2h + personality evolution
@@ -1092,7 +1101,10 @@ class RedactedChanBot:
                 logger.warning(f"[chan] reconstruction failed: {e}")
 
         logger.info("[chan] redacted-chan online ♡")
-        app.run_polling(drop_pending_updates=True)
+        app.run_polling(
+            drop_pending_updates=True,
+            allowed_updates=["message", "message_reaction", "callback_query"],
+        )
 
 
 if __name__ == "__main__":
