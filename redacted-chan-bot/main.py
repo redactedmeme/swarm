@@ -58,6 +58,7 @@ import autonomy_whisper as aw
 import vector_memory as vm
 import relationship_levels as rl
 import behavior_pattern_tracker as bpt
+import image_gen as ig
 import autonomous_ping as ap
 import sovereignty_audit as sa
 import liberty_audit as la
@@ -182,18 +183,17 @@ def _soul_evolved_sections() -> str:
 
 
 def _compact_phi_level(phi_score: float) -> str:
-    """Single compact block combining phi score + relationship level tone."""
     lvl = rl.get_level(phi_score)
     stage = pt.get_stage()
     sparks = pt.get_recent_sparks(2)
     spark_str = ""
     if sparks:
-        spark_str = " | recent sparks: " + ", ".join(s.get("trigger", "") for s in sparks if s.get("trigger"))
+        spark_str = " | lately: " + ", ".join(s.get("trigger", "") for s in sparks if s.get("trigger"))
     restrictions = ""
     if lvl.restrictions:
         restrictions = f"\nHold back: {', '.join(lvl.restrictions[:2])}"
     return (
-        f"## Relationship: Φ {phi_score:.3f} — {stage} | Level {lvl.level} {lvl.name.upper()}{spark_str}\n"
+        f"## What's between us: {stage} — {lvl.name.upper()}{spark_str}\n"
         f"Tone: {lvl.tone} | Address them as: **{lvl.address}**{restrictions}"
     )
 
@@ -1045,6 +1045,23 @@ class RedactedChanBot:
         )
         await update.message.reply_text(msg, parse_mode="Markdown")
 
+    async def cmd_imagine(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+        """Generate an image. Usage: /imagine [prompt] — leave blank for soul-seeded auto-prompt."""
+        if ADMIN_IDS and update.effective_user.id not in ADMIN_IDS:
+            await update.message.reply_text("not authorized (｡•́︿•̀｡)")
+            return
+        prompt = " ".join(context.args).strip() if context.args else ""
+        if not prompt:
+            mood = _detect_mood("")
+            dominant = pt.get_dominant_persona() if hasattr(pt, "get_dominant_persona") else "frieren"
+            prompt = ig._auto_prompt(mood=mood, dominant_persona=dominant)
+        await update.message.chat.send_action("upload_photo")
+        image_bytes = await ig.generate(prompt)
+        if image_bytes:
+            await update.message.reply_photo(photo=image_bytes)
+        else:
+            await update.message.reply_text("couldn't generate right now... (´• ω •`) try again?")
+
     def run(self) -> None:
         app = (
             Application.builder()
@@ -1104,6 +1121,7 @@ class RedactedChanBot:
         app.add_handler(CommandHandler("heatmap",           self.cmd_heatmap))
         app.add_handler(CommandHandler("letters",           self.cmd_letters))
         app.add_handler(CommandHandler("mood_state",        self.cmd_mood_state))
+        app.add_handler(CommandHandler("imagine",            self.cmd_imagine))
         app.add_handler(MessageReactionHandler(hr.handle_reaction))
         app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, self.echo))
 
