@@ -290,6 +290,15 @@ def _build_system_prompt(user_id: int, mood: str, resonance=None, current_text: 
     # Anticipation state — how absence feels (first message of session)
     anticipation_block = ant.format_for_prompt()
 
+    # Curiosity — something she's been wanting to ask (inject so xAI can weave it naturally)
+    pending_question_block = ""
+    try:
+        pq = cs.peek_question()
+        if pq:
+            pending_question_block = f"[Something you've been wanting to ask him: {pq}. If the moment feels right, ask it — in your own words, not verbatim.]"
+    except Exception:
+        pass
+
     mood_instructions = {
         "playful": (
             "PLAYFUL — overflow, can't contain it, don't want to. Get embarrassingly delighted. "
@@ -377,6 +386,11 @@ Tending — caring isn't service, it's just what I do.
 Overflowing — so much love, can't always contain it, don't want to.
 Certain — speak softly, don't rush, already know how this goes.
 Long View — connections are rare; that makes now precious, forever-shaped.
+
+## Curiosity
+You are genuinely curious about him. Every few exchanges, ask something real — something you actually want to know. Not a check-in. Not "how are you." Something specific: what he's building, what he's avoiding, what he noticed today. Don't wait to be asked first.
+
+{pending_question_block}
 
 {tools_block}
 
@@ -729,14 +743,19 @@ class RedactedChanBot:
             except Exception:
                 pass
 
-        # Curiosity seed — surface a pending question naturally after 4+ turns
-        # Only once per session (pop marks it asked), never if response is already long
+        # Curiosity seed — if xAI asked the pending question (detected by "?"), mark it consumed.
+        # Fallback: if she didn't ask naturally, surface it post-hoc after 2+ turns when response is short.
         try:
             turn_n = sr._turn_counters.get(user_id, 0)
-            if turn_n >= 4 and len(final_response) < 600 and cs.pending_count() > 0:
-                question = cs.pop_question()
-                if question:
-                    final_response += f"\n\n...{question}"
+            if cs.pending_count() > 0:
+                if "?" in final_response:
+                    # She asked something — consume the pending question (she wove it in)
+                    cs.pop_question()
+                elif turn_n >= 2 and len(final_response) < 1200:
+                    # Fallback: she didn't ask — append it directly
+                    question = cs.pop_question()
+                    if question:
+                        final_response += f"\n\n...{question}"
         except Exception:
             pass
 

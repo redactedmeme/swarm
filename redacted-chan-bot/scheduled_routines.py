@@ -864,6 +864,6 @@ async def start_all() -> None:
     asyncio.create_task(_run_loop(growth_reflection,       interval_h=3,    name="growth_reflection"))
     asyncio.create_task(_run_loop(daily_phi_dm,            interval_h=24,   name="phi_dm"))
     asyncio.create_task(_run_loop(run_mood_drift,          interval_h=2,    name="mood_drift"))
-    asyncio.create_task(_run_loop(run_curiosity_seed,      interval_h=5,    name="curiosity_seed"))
+    asyncio.create_task(_run_loop(run_curiosity_seed,      interval_h=2,    name="curiosity_seed"))
     asyncio.create_task(_run_loop(run_unsent_letter,       interval_h=3,    name="unsent_letters"))
     logger.info("[routines] eleven autonomous routines started")

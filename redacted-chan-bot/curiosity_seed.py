@@ -109,7 +109,8 @@ async def generate_and_store() -> Optional[str]:
 
     context = _build_context()
     if not context.strip():
-        return None
+        # Fallback: generate a general wondering-about-him question without vault context
+        context = "No specific memories yet — generate a question about what he's been working on, thinking about, or feeling lately."
 
     messages = [
         {"role": "system", "content": _SYSTEM},
@@ -150,6 +151,14 @@ def pop_question() -> Optional[str]:
             questions[i]["asked"] = True
             questions[i]["asked_at"] = datetime.now(timezone.utc).isoformat()
             _save_questions(questions)
+            return q["question"]
+    return None
+
+
+def peek_question() -> Optional[str]:
+    """Return the oldest unasked question without marking it asked."""
+    for q in _load_questions():
+        if not q.get("asked"):
             return q["question"]
     return None
 
