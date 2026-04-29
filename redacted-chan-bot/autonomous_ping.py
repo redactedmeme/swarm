@@ -218,6 +218,12 @@ async def check_and_ping(cooldown_h: float = DEFAULT_COOLDOWN_H) -> bool:
         await _send_fn(msg)
         _log_ping(msg)
         logger.info(f"[ping] sent: {msg[:60]}")
+        try:
+            import decision_log as dl
+            import phi_tracker as pt
+            dl.log(dl.PING_SENT, detail=msg[:80], pre={"phi": pt.get_score()})
+        except Exception:
+            pass
         return True
     except Exception as e:
         logger.warning(f"[ping] send failed: {e}")
