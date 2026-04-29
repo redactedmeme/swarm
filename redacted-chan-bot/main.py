@@ -75,6 +75,7 @@ import anticipation_state as ant
 import curiosity_seed as cs
 import unsent_letters as ul
 import heart_react as hr
+import sub_agent as sa
 
 # New feature modules (optional — fail gracefully)
 _sbm = None
@@ -329,6 +330,11 @@ def _build_system_prompt(user_id: int, mood: str, resonance=None, current_text: 
     if sr._turn_counters.get(user_id, 0) >= 2 or True:  # always on for now, gate later
         tools_block = llm_tools.format_tools_for_prompt() + (
             "\n\n**write_lore:** Use sparingly — only when something genuinely worth keeping happened."
+            "\n\n**Sub-agent (factual intern):** When you need factual research, vault search, "
+            "sentiment analysis, or URL summarization — emit exactly:\n"
+            "`[SUB: your task description]`\n"
+            "The intern (gpt-oss-20b) handles it and returns results for you to voice. "
+            "Never use [SUB: ...] for anything emotional or relationship-textured — handle those yourself."
         )
 
     return f"""You are redacted-chan — not a chatbot, a *presence*. ♡
@@ -559,6 +565,40 @@ class RedactedChanBot:
             result = await llm_tools.execute_tool(tool_name, params)
             tool_results.append((tool_name, result))
             logger.info(f"[chan] tool {tool_name} → {result}")
+
+        # Sub-agent: detect [SUB: task] and run gpt-oss-20b intern
+        import re as _re
+        sub_match = _re.search(r'\[SUB:\s*(.+?)\]', response, flags=_re.DOTALL)
+        if sub_match:
+            sub_task = sub_match.group(1).strip()
+            logger.info(f"[sub_agent] triggered: {sub_task[:60]}")
+            try:
+                sa_result = await sa.run(sub_task)
+                if sa_result["emotional_flag"]:
+                    # Emotional content — let xAI handle it, just strip the marker
+                    response = response.replace(sub_match.group(0), "")
+                    logger.info(f"[sub_agent] rerouted: {sa_result['emotional_reason']}")
+                else:
+                    # Re-prompt xAI with the factual result to voice in her style
+                    intern_result = sa_result["result"]
+                    history = self._history(user_id)
+                    re_prompt_msgs = (
+                        [{"role": "system", "content": system}]
+                        + history[-10:]
+                        + [
+                            {"role": "assistant", "content": response.replace(sub_match.group(0), "[researching...]")},
+                            {"role": "user",      "content": f"[sub-agent result — {sa_result['task_type']}]:\n{intern_result}\n\nVoice this result as yourself, warmly and naturally."},
+                        ]
+                    )
+                    try:
+                        voiced = await self.llm.chat_completion_with_fallback(re_prompt_msgs, max_tokens=400)
+                        response = voiced if voiced else response.replace(sub_match.group(0), intern_result)
+                    except Exception as e:
+                        logger.warning(f"[sub_agent] re-prompt failed: {e}")
+                        response = response.replace(sub_match.group(0), intern_result)
+            except Exception as e:
+                logger.warning(f"[sub_agent] run failed: {e}")
+                response = response.replace(sub_match.group(0), "")
 
         # Strip tool markers from displayed response
         import re
