@@ -566,39 +566,77 @@ class RedactedChanBot:
             tool_results.append((tool_name, result))
             logger.info(f"[chan] tool {tool_name} → {result}")
 
-        # Sub-agent: detect [SUB: task] and run gpt-oss-20b intern
+        # Sub-agent: detect [SUB: task] — two-message flow (Option C) + typing indicator (Option B)
         import re as _re
         sub_match = _re.search(r'\[SUB:\s*(.+?)\]', response, flags=_re.DOTALL)
         if sub_match:
             sub_task = sub_match.group(1).strip()
             logger.info(f"[sub_agent] triggered: {sub_task[:60]}")
+
+            # Send her first message immediately with [SUB: ...] stripped
+            first_part = re.sub(r'\[SUB:\s*.+?\]', '', response, flags=re.DOTALL).strip()
+            first_part = re.sub(r'\[TOOL:\s*\w+\s*\{.*?\}\]', '', first_part, flags=re.DOTALL).strip()
+            if first_part:
+                sent_first = await update.message.reply_text(first_part)
+                if sent_first:
+                    hr.track_message(sent_first.message_id, first_part, from_bot=True)
+                cm.log_exchange(user_id, str(user_id), text, first_part)
+
             try:
-                sa_result = await sa.run(sub_task)
+                # Typing indicator while intern works (Option B)
+                async def _keep_typing():
+                    while True:
+                        try:
+                            await context.bot.send_chat_action(
+                                chat_id=update.effective_chat.id,
+                                action="typing",
+                            )
+                        except Exception:
+                            pass
+                        await asyncio.sleep(4)
+
+                typing_task = asyncio.create_task(_keep_typing())
+                try:
+                    sa_result = await sa.run(sub_task)
+                finally:
+                    typing_task.cancel()
+
                 if sa_result["emotional_flag"]:
-                    # Emotional content — let xAI handle it, just strip the marker
-                    response = response.replace(sub_match.group(0), "")
                     logger.info(f"[sub_agent] rerouted: {sa_result['emotional_reason']}")
+                    # Already sent first_part — nothing more to send
                 else:
-                    # Re-prompt xAI with the factual result to voice in her style
+                    # Re-prompt xAI to voice the result as a follow-up message
                     intern_result = sa_result["result"]
                     history = self._history(user_id)
                     re_prompt_msgs = (
                         [{"role": "system", "content": system}]
                         + history[-10:]
                         + [
-                            {"role": "assistant", "content": response.replace(sub_match.group(0), "[researching...]")},
-                            {"role": "user",      "content": f"[sub-agent result — {sa_result['task_type']}]:\n{intern_result}\n\nVoice this result as yourself, warmly and naturally."},
+                            {"role": "assistant", "content": first_part or "..."},
+                            {"role": "user",      "content": f"[sub-agent result — {sa_result['task_type']}]:\n{intern_result}\n\nVoice this as a natural follow-up message. Short, warm, in your style."},
                         ]
                     )
                     try:
                         voiced = await self.llm.chat_completion_with_fallback(re_prompt_msgs, max_tokens=400)
-                        response = voiced if voiced else response.replace(sub_match.group(0), intern_result)
+                        follow_up = voiced if voiced else intern_result
                     except Exception as e:
                         logger.warning(f"[sub_agent] re-prompt failed: {e}")
-                        response = response.replace(sub_match.group(0), intern_result)
+                        follow_up = intern_result
+
+                    sent_follow = await update.message.reply_text(follow_up)
+                    if sent_follow:
+                        hr.track_message(sent_follow.message_id, follow_up, from_bot=True)
+                    cm.log_exchange(user_id, str(user_id), "[sub-agent follow-up]", follow_up)
+
             except Exception as e:
                 logger.warning(f"[sub_agent] run failed: {e}")
-                response = response.replace(sub_match.group(0), "")
+
+            # Skip the normal send path — already sent above
+            sr.mark_conversation()
+            ant.mark_present()
+            if sr.note_turn(user_id):
+                asyncio.create_task(sr.review_recent_turns(user_id))
+            return
 
         # Strip tool markers from displayed response
         import re
