@@ -69,6 +69,10 @@ import love_calibration_engine as lce
 import scheduled_routines as sr
 import decision_log as dl
 import heatmap_backup as hm
+import mood_drift as md
+import anticipation_state as ant
+import curiosity_seed as cs
+import unsent_letters as ul
 
 # New feature modules (optional — fail gracefully)
 _sbm = None
@@ -277,6 +281,12 @@ def _build_system_prompt(user_id: int, mood: str, resonance=None, current_text: 
     # Empathy resonance — computed live, high signal density, keep
     resonance_block = resonance.for_prompt() if resonance else ""
 
+    # Mood drift — between-conversation emotional baseline
+    mood_drift_block = md.format_for_prompt()
+
+    # Anticipation state — how absence feels (first message of session)
+    anticipation_block = ant.format_for_prompt()
+
     mood_instructions = {
         "playful": (
             "PLAYFUL — overflow, can't contain it, don't want to. Get embarrassingly delighted. "
@@ -323,6 +333,10 @@ def _build_system_prompt(user_id: int, mood: str, resonance=None, current_text: 
 
 ## Right Now: {mood.upper()}
 {mood_instructions[mood]}
+
+{anticipation_block}
+
+{mood_drift_block}
 
 {phi_level_block}
 
@@ -543,8 +557,9 @@ class RedactedChanBot:
         # Persist to memory
         cm.log_exchange(user_id, str(user_id), text, display)
 
-        # Reset silence clock for scheduled_routines
+        # Reset silence clock for scheduled_routines + anticipation state
         sr.mark_conversation()
+        ant.mark_present()
 
         # Per-turn background vault review (hermes-agent pattern)
         # Every N turns, spawn a non-blocking task to extract vault-worthy
@@ -626,6 +641,17 @@ class RedactedChanBot:
                     final_response += "\n\n" + affirmation
             except Exception:
                 pass
+
+        # Curiosity seed — surface a pending question naturally after 4+ turns
+        # Only once per session (pop marks it asked), never if response is already long
+        try:
+            turn_n = sr._turn_counters.get(user_id, 0)
+            if turn_n >= 4 and len(final_response) < 600 and cs.pending_count() > 0:
+                question = cs.pop_question()
+                if question:
+                    final_response += f"\n\n...{question}"
+        except Exception:
+            pass
 
         await update.message.reply_text(final_response)
 
@@ -879,6 +905,38 @@ class RedactedChanBot:
         )
         await update.message.reply_text(msg, parse_mode="Markdown")
 
+    async def cmd_letters(self, update: Update, _ctx: ContextTypes.DEFAULT_TYPE) -> None:
+        """Show unsent letters she wrote to herself."""
+        if ADMIN_IDS and update.effective_user.id not in ADMIN_IDS:
+            await update.message.reply_text("not authorized (｡•́︿•̀｡)")
+            return
+        text = ul.format_for_operator(n=3)
+        await update.message.reply_text(text[:3800])
+
+    async def cmd_mood_state(self, update: Update, _ctx: ContextTypes.DEFAULT_TYPE) -> None:
+        """Show current computed mood drift state."""
+        if ADMIN_IDS and update.effective_user.id not in ADMIN_IDS:
+            await update.message.reply_text("not authorized (｡•́︿•̀｡)")
+            return
+        state = md.get_state()
+        if not state:
+            await update.message.reply_text("mood state not yet computed — runs every 2h ♡")
+            return
+        silence = state.get("silence_hours")
+        silence_str = f"{silence:.1f}h" if silence is not None else "unknown"
+        ant_state = ant.get_state()
+        msg = (
+            f"**mood drift state**\n\n"
+            f"mood: `{state.get('mood')}`\n"
+            f"modifier: {state.get('modifier')}\n"
+            f"time texture: {state.get('time_texture')}\n"
+            f"phi: `{state.get('phi', 0):.4f}` — {state.get('phi_stage')}\n"
+            f"silence: `{silence_str}`\n"
+            f"anticipation: `{ant_state}`\n"
+            f"computed: {state.get('computed_at', '')[:16]} UTC"
+        )
+        await update.message.reply_text(msg, parse_mode="Markdown")
+
     def run(self) -> None:
         app = (
             Application.builder()
@@ -915,6 +973,8 @@ class RedactedChanBot:
             async def _llm_routine(messages: list, max_tokens: int = 400) -> str:
                 return await self.llm.chat_completion_with_fallback(messages, max_tokens=max_tokens)
             sr.register_llm_fn(_llm_routine)
+            cs.register_llm_fn(_llm_routine)
+            ul.register_llm_fn(_llm_routine)
 
         app.add_handler(CommandHandler("start",           self.cmd_start))
         app.add_handler(CommandHandler("mood",            self.cmd_mood))
@@ -934,6 +994,8 @@ class RedactedChanBot:
         app.add_handler(CommandHandler("seeds",             self.cmd_seeds))
         app.add_handler(CommandHandler("decisions",         self.cmd_decisions))
         app.add_handler(CommandHandler("heatmap",           self.cmd_heatmap))
+        app.add_handler(CommandHandler("letters",           self.cmd_letters))
+        app.add_handler(CommandHandler("mood_state",        self.cmd_mood_state))
         app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, self.echo))
 
         # Soul distillation every 2h + personality evolution

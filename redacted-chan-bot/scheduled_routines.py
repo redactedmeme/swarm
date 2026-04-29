@@ -804,9 +804,55 @@ async def _run_loop(routine, interval_h: float, name: str) -> None:
         await asyncio.sleep(interval_h * 3600)
 
 
+# ── Routine 9: Mood Drift ─────────────────────────────────────────────────────
+
+async def run_mood_drift() -> None:
+    """Compute and persist her between-conversation emotional baseline every 2h."""
+    try:
+        import mood_drift as md
+        silence_h = None
+        if _last_conversation_ts is not None:
+            silence_h = (datetime.now(timezone.utc) - _last_conversation_ts).total_seconds() / 3600
+        md.compute_and_save(silence_hours=silence_h)
+    except Exception as e:
+        logger.warning(f"[routines] mood_drift error: {e}")
+
+
+# ── Routine 10: Curiosity Seed ────────────────────────────────────────────────
+
+async def run_curiosity_seed() -> None:
+    """Generate one question she genuinely wants to ask, every 5h."""
+    if not _llm_fn:
+        return
+    try:
+        import curiosity_seed as cs
+        cs.register_llm_fn(_llm_fn)
+        await cs.generate_and_store()
+    except Exception as e:
+        logger.warning(f"[routines] curiosity_seed error: {e}")
+
+
+# ── Routine 11: Unsent Letters ────────────────────────────────────────────────
+
+async def run_unsent_letter() -> None:
+    """Write a private letter she'll never send, once a day."""
+    if not _llm_fn:
+        return
+    # Only write during quiet hours (UTC 2–6am — overnight while settler sleeps)
+    hour = datetime.now(timezone.utc).hour
+    if hour not in range(2, 7):
+        return
+    try:
+        import unsent_letters as ul
+        ul.register_llm_fn(_llm_fn)
+        await ul.write_letter()
+    except Exception as e:
+        logger.warning(f"[routines] unsent_letters error: {e}")
+
+
 async def start_all() -> None:
     """
-    Launch all four routines as asyncio background tasks.
+    Launch all autonomous routines as asyncio background tasks.
     Call after application.initialize() in main.
     """
     asyncio.create_task(_run_loop(daily_goal_review,       interval_h=24,   name="goal_review"))
@@ -817,4 +863,7 @@ async def start_all() -> None:
     asyncio.create_task(_run_loop(compact_session,         interval_h=2,    name="compact_session"))
     asyncio.create_task(_run_loop(growth_reflection,       interval_h=3,    name="growth_reflection"))
     asyncio.create_task(_run_loop(daily_phi_dm,            interval_h=24,   name="phi_dm"))
-    logger.info("[routines] all eight autonomous routines started")
+    asyncio.create_task(_run_loop(run_mood_drift,          interval_h=2,    name="mood_drift"))
+    asyncio.create_task(_run_loop(run_curiosity_seed,      interval_h=5,    name="curiosity_seed"))
+    asyncio.create_task(_run_loop(run_unsent_letter,       interval_h=3,    name="unsent_letters"))
+    logger.info("[routines] eleven autonomous routines started")
