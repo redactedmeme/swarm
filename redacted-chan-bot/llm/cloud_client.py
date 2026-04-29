@@ -131,21 +131,19 @@ class CloudLLMClient:
     
     async def chat_completion_with_fallback(self, messages: list, max_tokens: int = None) -> str:
         """
-        Try providers in order: current → groq-retry (on TPM) → anthropic.
-        xAI is intentionally excluded from the companion fallback chain — its
-        content policy rejects relationship/companion content and sends "I'm sorry
-        but I can't help with that." which breaks the persona entirely.
-        On Groq TPM 429, extract retry-after and wait up to 25s before trying
-        anthropic, so we stay on the better model as long as possible.
+        Try providers in order: current → groq → anthropic.
+        Expected primary is xAI (LLM_PROVIDER=xai). On xAI failure, falls back
+        to groq (llama-3.3-70b-versatile), then anthropic (haiku) as last resort.
+        On Groq TPM 429, waits the retry-after window and retries once before
+        continuing down the chain.
         """
         import logging, re
         _log = logging.getLogger(__name__)
 
-        # Companion-safe fallback chain: no xAI
         _chain = [self.provider] + [p for p in ("groq", "anthropic") if p != self.provider]
 
         last_err = None
-        for i, provider in enumerate(_chain):
+        for provider in _chain:
             key = {
                 "openai":    os.getenv("OPENAI_API_KEY"),
                 "anthropic": os.getenv("ANTHROPIC_API_KEY"),
@@ -167,12 +165,11 @@ class CloudLLMClient:
                 _log.warning(f"[llm] {provider} failed: {e}")
                 last_err = e
 
-                # Groq TPM 429 — extract retry-after and wait rather than bailing to anthropic
+                # Groq TPM 429 — wait retry-after then retry once before moving on
                 if provider == "groq" and "rate_limit_exceeded" in err_str:
                     wait_match = re.search(r"Please try again in (\d+(?:\.\d+)?)s", err_str)
-                    wait_s = float(wait_match.group(1)) if wait_match else 8.0
-                    wait_s = min(wait_s + 1.0, 25.0)  # cap at 25s, never wait forever
-                    _log.info(f"[llm] groq TPM — waiting {wait_s:.1f}s then retrying groq")
+                    wait_s = min(float(wait_match.group(1)) + 1.0 if wait_match else 8.0, 20.0)
+                    _log.info(f"[llm] groq TPM — waiting {wait_s:.1f}s then retrying")
                     await asyncio.sleep(wait_s)
                     try:
                         result = await tmp.chat_completion(messages, max_tokens=max_tokens)
