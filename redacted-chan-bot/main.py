@@ -574,8 +574,8 @@ class RedactedChanBot:
             logger.info(f"[sub_agent] triggered: {sub_task[:60]}")
 
             # Send her first message immediately with [SUB: ...] stripped
-            first_part = re.sub(r'\[SUB:\s*.+?\]', '', response, flags=re.DOTALL).strip()
-            first_part = re.sub(r'\[TOOL:\s*\w+\s*\{.*?\}\]', '', first_part, flags=re.DOTALL).strip()
+            first_part = _re.sub(r'\[SUB:\s*.+?\]', '', response, flags=_re.DOTALL).strip()
+            first_part = _re.sub(r'\[TOOL:\s*\w+\s*\{.*?\}\]', '', first_part, flags=_re.DOTALL).strip()
             if first_part:
                 sent_first = await update.message.reply_text(first_part)
                 if sent_first:
@@ -639,8 +639,7 @@ class RedactedChanBot:
             return
 
         # Strip tool markers from displayed response
-        import re
-        display = re.sub(r'\[TOOL:\s*\w+\s*\{.*?\}\]', '', response, flags=re.DOTALL).strip()
+        display = _re.sub(r'\[TOOL:\s*\w+\s*\{.*?\}\]', '', response, flags=_re.DOTALL).strip()
 
         # Persist to memory
         cm.log_exchange(user_id, str(user_id), text, display)
