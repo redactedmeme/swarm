@@ -2,17 +2,12 @@ FROM python:3.11-slim
 
 WORKDIR /app
 
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    libsqlcipher-dev \
+    && rm -rf /var/lib/apt/lists/*
+
 COPY requirements.txt .
-RUN pip install --no-cache-dir \
-    "python-telegram-bot[webhooks,job-queue]==20.7" \
-    "aiohttp==3.9.1" \
-    "requests==2.31.0" \
-    "python-dotenv==1.0.0" \
-    "pyyaml>=6.0" \
-    "openai>=1.6.1" \
-    "groq>=0.4.0" \
-    "redis>=5.0.0" \
-    "chromadb>=0.4.0"
+RUN pip install --no-cache-dir -r requirements.txt
 
 COPY . .
 
