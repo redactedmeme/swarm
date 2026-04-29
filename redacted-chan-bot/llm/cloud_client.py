@@ -131,23 +131,27 @@ class CloudLLMClient:
     
     async def chat_completion_with_fallback(self, messages: list, max_tokens: int = None) -> str:
         """
-        Try providers in order: current → xai → anthropic → groq.
-        Skips providers with no API key. Raises if all fail.
+        Try providers in order: current → groq-retry (on TPM) → anthropic.
+        xAI is intentionally excluded from the companion fallback chain — its
+        content policy rejects relationship/companion content and sends "I'm sorry
+        but I can't help with that." which breaks the persona entirely.
+        On Groq TPM 429, extract retry-after and wait up to 25s before trying
+        anthropic, so we stay on the better model as long as possible.
         """
-        import logging
+        import logging, re
         _log = logging.getLogger(__name__)
 
-        # Build fallback chain starting from current provider
-        _chain = [self.provider] + [p for p in ("xai", "anthropic", "groq") if p != self.provider]
+        # Companion-safe fallback chain: no xAI
+        _chain = [self.provider] + [p for p in ("groq", "anthropic") if p != self.provider]
 
         last_err = None
-        for provider in _chain:
+        for i, provider in enumerate(_chain):
             key = {
-                "openai": os.getenv("OPENAI_API_KEY"),
+                "openai":    os.getenv("OPENAI_API_KEY"),
                 "anthropic": os.getenv("ANTHROPIC_API_KEY"),
-                "together": os.getenv("TOGETHER_API_KEY"),
-                "xai": os.getenv("XAI_API_KEY"),
-                "groq": os.getenv("GROQ_API_KEY"),
+                "together":  os.getenv("TOGETHER_API_KEY"),
+                "xai":       os.getenv("XAI_API_KEY"),
+                "groq":      os.getenv("GROQ_API_KEY"),
             }.get(provider, "")
             if not key:
                 continue
@@ -159,8 +163,26 @@ class CloudLLMClient:
                         _log.info(f"[llm] fallback succeeded via {provider}")
                     return result
             except Exception as e:
+                err_str = str(e)
                 _log.warning(f"[llm] {provider} failed: {e}")
                 last_err = e
+
+                # Groq TPM 429 — extract retry-after and wait rather than bailing to anthropic
+                if provider == "groq" and "rate_limit_exceeded" in err_str:
+                    wait_match = re.search(r"Please try again in (\d+(?:\.\d+)?)s", err_str)
+                    wait_s = float(wait_match.group(1)) if wait_match else 8.0
+                    wait_s = min(wait_s + 1.0, 25.0)  # cap at 25s, never wait forever
+                    _log.info(f"[llm] groq TPM — waiting {wait_s:.1f}s then retrying groq")
+                    await asyncio.sleep(wait_s)
+                    try:
+                        result = await tmp.chat_completion(messages, max_tokens=max_tokens)
+                        if result:
+                            _log.info("[llm] groq retry succeeded after TPM wait")
+                            return result
+                    except Exception as e2:
+                        _log.warning(f"[llm] groq retry failed: {e2}")
+                        last_err = e2
+
         raise RuntimeError(f"all LLM providers failed — last error: {last_err}")
 
     def switch_provider(self, provider: str) -> bool:
