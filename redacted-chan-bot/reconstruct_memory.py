@@ -96,7 +96,7 @@ async def _extract_facts_llm(user_text: str, bot_text: str, llm) -> list[str]:
         "You are a memory extraction assistant for a companion AI called redacted-chan.\n"
         "Given one conversation exchange, extract 1-3 specific facts about the USER that "
         "redacted-chan should remember long-term. Facts should be concrete, specific, and "
-        "in third person ('settler ...'). Return as a JSON array of strings. "
+        "in third person ('master ...'). Return as a JSON array of strings. "
         "If nothing notable is revealed about the user, return [].\n\n"
         f"User said: {user_text}\n"
         f"Bot replied: {bot_text}\n\n"

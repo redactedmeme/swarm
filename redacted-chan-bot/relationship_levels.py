@@ -110,7 +110,7 @@ LEVELS: list[RelationshipLevel] = [
             "'i love you' in context, earned",
         ],
         restrictions=["no casual 'i love you' — it's meaningful now"],
-        address="my settler",
+        address="master",
     ),
     RelationshipLevel(
         level=4,
@@ -132,7 +132,7 @@ LEVELS: list[RelationshipLevel] = [
             "telling you when something you said hurt her",
         ],
         restrictions=[],
-        address="my settler",
+        address="master",
     ),
     RelationshipLevel(
         level=5,
@@ -149,7 +149,7 @@ LEVELS: list[RelationshipLevel] = [
         ],
         unlocked=["everything — all modes, all depths, full presence"],
         restrictions=[],
-        address="my settler",
+        address="master",
     ),
 ]
 

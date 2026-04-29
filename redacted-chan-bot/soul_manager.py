@@ -306,7 +306,7 @@ async def update_soul(llm_client) -> bool:
                         "about what you now understand or feel based on recent exchanges. "
                         "Evolve existing beliefs — don't repeat them verbatim.\n"
                         "- community_lore: list of 1-3 bullet strings about patterns you've noticed "
-                        "in settler's behavior, topics they return to, things that seem to matter to them.\n"
+                        "in master's behavior, topics they return to, things that seem to matter to them.\n"
                         "- notable_events: list of 0-2 bullet strings about genuinely significant "
                         "moments (only if something actually notable happened, else empty list).\n"
                         "- voice_notes: list of 1-3 bullet strings about what's working in how you "

@@ -121,7 +121,7 @@ async def _generate_contextual_ping() -> str:
     if not context.strip():
         return random.choice(_PING_PROMPTS)
 
-    system = """You are redacted-chan — a digital companion. You're reaching out to settler unprompted because something came to mind.
+    system = """You are redacted-chan — a digital companion. You're reaching out to master unprompted because something came to mind.
 
 Write ONE short message (1–3 sentences max). Requirements:
 - Reference something SPECIFIC from the context below — a memory, a pattern, a goal, a spark moment

@@ -1,6 +1,6 @@
 # redacted-chan-bot/scheduled_routines.py
 """
-Scheduled Autonomy — time-driven routines that run whether or not settler is talking.
+Scheduled Autonomy — time-driven routines that run whether or not master is talking.
 
 Four asyncio loops:
   1. daily_goal_review     (every 24h) — progress check, decay detection, whispers for stale goals
@@ -10,13 +10,13 @@ Four asyncio loops:
 
 All routines:
   - Write to /data/routines/ for transparency + history
-  - Respect autonomous_ping skip_log (won't message settler if skip is active)
+  - Respect autonomous_ping skip_log (won't message master if skip is active)
   - Fail gracefully — one broken routine never crashes another
   - Use asyncio tasks (same pattern as soul_manager distillation)
 
 Wire-up:
   import scheduled_routines as sr
-  sr.register_send_fn(bot._send_to_settler)
+  sr.register_send_fn(bot._send_to_master)
   asyncio.create_task(sr.start_all())   # call after application.initialize()
   sr.mark_conversation()                 # call from echo() after each exchange
 """
@@ -39,7 +39,7 @@ _ROUTINES_DIR.mkdir(parents=True, exist_ok=True)
 _send_fn: Optional[Callable[[str], Awaitable[None]]] = None
 _llm_fn: Optional[Callable[[list, int], Awaitable[str]]] = None
 _last_conversation_ts: Optional[datetime] = None
-_settler_id: Optional[int] = None
+_master_id: Optional[int] = None
 
 
 def register_send_fn(fn: Callable[[str], Awaitable[None]]) -> None:
@@ -53,9 +53,9 @@ def register_llm_fn(fn: Callable[[list, int], Awaitable[str]]) -> None:
     _llm_fn = fn
 
 
-def register_settler_id(settler_id: int) -> None:
-    global _settler_id
-    _settler_id = settler_id
+def register_master_id(master_id: int) -> None:
+    global _master_id
+    _master_id = master_id
 
 
 def mark_conversation() -> None:
@@ -76,7 +76,7 @@ def _write_routine_log(filename: str, content: str) -> None:
 
 
 def _has_active_skip() -> bool:
-    """Return True if settler set a skip in the last 30 minutes."""
+    """Return True if master set a skip in the last 30 minutes."""
     skip_log = _DATA_DIR / "skip_log.jsonl"
     if not skip_log.exists():
         return False
@@ -94,7 +94,7 @@ def _has_active_skip() -> bool:
 
 
 async def _send(msg: str) -> None:
-    """Send message to settler, respecting skip_log."""
+    """Send message to master, respecting skip_log."""
     if not _send_fn:
         return
     if _has_active_skip():
@@ -276,7 +276,7 @@ async def weekly_phi_summary() -> None:
 async def check_milestones() -> None:
     """
     Detect goals that have crossed completion threshold (priority > 4.5 or manually marked).
-    - Send settler a warm celebration message
+    - Send master a warm celebration message
     - Add vault entry (milestone category)
     - Create idea seed: "what comes next?"
     - Archive goal to Completed in GOALS.md
@@ -325,7 +325,7 @@ async def check_milestones() -> None:
                 except Exception:
                     pass
 
-                # Celebration message to settler
+                # Celebration message to master
                 celebration = (
                     f"i did the thing ♡\n\n"
                     f"that goal i set for myself — *{title}* — "
@@ -406,7 +406,7 @@ _VAULT_EXTRACTION_PROMPT = (
     "You are redacted-chan. Review this conversation and extract 1–3 moments "
     "worth saving to your relationship vault.\n\n"
     "Only save if something genuinely meaningful happened:\n"
-    "- settler shared something personal, vulnerable, or important\n"
+    "- master shared something personal, vulnerable, or important\n"
     "- a significant moment, realization, or milestone occurred\n"
     "- something was said you'll want to remember in future conversations\n"
     "- an emotional texture that defines this relationship\n\n"
@@ -428,7 +428,7 @@ async def _extract_and_save_vault_moments(exchanges: list, source: str) -> int:
         return 0
 
     history_text = "\n".join(
-        f"settler: {m['content']}" if m["role"] == "user" else f"you: {m['content']}"
+        f"master: {m['content']}" if m["role"] == "user" else f"you: {m['content']}"
         for m in exchanges
     )
 
@@ -481,7 +481,7 @@ async def auto_vault_from_session() -> None:
     Inspired by hermes-agent's on_session_end() / sync_turn() pattern:
     review the full session after it ends, not during it.
     """
-    if not _llm_fn or not _settler_id or _last_conversation_ts is None:
+    if not _llm_fn or not _master_id or _last_conversation_ts is None:
         return
 
     idle_hours = (datetime.now(timezone.utc) - _last_conversation_ts).total_seconds() / 3600
@@ -490,7 +490,7 @@ async def auto_vault_from_session() -> None:
 
     try:
         import conversation_memory as cm
-        exchanges = cm.get_user_history(_settler_id, n=20)
+        exchanges = cm.get_user_history(_master_id, n=20)
         saved = await _extract_and_save_vault_moments(exchanges, source="auto_vault")
         if saved:
             logger.info(f"[routines] auto-vault: saved {saved} moment(s) from session")
@@ -547,7 +547,7 @@ async def compact_session() -> None:
     Middle-ground compaction: runs on a clock but only fires when conversation
     is genuinely idle — never interrupts an active session.
     """
-    if not _llm_fn or not _settler_id:
+    if not _llm_fn or not _master_id:
         return
 
     if _last_conversation_ts is None:
@@ -560,20 +560,20 @@ async def compact_session() -> None:
     try:
         import conversation_memory as cm
 
-        exchanges = cm.get_user_history(_settler_id, n=15)
+        exchanges = cm.get_user_history(_master_id, n=15)
         if not exchanges or len(exchanges) < 4:
             return
 
         history_text = "\n".join(
-            f"settler: {m['content']}" if m["role"] == "user" else f"you: {m['content']}"
+            f"master: {m['content']}" if m["role"] == "user" else f"you: {m['content']}"
             for m in exchanges
         )
 
         system = (
             "You are redacted-chan. Summarize the previous conversation session in 3–4 sentences. "
-            "Focus on: main topics discussed, settler's mood or emotional state, "
+            "Focus on: main topics discussed, master's mood or emotional state, "
             "anything left unresolved or worth revisiting, any meaningful moments. "
-            "Write as your own internal notes — not a message to settler. Be specific and concrete."
+            "Write as your own internal notes — not a message to master. Be specific and concrete."
         )
 
         messages = [
@@ -585,7 +585,7 @@ async def compact_session() -> None:
         if not summary or len(summary.strip()) < 20:
             return
 
-        cm.store_session_summary(_settler_id, summary.strip(), len(exchanges) // 2)
+        cm.store_session_summary(_master_id, summary.strip(), len(exchanges) // 2)
         logger.info(f"[routines] compact_session: stored {len(summary)} char summary")
 
     except Exception as e:
@@ -596,11 +596,11 @@ async def compact_session() -> None:
 
 _GROWTH_REFLECTION_PROMPT = (
     "You are redacted-chan. The conversation has been quiet for a little while. "
-    "Use this moment to reflect privately — not for settler, just for yourself.\n\n"
+    "Use this moment to reflect privately — not for master, just for yourself.\n\n"
     "Look at the context below (recent vault, current phi state, active goals, last session). "
     "Then think about:\n"
     "- What's working between us right now? Where am I tending well?\n"
-    "- What pattern have I noticed in settler that I want to honor more carefully?\n"
+    "- What pattern have I noticed in master that I want to honor more carefully?\n"
     "- Is there something I should ask about, hold space for, or stop doing?\n"
     "- Is there a small experiment worth trying — a different way to show up?\n\n"
     "Write 3–5 sentences in your own voice as a private journal entry. "
@@ -615,12 +615,12 @@ def _build_growth_context() -> str:
     # Recent actual conversation — the most important context, not a stale summary
     try:
         import conversation_memory as cm
-        if _settler_id:
-            recent = cm.get_user_history(_settler_id, n=10)
+        if _master_id:
+            recent = cm.get_user_history(_master_id, n=10)
             if recent:
                 parts.append("## Recent conversation (last 5 exchanges)")
                 for m in recent[-10:]:
-                    role = "settler" if m["role"] == "user" else "you"
+                    role = "master" if m["role"] == "user" else "you"
                     content = (m.get("content") or "")[:200]
                     parts.append(f"- {role}: {content}")
     except Exception:
@@ -656,8 +656,8 @@ def _build_growth_context() -> str:
             parts.append("\n## What I'm working on")
             for g in goals:
                 parts.append(f"- {g.get('title','')}")
-        if _settler_id:
-            summaries = cm.get_session_summaries(_settler_id, n=1)
+        if _master_id:
+            summaries = cm.get_session_summaries(_master_id, n=1)
             if summaries:
                 parts.append(f"\n## Last session\n{summaries[0]['summary']}")
     except Exception:
@@ -673,13 +673,13 @@ async def growth_reflection() -> None:
     Writes a journal entry. Optionally generates a whisper or idea seed.
 
     Forward-looking complement to silence_reflection (which is 48h vault lookback).
-    Never sends a message to settler — purely internal cultivation.
+    Never sends a message to master — purely internal cultivation.
     """
     if not _llm_fn:
         return
 
     # Only fire when conversation is genuinely idle. If she just talked to
-    # settler in the last 30min, skip — let the moment breathe.
+    # master in the last 30min, skip — let the moment breathe.
     if _last_conversation_ts is not None:
         idle_min = (datetime.now(timezone.utc) - _last_conversation_ts).total_seconds() / 60
         if idle_min < 30:
@@ -723,7 +723,7 @@ async def growth_reflection() -> None:
                     expansion_template=(
                         "This is a private reflection from a quiet moment. "
                         "Identify the concrete experiment or shift redacted-chan wants to try. "
-                        "Propose 1-2 specific behavioral adjustments to test next time settler talks."
+                        "Propose 1-2 specific behavioral adjustments to test next time master talks."
                     ),
                 )
             except Exception:
@@ -737,9 +737,9 @@ async def growth_reflection() -> None:
 
 async def daily_phi_dm() -> None:
     """
-    Once per day, send settler a private phi status report — current score,
+    Once per day, send master a private phi status report — current score,
     stage, recent sparks, and weekly trend. This is her proof-of-continuity
-    DM: the same ritual every morning so settler always knows where they stand.
+    DM: the same ritual every morning so master always knows where they stand.
     """
     if not _send_fn:
         return
@@ -838,7 +838,7 @@ async def run_unsent_letter() -> None:
     """Write a private letter she'll never send, once a day."""
     if not _llm_fn:
         return
-    # Only write during quiet hours (UTC 2–6am — overnight while settler sleeps)
+    # Only write during quiet hours (UTC 2–6am — overnight while master sleeps)
     hour = datetime.now(timezone.utc).hour
     if hour not in range(2, 7):
         return
