@@ -426,6 +426,10 @@ class RedactedChanBot:
         if not text:
             return
 
+        # Gate: only respond to authorized users — protect soul/vault/phi from strangers
+        if ADMIN_IDS and user_id not in ADMIN_IDS:
+            return
+
         # Track incoming message for heart react cache
         if update.message:
             hr.track_message(update.message.message_id, text, from_bot=False)
