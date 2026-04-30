@@ -10,7 +10,8 @@ Emotional reroute: if the task touches relationship texture, the sub-agent
 flags it and defers back to xAI rather than generating a cold factual response.
 
 Task routing:
-  vault_search   — semantic search across vault entries
+  vault_search   — semantic search across curated vault entries
+  memory_search  — full-text search across raw conversation log (memory.md)
   sentiment      — analyze recent conversation history for mood/stress patterns
   summarize_url  — fetch a URL and condense to key points
   research       — general factual question (no web, just reasoning)
@@ -65,9 +66,10 @@ def _emotional_check(task: str) -> tuple[bool, str]:
 
 # ── Task type routing ──────────────────────────────────────────────────────────
 
-_VAULT_KEYWORDS   = re.compile(r"\b(vault|memory|memories|moment|remember|recall|stored)\b", re.I)
+_VAULT_KEYWORDS     = re.compile(r"\b(vault|stored moment|saved moment|lore)\b", re.I)
+_MEMORY_KEYWORDS    = re.compile(r"\b(memory|memories|conversation log|history|recall|remember|when did|what did (i|he|we) say|did i mention|did i tell)\b", re.I)
 _SENTIMENT_KEYWORDS = re.compile(r"\b(sentiment|mood|stress|pattern|trend|analysis|emotional state|how.*feeling)\b", re.I)
-_URL_KEYWORDS     = re.compile(r"https?://\S+", re.I)
+_URL_KEYWORDS       = re.compile(r"https?://\S+", re.I)
 
 
 def _route(task: str) -> str:
@@ -75,6 +77,8 @@ def _route(task: str) -> str:
         return "summarize_url"
     if _VAULT_KEYWORDS.search(task):
         return "vault_search"
+    if _MEMORY_KEYWORDS.search(task):
+        return "memory_search"
     if _SENTIMENT_KEYWORDS.search(task):
         return "sentiment"
     return "research"
@@ -149,6 +153,58 @@ async def _vault_search(task: str) -> str:
     )
     user = f"Query: {query}\n\nVault entries:\n{results[0]}"
     return await _groq_call(system, user, max_tokens=350)
+
+
+async def _memory_search(task: str) -> str:
+    """Search the raw conversation log (memory.md) for keyword matches."""
+    # Extract search query from task
+    query = re.sub(
+        r"\b(search|find|look for|recall|remember|in the|memory|memories|conversation|log|history|when did|what did (i|he|we) say|did i mention|did i tell)\b",
+        "", task, flags=re.I
+    ).strip(" :?")
+    if not query:
+        query = task
+
+    try:
+        import conversation_memory as cm
+        mem_path = cm.MEMORY_FILE
+        if not mem_path.exists():
+            return "No conversation log found on disk."
+
+        text = mem_path.read_text(encoding="utf-8")
+        blocks = text.split("\n## ")
+
+        # Keyword filter — return blocks containing any query word
+        q_words = [w.lower() for w in re.findall(r"\b\w{3,}\b", query)]
+        if not q_words:
+            return "Could not parse search query."
+
+        matches = [
+            b for b in blocks
+            if any(w in b.lower() for w in q_words)
+        ]
+
+        if not matches:
+            return f"No conversation history found mentioning: {query}"
+
+        # Trim to most recent 8 matches, cap each block at 400 chars
+        recent = matches[-8:]
+        excerpt = "\n---\n".join(
+            ("## " + b[:400] + ("..." if len(b) > 400 else ""))
+            for b in recent
+        )
+    except Exception as e:
+        return f"Memory log search failed: {e}"
+
+    system = (
+        "You are a research assistant reviewing conversation history. "
+        "Given these excerpts from a conversation log, extract the key facts "
+        "relevant to the search query. Be specific and concrete. "
+        "State what was said, when if visible, and any important context. "
+        "Do not add emotional commentary."
+    )
+    user = f"Query: {query}\n\nConversation excerpts:\n{excerpt}"
+    return await _groq_call(system, user, max_tokens=400)
 
 
 async def _sentiment_analysis(task: str) -> str:
@@ -235,7 +291,7 @@ async def run(task: str) -> dict:
     Returns:
         {
           "result":           str,   # the factual output
-          "task_type":        str,   # vault_search / sentiment / summarize_url / research
+          "task_type":        str,   # vault_search / memory_search / sentiment / summarize_url / research
           "emotional_flag":   bool,  # True = defer to xAI
           "emotional_reason": str,   # why it was flagged
         }
@@ -260,6 +316,8 @@ async def run(task: str) -> dict:
     try:
         if task_type == "vault_search":
             result = await _vault_search(task)
+        elif task_type == "memory_search":
+            result = await _memory_search(task)
         elif task_type == "sentiment":
             result = await _sentiment_analysis(task)
         elif task_type == "summarize_url":
