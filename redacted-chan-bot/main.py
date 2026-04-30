@@ -227,8 +227,11 @@ def _build_system_prompt(user_id: int, mood: str, resonance=None, current_text: 
         pass
     facts_block = ""
     if raw_facts:
-        facts_lines = [f.get("fact", f.get("content", "")) for f in raw_facts if f]
-        facts_block = "## What I Remember About You\n" + "\n".join(f"- {f}" for f in facts_lines if f)
+        facts_lines = [
+            f"[{f['ts'][:10]}] {f.get('fact', f.get('content', ''))}"
+            for f in raw_facts if f and f.get("fact", f.get("content", ""))
+        ]
+        facts_block = "## What I Remember About You\n" + "\n".join(f"- {f}" for f in facts_lines)
 
     # Relationship vault — 3 relevance-retrieved entries
     vault_block = ""
