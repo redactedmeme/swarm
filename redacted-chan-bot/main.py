@@ -59,6 +59,7 @@ import vector_memory as vm
 import relationship_levels as rl
 import behavior_pattern_tracker as bpt
 import image_gen as ig
+import fact_extractor as fe
 import autonomous_ping as ap
 import sovereignty_audit as sa
 import liberty_audit as la
@@ -658,6 +659,9 @@ class RedactedChanBot:
         # Persist to memory
         cm.log_exchange(user_id, str(user_id), text, display)
 
+        # Extract persistent facts from this exchange (fire-and-forget, never blocks)
+        asyncio.create_task(fe.extract_and_store(user_id, text, display))
+
         # Reset silence clock for scheduled_routines + anticipation state
         sr.mark_conversation()
         ant.mark_present()
@@ -1100,6 +1104,7 @@ class RedactedChanBot:
             sr.register_llm_fn(_llm_routine)
             cs.register_llm_fn(_llm_routine)
             ul.register_llm_fn(_llm_routine)
+            fe.register_llm_fn(_llm_routine)
 
         app.add_handler(CommandHandler("start",           self.cmd_start))
         app.add_handler(CommandHandler("mood",            self.cmd_mood))
