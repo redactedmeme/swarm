@@ -13,6 +13,7 @@ import logging
 from typing import Optional, Callable, Awaitable
 
 import conversation_memory as cm
+import vector_memory as vm
 
 logger = logging.getLogger(__name__)
 
@@ -80,8 +81,10 @@ async def extract_and_store(user_id: int, user_msg: str, bot_reply: str) -> None
         stored = 0
         for fact in facts[:3]:
             if fact and len(fact) > 8:
-                cm.append_fact(fact, source="fact_extractor")
-                stored += 1
+                fact_id = cm.append_fact(fact, source="fact_extractor")
+                if fact_id:
+                    vm.add_fact(fact_id, fact)
+                    stored += 1
 
         if stored:
             logger.info(f"[fact_extractor] stored {stored} fact(s) from exchange")

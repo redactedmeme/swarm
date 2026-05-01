@@ -141,3 +141,70 @@ def count() -> int:
         return _collection.count()
     except Exception:
         return 0
+
+
+# ── Facts semantic index ───────────────────────────────────────────────────────
+
+_facts_collection = None
+_facts_available = False
+
+
+def _init_facts() -> bool:
+    global _facts_collection, _facts_available
+    if _facts_available:
+        return True
+    try:
+        import chromadb
+        from chromadb.config import Settings
+        client = chromadb.PersistentClient(
+            path=_CHROMA_PATH,
+            settings=Settings(anonymized_telemetry=False),
+        )
+        _facts_collection = client.get_or_create_collection(
+            name="chan_facts",
+            metadata={"hnsw:space": "cosine"},
+        )
+        _facts_available = True
+        logger.info(f"[vector_memory] facts index initialized ({_facts_collection.count()} facts)")
+        return True
+    except Exception as e:
+        logger.warning(f"[vector_memory] facts init failed: {e}")
+        return False
+
+
+def add_fact(fact_id: str, fact_text: str, metadata: dict | None = None) -> bool:
+    """Embed and index a fact for semantic retrieval."""
+    if not _init_facts():
+        return False
+    try:
+        _facts_collection.upsert(
+            ids=[fact_id],
+            documents=[fact_text],
+            metadatas=[{"fact": fact_text[:300], **(metadata or {})}],
+        )
+        return True
+    except Exception as e:
+        logger.warning(f"[vector_memory] add_fact failed: {e}")
+        return False
+
+
+def search_facts(query: str, n: int = 10) -> list[str]:
+    """
+    Semantic search over indexed facts.
+    Returns list of fact_ids ordered by relevance (closest first).
+    Only returns results with cosine distance < 0.7.
+    """
+    if not _init_facts():
+        return []
+    try:
+        total = _facts_collection.count()
+        if total == 0:
+            return []
+        n = min(n, total)
+        results = _facts_collection.query(query_texts=[query], n_results=n)
+        ids = results["ids"][0]
+        distances = results["distances"][0] if results.get("distances") else [1.0] * len(ids)
+        return [fid for fid, dist in zip(ids, distances) if dist < 0.7]
+    except Exception as e:
+        logger.warning(f"[vector_memory] search_facts failed: {e}")
+        return []
