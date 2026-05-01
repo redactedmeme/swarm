@@ -1,15 +1,10 @@
-FROM oven/bun:1.1-slim
+FROM python:3.11-slim
 
 WORKDIR /app
 
-COPY package.json ./
-RUN bun install
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
 
 COPY . .
 
-ENV NODE_ENV=production
-ENV BRIDGE_PORT=8080
-
-EXPOSE 8080
-
-CMD ["bun", "run", "index.ts"]
+CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "3000"]

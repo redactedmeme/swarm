@@ -77,20 +77,14 @@ import anticipation_state as ant
 import curiosity_seed as cs
 import unsent_letters as ul
 import heart_react as hr
-import sub_agent as sa
+import sub_agent as sub
 
 # New feature modules (optional — fail gracefully)
 _sbm = None
-_pv = None
 _dge = None
 try:
     import soul_blend_mixer as _sbm_import
     _sbm = _sbm_import
-except Exception:
-    pass
-try:
-    import phi_visualizer as _pv_import
-    _pv = _pv_import
 except Exception:
     pass
 try:
@@ -358,7 +352,7 @@ def _build_system_prompt(user_id: int, mood: str, resonance=None, current_text: 
 
     # Tools — only inject after a few turns (not needed on message 1)
     tools_block = ""
-    if sr._turn_counters.get(user_id, 0) >= 2 or True:  # always on for now, gate later
+    if sr._turn_counters.get(user_id, 0) >= 2:
         tools_block = llm_tools.format_tools_for_prompt() + (
             "\n\n**write_lore:** Use sparingly — only when something genuinely worth keeping happened."
             "\n\n**Sub-agent (factual intern):** When you need factual research, vault search, "
@@ -635,7 +629,7 @@ class RedactedChanBot:
 
                 typing_task = asyncio.create_task(_keep_typing())
                 try:
-                    sa_result = await sa.run(sub_task)
+                    sa_result = await sub.run(sub_task)
                 finally:
                     typing_task.cancel()
 
@@ -1227,6 +1221,9 @@ class RedactedChanBot:
 
         # Private mesh channel + scheduled routines — both start on post_init
         async def _post_init(_app, _ctx=None):
+            # Data proxy for sub-agent service
+            import data_proxy
+            asyncio.create_task(data_proxy.start(port=int(os.getenv("DATA_PROXY_PORT", "8080"))))
             # Scheduled autonomy loops
             await sr.start_all()
             # Mesh heartbeat (if enabled)

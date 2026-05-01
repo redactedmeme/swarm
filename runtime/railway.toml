@@ -3,7 +3,6 @@ builder = "DOCKERFILE"
 dockerfilePath = "runtime/Dockerfile"
 
 [deploy]
-startCommand = "bun run index.ts"
 healthcheckPath = "/health"
 healthcheckTimeout = 30
 restartPolicyType = "ON_FAILURE"
