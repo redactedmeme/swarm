@@ -468,10 +468,11 @@ def append_fact(
     interlocutor: str | None = None,
     post_id:      str | None = None,
     engagement:   dict | None = None,
-) -> None:
+) -> Optional[str]:
+    """Store a fact. Returns the fact_id if stored, None if deduplicated."""
     fact = fact.strip()[:300]
     if not fact or fact.upper() == "NONE":
-        return
+        return None
 
     with _db_lock:
         conn = _db()
@@ -483,7 +484,7 @@ def append_fact(
             for row in rows:
                 existing = row["fact"].lower()
                 if fact.lower() in existing or existing in fact.lower():
-                    return
+                    return None
 
             fid = "f_" + uuid.uuid4().hex[:10]
             eng = engagement or {}
@@ -512,8 +513,27 @@ def append_fact(
                     (to_delete,),
                 )
                 conn.commit()
+            return fid
         finally:
             conn.close()
+    return None
+
+
+def get_facts_by_ids(ids: list) -> list:
+    """Fetch full fact records by ID list, preserving order."""
+    if not ids:
+        return []
+    with _db_lock:
+        conn = _db()
+        try:
+            ph = ",".join("?" * len(ids))
+            rows = conn.execute(
+                f"SELECT * FROM learned_facts WHERE id IN ({ph})", ids
+            ).fetchall()
+        finally:
+            conn.close()
+    by_id = {r["id"]: _row_to_doc(r) for r in rows}
+    return [by_id[i] for i in ids if i in by_id]
 
 
 def _refresh_resonance(conn: sqlite3.Connection) -> None:

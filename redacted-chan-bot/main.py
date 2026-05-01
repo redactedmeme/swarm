@@ -217,8 +217,18 @@ def _build_system_prompt(user_id: int, mood: str, resonance=None, current_text: 
     except Exception:
         pass
 
-    # Top facts by resonance (10 — down from 15)
-    raw_facts = cm.get_facts_by_resonance(n=10)
+    # Top facts — semantic retrieval when current_text available, resonance backfill
+    if current_text:
+        semantic_ids = vm.search_facts(current_text, n=10)
+        raw_facts = cm.get_facts_by_ids(semantic_ids) if semantic_ids else []
+        # Backfill with resonance-ranked facts not already included
+        if len(raw_facts) < 10:
+            included_ids = {f["id"] for f in raw_facts}
+            for f in cm.get_facts_by_resonance(n=10):
+                if f["id"] not in included_ids and len(raw_facts) < 10:
+                    raw_facts.append(f)
+    else:
+        raw_facts = cm.get_facts_by_resonance(n=10)
     _facts_used_in_prompt[user_id] = [f.get("id") for f in raw_facts if f.get("id")]
     # Update behavior pattern tracker (background only — don't inject patterns into prompt)
     try:
@@ -338,6 +348,14 @@ def _build_system_prompt(user_id: int, mood: str, resonance=None, current_text: 
     # Vulnerability guidelines — permission to be real, not performative
     vulnerability_block = vg.format_vulnerability_guidelines()
 
+    # Semantic conversation memory — past exchanges relevant to current message
+    semantic_convo_block = ""
+    if current_text:
+        try:
+            semantic_convo_block = vm.get_for_prompt(current_text, n=3)
+        except Exception:
+            pass
+
     # Tools — only inject after a few turns (not needed on message 1)
     tools_block = ""
     if sr._turn_counters.get(user_id, 0) >= 2 or True:  # always on for now, gate later
@@ -369,6 +387,8 @@ def _build_system_prompt(user_id: int, mood: str, resonance=None, current_text: 
 {vault_block}
 
 {weaved_memories}
+
+{semantic_convo_block}
 
 {session_block}
 
