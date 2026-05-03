@@ -142,7 +142,7 @@ class CloudLLMClient:
     async def chat_completion_with_fallback(self, messages: list, max_tokens: int = None) -> str:
         """
         Resilient fallback chain. Each entry is (provider, model_override_or_None).
-        Venice primary → Venice backup model → groq instant → groq versatile → anthropic haiku.
+        Venice primary → Venice backup → groq llama-4-scout → anthropic haiku.
         xAI removed from chain — reinstate when credits are topped up.
         On Groq TPD exhaustion (no retry-after in seconds), skip immediately.
         On Groq TPM 429 with retry-after ≤ 20s, wait and retry once.
@@ -151,23 +151,20 @@ class CloudLLMClient:
         _log = logging.getLogger(__name__)
 
         VENICE_BACKUP = os.getenv("VENICE_BACKUP_MODEL", "mistral-small-3-2-24b-instruct")
-        GROQ_INSTANT   = "llama-3.1-8b-instant"
-        GROQ_VERSATILE = os.getenv("GROQ_MODEL", "llama-3.3-70b-versatile")
+        GROQ_MODEL    = os.getenv("GROQ_MODEL", "meta-llama/llama-4-scout-17b-16e-instruct")
 
         # (provider, model) pairs — None means use provider default
         _chain: list[tuple[str, str | None]] = [(self.provider, None)]
         if self.provider == "venice":
             _chain += [
                 ("venice",    VENICE_BACKUP),
-                ("groq",      GROQ_INSTANT),
-                ("groq",      GROQ_VERSATILE),
+                ("groq",      GROQ_MODEL),
                 ("anthropic", None),
             ]
         else:
             _chain += [
                 ("venice",    None),
-                ("groq",      GROQ_INSTANT),
-                ("groq",      GROQ_VERSATILE),
+                ("groq",      GROQ_MODEL),
                 ("anthropic", None),
             ]
 
