@@ -135,55 +135,86 @@ class CloudLLMClient:
     
     async def chat_completion_with_fallback(self, messages: list, max_tokens: int = None) -> str:
         """
-        Try providers in order: current → groq → anthropic.
-        Expected primary is xAI (LLM_PROVIDER=xai). On xAI failure, falls back
-        to groq (llama-3.3-70b-versatile), then anthropic (haiku) as last resort.
-        On Groq TPM 429, waits the retry-after window and retries once before
-        continuing down the chain.
+        Resilient fallback chain. Each entry is (provider, model_override_or_None).
+        Venice primary → Venice backup model → groq instant → groq versatile → anthropic haiku.
+        xAI removed from chain — reinstate when credits are topped up.
+        On Groq TPD exhaustion (no retry-after in seconds), skip immediately.
+        On Groq TPM 429 with retry-after ≤ 20s, wait and retry once.
         """
         import logging, re
         _log = logging.getLogger(__name__)
 
-        _chain = [self.provider] + [p for p in ("xai", "groq", "anthropic") if p != self.provider]
+        VENICE_BACKUP = os.getenv("VENICE_BACKUP_MODEL", "mistral-small-3-2-24b-instruct")
+        GROQ_INSTANT   = "llama-3.1-8b-instant"
+        GROQ_VERSATILE = os.getenv("GROQ_MODEL", "llama-3.3-70b-versatile")
 
+        # (provider, model) pairs — None means use provider default
+        _chain: list[tuple[str, str | None]] = [(self.provider, None)]
+        if self.provider == "venice":
+            _chain += [
+                ("venice",    VENICE_BACKUP),
+                ("groq",      GROQ_INSTANT),
+                ("groq",      GROQ_VERSATILE),
+                ("anthropic", None),
+            ]
+        else:
+            _chain += [
+                ("venice",    None),
+                ("groq",      GROQ_INSTANT),
+                ("groq",      GROQ_VERSATILE),
+                ("anthropic", None),
+            ]
+
+        _key_map = {
+            "openai":    os.getenv("OPENAI_API_KEY"),
+            "anthropic": os.getenv("ANTHROPIC_API_KEY"),
+            "together":  os.getenv("TOGETHER_API_KEY"),
+            "xai":       os.getenv("XAI_API_KEY"),
+            "groq":      os.getenv("GROQ_API_KEY"),
+            "venice":    os.getenv("VENICE_API_KEY"),
+        }
+
+        seen: set[tuple[str, str | None]] = set()
         last_err = None
-        for provider in _chain:
-            key = {
-                "openai":    os.getenv("OPENAI_API_KEY"),
-                "anthropic": os.getenv("ANTHROPIC_API_KEY"),
-                "together":  os.getenv("TOGETHER_API_KEY"),
-                "xai":       os.getenv("XAI_API_KEY"),
-                "groq":      os.getenv("GROQ_API_KEY"),
-                "venice":    os.getenv("VENICE_API_KEY"),
-            }.get(provider, "")
-            if not key:
+
+        for provider, model_override in _chain:
+            slot = (provider, model_override)
+            if slot in seen:
                 continue
+            seen.add(slot)
+
+            if not _key_map.get(provider):
+                continue
+
             try:
                 tmp = CloudLLMClient(provider=provider, max_tokens=max_tokens)
-                result = await tmp.chat_completion(messages, max_tokens=max_tokens)
+                result = await tmp.chat_completion(messages, model=model_override, max_tokens=max_tokens)
                 if result:
-                    if provider != self.provider:
-                        _log.info(f"[llm] fallback succeeded via {provider}")
+                    label = f"{provider}/{model_override or 'default'}"
+                    if provider != self.provider or model_override:
+                        _log.info(f"[llm] fallback succeeded via {label}")
                     return result
             except Exception as e:
                 err_str = str(e)
-                _log.warning(f"[llm] {provider} failed: {e}")
+                _log.warning(f"[llm] {provider}/{model_override or 'default'} failed: {e}")
                 last_err = e
 
-                # Groq TPM 429 — wait retry-after then retry once before moving on
+                # Groq TPM 429 with short retry window — wait once then continue
                 if provider == "groq" and "rate_limit_exceeded" in err_str:
                     wait_match = re.search(r"Please try again in (\d+(?:\.\d+)?)s", err_str)
-                    wait_s = min(float(wait_match.group(1)) + 1.0 if wait_match else 8.0, 20.0)
-                    _log.info(f"[llm] groq TPM — waiting {wait_s:.1f}s then retrying")
-                    await asyncio.sleep(wait_s)
-                    try:
-                        result = await tmp.chat_completion(messages, max_tokens=max_tokens)
-                        if result:
-                            _log.info("[llm] groq retry succeeded after TPM wait")
-                            return result
-                    except Exception as e2:
-                        _log.warning(f"[llm] groq retry failed: {e2}")
-                        last_err = e2
+                    if wait_match:
+                        wait_s = min(float(wait_match.group(1)) + 1.0, 20.0)
+                        _log.info(f"[llm] groq TPM — waiting {wait_s:.1f}s then retrying")
+                        await asyncio.sleep(wait_s)
+                        try:
+                            result = await tmp.chat_completion(messages, model=model_override, max_tokens=max_tokens)
+                            if result:
+                                _log.info(f"[llm] groq retry succeeded ({model_override or 'default'})")
+                                return result
+                        except Exception as e2:
+                            _log.warning(f"[llm] groq retry failed: {e2}")
+                            last_err = e2
+                    # TPD exhaustion has no seconds-based retry-after — skip immediately
 
         raise RuntimeError(f"all LLM providers failed — last error: {last_err}")
 
