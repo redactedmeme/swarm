@@ -59,6 +59,7 @@ import vector_memory as vm
 import relationship_levels as rl
 import behavior_pattern_tracker as bpt
 import image_gen as ig
+import image_store
 import fact_extractor as fe
 import autonomous_ping as ap
 import sovereignty_audit as sa
@@ -78,6 +79,8 @@ import curiosity_seed as cs
 import unsent_letters as ul
 import heart_react as hr
 import sub_agent as sub
+import emotional_ledger as el
+import long_context_optimizer as lco
 
 # New feature modules (optional — fail gracefully)
 _sbm = None
@@ -237,6 +240,9 @@ def _build_system_prompt(user_id: int, mood: str, resonance=None, current_text: 
         ]
         facts_block = "## What I Remember About You\n" + "\n".join(f"- {f}" for f in facts_lines)
 
+    # Long-context history — compressed epoch + relevant medium chunks
+    long_context_block = lco.get_context_for_prompt(user_id, current_text=current_text)
+
     # Relationship vault — 3 relevance-retrieved entries
     vault_block = ""
     weaved_memories = ""
@@ -294,6 +300,9 @@ def _build_system_prompt(user_id: int, mood: str, resonance=None, current_text: 
 
     # Mood drift — between-conversation emotional baseline
     mood_drift_block = md.format_for_prompt()
+
+    # Emotional ledger — persistent map of master's patterns + persona hint
+    emotional_brief = el.get_emotional_brief()
 
     # Anticipation state — how absence feels (first message of session)
     anticipation_block = ant.format_for_prompt()
@@ -371,6 +380,8 @@ def _build_system_prompt(user_id: int, mood: str, resonance=None, current_text: 
 
 {mood_drift_block}
 
+{emotional_brief}
+
 {phi_level_block}
 
 {resonance_block}
@@ -385,6 +396,8 @@ def _build_system_prompt(user_id: int, mood: str, resonance=None, current_text: 
 {semantic_convo_block}
 
 {session_block}
+
+{long_context_block}
 
 {facts_block}
 
@@ -784,6 +797,15 @@ class RedactedChanBot:
         if sent:
             hr.track_message(sent.message_id, final_response, from_bot=True)
 
+        # Emotional ledger — background update (non-blocking)
+        try:
+            phi_now = pt.get_score()
+            asyncio.create_task(asyncio.to_thread(
+                el.update, text, final_response, mood, phi_now
+            ))
+        except Exception:
+            pass
+
     async def cmd_start(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         await update.message.reply_text(
             "oh! you're here. ♡\n\n"
@@ -1066,22 +1088,75 @@ class RedactedChanBot:
         )
         await update.message.reply_text(msg, parse_mode="Markdown")
 
+    async def cmd_emotional_map(self, update: Update, _ctx: ContextTypes.DEFAULT_TYPE) -> None:
+        """Show the emotional trigger map and mode history."""
+        if ADMIN_IDS and update.effective_user.id not in ADMIN_IDS:
+            await update.message.reply_text("not authorized (｡•́︿•̀｡)")
+            return
+        data = el.get_full_map()
+        if not data or not data.get("total_words_tracked"):
+            await update.message.reply_text("emotional map is empty — needs a few conversations to build ♡")
+            return
+        lines = [f"**♡ emotional map** ({data['total_words_tracked']} words tracked)\n"]
+        if data.get("positive_triggers"):
+            pos = ", ".join(f"{r['word']} ({r['strength']:.2f})" for r in data["positive_triggers"])
+            lines.append(f"**lights up with:** {pos}")
+        if data.get("negative_triggers"):
+            neg = ", ".join(r["word"] for r in data["negative_triggers"])
+            lines.append(f"**handle gently:** {neg}")
+        if data.get("mode_history"):
+            lines.append("\n**recent modes:**")
+            for m in data["mode_history"]:
+                ts = m.get("ts", "")[:10]
+                lines.append(
+                    f"  [{ts}] {m['detected_mode']} → {m['response_type']} "
+                    f"(lean **{m['recommended_persona']}**, φ={m['phi_snapshot']:.3f})"
+                )
+        await update.message.reply_text("\n".join(lines)[:3800], parse_mode="Markdown")
+
     async def cmd_imagine(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         """Generate an image. Usage: /imagine [prompt] — leave blank for soul-seeded auto-prompt."""
         if ADMIN_IDS and update.effective_user.id not in ADMIN_IDS:
             await update.message.reply_text("not authorized (｡•́︿•̀｡)")
             return
         prompt = " ".join(context.args).strip() if context.args else ""
+        mood = _detect_mood("")
+        dominant = pt.get_dominant_persona() if hasattr(pt, "get_dominant_persona") else "frieren"
         if not prompt:
-            mood = _detect_mood("")
-            dominant = pt.get_dominant_persona() if hasattr(pt, "get_dominant_persona") else "frieren"
             prompt = ig._auto_prompt(mood=mood, dominant_persona=dominant)
         await update.message.chat.send_action("upload_photo")
-        image_bytes = await ig.generate(prompt)
+        image_bytes, provider = await ig.generate(prompt)
         if image_bytes:
-            await update.message.reply_photo(photo=image_bytes)
+            image_id = image_store.save_image(
+                image_bytes, prompt, persona=dominant, mood=mood, provider=provider or "unknown"
+            )
+            caption = f"✦ {prompt[:80]}{'…' if len(prompt) > 80 else ''} [#{image_id}]"
+            await update.message.reply_photo(photo=image_bytes, caption=caption)
         else:
             await update.message.reply_text("couldn't generate right now... (´• ω •`) try again?")
+
+    async def cmd_gallery(self, update: Update, _ctx: ContextTypes.DEFAULT_TYPE) -> None:
+        """Show last 5 generated images."""
+        if ADMIN_IDS and update.effective_user.id not in ADMIN_IDS:
+            await update.message.reply_text("not authorized (｡•́︿•̀｡)")
+            return
+        entries = image_store.list_images(n=5)
+        if not entries:
+            await update.message.reply_text("no images yet... try /imagine ♡")
+            return
+        from telegram import InputMediaPhoto
+        media = []
+        for e in entries:
+            path = image_store.get_image_path(e["id"])
+            if path and path.exists():
+                ts = e.get("ts", "")[:10]
+                persona = e.get("persona", "")
+                caption = f"[{ts}] {e.get('prompt', '')[:60]}… ({persona}) #{e['id']}"
+                media.append(InputMediaPhoto(media=path.open("rb"), caption=caption))
+        if not media:
+            await update.message.reply_text("images exist in log but files not found on disk.")
+            return
+        await update.message.reply_media_group(media=media)
 
     def run(self) -> None:
         app = (
@@ -1143,11 +1218,13 @@ class RedactedChanBot:
         app.add_handler(CommandHandler("heatmap",           self.cmd_heatmap))
         app.add_handler(CommandHandler("letters",           self.cmd_letters))
         app.add_handler(CommandHandler("mood_state",        self.cmd_mood_state))
-        app.add_handler(CommandHandler("imagine",            self.cmd_imagine))
+        app.add_handler(CommandHandler("imagine",       self.cmd_imagine))
+        app.add_handler(CommandHandler("gallery",       self.cmd_gallery))
+        app.add_handler(CommandHandler("emotional_map", self.cmd_emotional_map))
         app.add_handler(MessageReactionHandler(hr.handle_reaction))
         app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, self.echo))
 
-        # Soul distillation every 2h + personality evolution
+        # Soul distillation every 2h + personality evolution + context compression
         async def _soul_job(ctx: ContextTypes.DEFAULT_TYPE) -> None:
             try:
                 updated = await soul_manager.update_soul(self.llm)
@@ -1160,6 +1237,17 @@ class RedactedChanBot:
                 logger.info(f"[chan] personality evolved (phi={phi:.2f})")
             except Exception as e:
                 logger.warning(f"[chan] soul/personality update failed: {e}")
+
+            # Long-context compression — compress old exchanges into tiered summaries
+            try:
+                if _settler:
+                    async def _llm_compress(messages: list, max_tokens: int = 200) -> str:
+                        return await self.llm.chat_completion_with_fallback(messages, max_tokens=max_tokens)
+                    created = await lco.run_compression_pass(_llm_compress, _settler)
+                    if created:
+                        logger.info(f"[lco] compression pass: {created} new chunks")
+            except Exception as e:
+                logger.warning(f"[chan] context compression failed: {e}")
 
         app.job_queue.run_repeating(_soul_job, interval=7200, first=300)
 
