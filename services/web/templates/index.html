@@ -634,7 +634,7 @@
             
             socket.on('output', msg => {
                 if (msg.data.includes('thinking...')) return;
-                
+
                 let formatted = msg.data
                     .replace(/✅/g, '\x1b[32m✅\x1b[0m')
                     .replace(/❌/g, '\x1b[31m❌\x1b[0m')
@@ -642,15 +642,24 @@
                     .replace(/💥/g, '\x1b[31m💥\x1b[0m')
                     .replace(/🔷/g, '\x1b[38;5;206m🔷\x1b[0m')
                     .replace(/🦊/g, '\x1b[38;5;213m🦊\x1b[0m');
-                
-                term.writeln(formatted);
-                
-                if (isProcessing && (msg.data.includes('Process exited') || msg.data.includes('complete') || msg.data.trim().endsWith('♡'))) {
+
+                if (msg.stream) {
+                    term.write(formatted);
+                } else {
+                    term.writeln(formatted);
+                }
+
+                if (isProcessing && !msg.stream && (msg.data.includes('Process exited') || msg.data.includes('complete') || msg.data.trim().endsWith('♡'))) {
                     isProcessing = false;
                     printPrompt();
                 }
             });
             
+            socket.on('stream_end', () => {
+                isProcessing = false;
+                printPrompt();
+            });
+
             socket.on('wallet_status', (data) => {
                 walletConnected = data.connected;
                 walletAddress = data.address;

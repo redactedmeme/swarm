@@ -161,9 +161,28 @@ logger = logging.getLogger(__name__)
 SYSTEM_PROMPT_PATH = Path(__file__).parent.parent / 'terminal' / 'system.prompt.md'
 SYSTEM_PROMPT = SYSTEM_PROMPT_PATH.read_text(encoding='utf-8') if SYSTEM_PROMPT_PATH.exists() else "Default REDACTED Swarm prompt."
 
-PYTHON_SCRIPT_PATH = Path(__file__).parent.parent / 'lib' / 'python' / 'run_with_ollama.py'
-ALLOWED_AGENTS_DIR = Path(__file__).parent.parent / 'agents'
-ALLOWED_MODELS = {'qwen2.5', 'llama3', 'mistral', 'gemma'}
+# ────────────────────────────────────────────────
+# 🤖 Groq LLM Backend
+# ────────────────────────────────────────────────
+
+import groq as groq_lib
+
+GROQ_API_KEY = os.getenv('GROQ_API_KEY')
+GROQ_MODEL   = os.getenv('GROQ_MODEL', 'llama-3.1-8b-instant')
+
+_groq_client = None
+
+def get_groq_client():
+    global _groq_client
+    if _groq_client is None:
+        if not GROQ_API_KEY:
+            raise RuntimeError('GROQ_API_KEY not configured')
+        _groq_client = groq_lib.Groq(api_key=GROQ_API_KEY)
+    return _groq_client
+
+# Per-session conversation history — cleared on disconnect
+conversation_histories: dict = {}
+MAX_HISTORY = 20  # messages to retain per session
 
 # ────────────────────────────────────────────────
 # 🔐 Authentication Helpers
@@ -184,38 +203,9 @@ def require_auth(f):
 # 🛡️ Command Validation
 # ────────────────────────────────────────────────
 
-def validate_command_args(args: list) -> tuple:
-    for arg in args:
-        if '..' in arg or (arg.startswith('/') and not arg.startswith('/dns')):
-            return False, "Path traversal detected in arguments"
-    
-    try:
-        agent_idx = args.index('--agent')
-        if agent_idx + 1 < len(args):
-            agent_path = Path(args[agent_idx + 1]).resolve()
-            if not str(agent_path).startswith(str(ALLOWED_AGENTS_DIR.resolve())):
-                return False, f"Agent path must reside within {ALLOWED_AGENTS_DIR}"
-    except ValueError:
-        pass
-    
-    try:
-        model_idx = args.index('--model')
-        if model_idx + 1 < len(args):
-            model = args[model_idx + 1]
-            if model not in ALLOWED_MODELS:
-                return False, f"Model '{model}' not allowed. Choose from: {ALLOWED_MODELS}"
-    except ValueError:
-        pass
-    
-    try:
-        runtime_idx = args.index('--runtime')
-        if runtime_idx + 1 < len(args):
-            runtime = args[runtime_idx + 1]
-            if runtime not in ('python', 'typescript'):
-                return False, "Runtime must be 'python' or 'typescript'"
-    except ValueError:
-        pass
-    
+def validate_command_args(raw_cmd: str) -> tuple:
+    if '..' in raw_cmd:
+        return False, "Invalid input"
     return True, ""
 
 # ────────────────────────────────────────────────
@@ -383,6 +373,7 @@ def handle_connect():
 @socketio.on('disconnect')
 def handle_disconnect():
     session_id = session.get('session_id', 'unknown')
+    conversation_histories.pop(session_id, None)
     audit_log('disconnect', session_id, '', 'success')
 
 @socketio.on('wallet:connect')
@@ -496,123 +487,54 @@ def handle_command(data):
         emit('output', {'data': f'❌ Command exceeds max length ({MAX_COMMAND_LENGTH})'})
         return
     
-    try:
-        args = shlex.split(raw_cmd)
-    except ValueError as e:
-        audit_log('parse_error', session_id, raw_cmd, 'error', {'error': str(e)})
-        emit('output', {'data': f'❌ Parse error: {e}'})
-        return
-    
-    valid, error_msg = validate_command_args(args)
+    # Strip --runtime flag appended by frontend (no longer used)
+    raw_cmd = re.sub(r'\s+--runtime\s+\S+', '', raw_cmd).strip()
+
+    valid, error_msg = validate_command_args(raw_cmd)
     if not valid:
         audit_log('validation_failed', session_id, raw_cmd, 'blocked', {'reason': error_msg})
         emit('output', {'data': f'❌ Validation error: {error_msg}'})
         return
-    
-    runtime_mode = 'python'
-    try:
-        runtime_idx = args.index('--runtime')
-        if runtime_idx + 1 < len(args):
-            runtime_mode = args[runtime_idx + 1]
-            args.pop(runtime_idx + 1)
-            args.pop(runtime_idx)
-    except ValueError:
-        pass
-    
-    audit_log('command_received', session_id, raw_cmd, 'accepted', {'runtime': runtime_mode})
-    
-    if runtime_mode == 'typescript':
-        run_typescript_command(session_id, args, data)
-    else:
-        run_python_command(session_id, args)
 
-def run_python_command(session_id: str, args: list):
-    full_cmd = [
-        sys.executable,
-        str(PYTHON_SCRIPT_PATH),
-        '--prompt', SYSTEM_PROMPT,
-        *args
-    ]
-    
-    def run_process():
-        start_time = time.time()
+    audit_log('command_received', session_id, raw_cmd, 'accepted')
+    run_groq_command(session_id, raw_cmd)
+
+def run_groq_command(session_id: str, raw_cmd: str):
+    def stream():
+        history = conversation_histories.setdefault(session_id, [])
+        history.append({'role': 'user', 'content': raw_cmd})
+        if len(history) > MAX_HISTORY:
+            conversation_histories[session_id] = history[-MAX_HISTORY:]
+            history = conversation_histories[session_id]
+
         try:
-            logger.info(f"[Python] Executing: {' '.join(full_cmd[:6])}...")
-            
-            process = subprocess.Popen(
-                full_cmd,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                text=True,
-                cwd=PYTHON_SCRIPT_PATH.parent,
-                bufsize=1,
-                universal_newlines=True
+            client = get_groq_client()
+            response = client.chat.completions.create(
+                model=GROQ_MODEL,
+                messages=[{'role': 'system', 'content': SYSTEM_PROMPT}, *history],
+                stream=True,
+                max_tokens=1024,
+                temperature=0.7,
             )
-            
-            for line in iter(process.stdout.readline, ''):
-                if line.strip():
-                    emit('output', {'data': line.strip()})
-            
-            process.stdout.close()
-            stderr = process.stderr.read().strip()
-            
-            elapsed = time.time() - start_time
-            if elapsed > COMMAND_TIMEOUT_SECONDS:
-                process.kill()
-                emit('output', {'data': f'⚠️  Process terminated: exceeded {COMMAND_TIMEOUT_SECONDS}s timeout'})
-                audit_log('command_timeout', session_id, '', 'timeout', {'elapsed': elapsed})
-                return
-            
-            process.wait(timeout=max(1, COMMAND_TIMEOUT_SECONDS - elapsed))
-            
-            if stderr:
-                emit('output', {'data': f'⚠️  {stderr}'})
-            if process.returncode != 0:
-                emit('output', {'data': f'Process exited with code {process.returncode}'})
-                audit_log('command_failed', session_id, '', 'error', {'returncode': process.returncode})
-            else:
-                audit_log('command_completed', session_id, '', 'success', {'duration': time.time() - start_time})
-                
-        except FileNotFoundError:
-            emit('output', {'data': '❌ run_with_ollama.py not found. Check paths.'})
-            audit_log('file_not_found', session_id, '', 'error')
-        except subprocess.TimeoutExpired:
-            process.kill()
-            emit('output', {'data': f'⚠️  Process terminated: exceeded {COMMAND_TIMEOUT_SECONDS}s timeout'})
-            audit_log('command_timeout', session_id, '', 'timeout')
-        except Exception as e:
-            logger.error(f"[Python] Terminal error: {e}")
-            emit('output', {'data': f'💥 Error: {str(e)}'})
-            audit_log('command_exception', session_id, '', 'error', {'exception': str(e)})
-    
-    threading.Thread(target=run_process, daemon=True).start()
 
-def run_typescript_command(session_id: str, args: list, original_data: dict):
-    def execute_via_bridge():
-        try:
-            emit('output', {'data': f'🔗 Routing to TypeScript runtime: {" ".join(args)}'})
-            
-            runtime_config = original_data.get('config', {})
-            result = runtime_bridge.execute_command(args, runtime_config)
-            
-            if 'error' in result:
-                emit('output', {'data': f'❌ Runtime bridge error: {result["error"]}'})
-                audit_log('bridge_error', session_id, '', 'error', {'bridge_error': result['error']})
-                return
-            
-            output_lines = result.get('output', [])
-            for line in output_lines:
-                emit('output', {'data': line})
-            
-            audit_log('bridge_command_completed', session_id, '', 'success', {'lines': len(output_lines)})
-            emit('output', {'data': '✅ TypeScript runtime execution complete.'})
-            
-        except Exception as e:
-            logger.error(f"[Bridge] Execution error: {e}")
-            emit('output', {'data': f'💥 Bridge error: {str(e)}'})
-            audit_log('bridge_exception', session_id, '', 'error', {'exception': str(e)})
-    
-    threading.Thread(target=execute_via_bridge, daemon=True).start()
+            full_reply = []
+            for chunk in response:
+                delta = chunk.choices[0].delta.content
+                if delta:
+                    full_reply.append(delta)
+                    emit('output', {'data': delta, 'stream': True})
+
+            history.append({'role': 'assistant', 'content': ''.join(full_reply)})
+            emit('stream_end', {})
+            audit_log('command_completed', session_id, raw_cmd, 'success')
+
+        except Exception as exc:
+            logger.error(f'[Groq] error: {exc}')
+            emit('output', {'data': f'\r\n❌ LLM error: {exc}'})
+            emit('stream_end', {})
+            audit_log('command_exception', session_id, raw_cmd, 'error', {'exception': str(exc)})
+
+    threading.Thread(target=stream, daemon=True).start()
 
 @socketio.on('dht:query_peers')
 def handle_dht_query(data):
