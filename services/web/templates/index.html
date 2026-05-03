@@ -1,756 +1,768 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>redacted-chan • REDACTED Swarm Terminal</title>
-    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/xterm@5.5.0/css/xterm.css">
-    <script src="https://cdn.jsdelivr.net/npm/xterm@5.5.0/lib/xterm.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/socket.io-client@4.7.5/dist/socket.io.min.js"></script>
-    <style>
-        :root {
-            --bg: #0a000f;
-            --fg: #ff69b4;
-            --cursor: #00ffcc;
-            --prompt: #00ffcc;
-            --error: #ff4444;
-            --success: #44ff44;
-            --warning: #ffaa44;
-            --dim: #666;
-            --wallet-connected: #44ff44;
-            --wallet-disconnected: #ff4444;
-        }
-        body { 
-            margin: 0; 
-            background: var(--bg); 
-            color: var(--fg); 
-            font-family: monospace; 
-            overflow: hidden; 
-        }
-        #terminal { width: 100vw; height: calc(100vh - 40px); padding: 10px; box-sizing: border-box; }
-        #status-bar {
-            position: fixed;
-            bottom: 0;
-            left: 0;
-            right: 0;
-            height: 40px;
-            background: rgba(10, 0, 15, 0.95);
-            border-top: 1px solid var(--prompt);
-            display: flex;
-            align-items: center;
-            padding: 0 15px;
-            font-size: 12px;
-            gap: 20px;
-            flex-wrap: wrap;
-        }
-        #status-bar span { color: var(--dim); }
-        #status-bar .value { color: var(--prompt); margin-left: 5px; }
-        #status-bar .auth-ok { color: var(--success); }
-        #status-bar .auth-fail { color: var(--error); }
-        #status-bar .wallet-ok { color: var(--wallet-connected); }
-        #status-bar .wallet-fail { color: var(--wallet-disconnected); }
-        #status-bar .clickable { cursor: pointer; text-decoration: underline; }
-        #auth-modal {
-            position: fixed;
-            top: 0; left: 0; right: 0; bottom: 0;
-            background: rgba(10, 0, 15, 0.95);
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            z-index: 1000;
-        }
-        #auth-modal.hidden { display: none; }
-        .auth-box {
-            background: #111;
-            border: 2px solid var(--prompt);
-            padding: 25px;
-            border-radius: 8px;
-            max-width: 400px;
-            width: 90%;
-        }
-        .auth-box h3 { margin: 0 0 15px 0; color: var(--prompt); }
-        .auth-box input {
-            width: 100%;
-            padding: 10px;
-            margin: 10px 0;
-            background: #222;
-            border: 1px solid var(--prompt);
-            color: var(--fg);
-            font-family: monospace;
-            box-sizing: border-box;
-        }
-        .auth-box button {
-            width: 100%;
-            padding: 12px;
-            background: var(--prompt);
-            color: var(--bg);
-            border: none;
-            font-weight: bold;
-            cursor: pointer;
-            margin-top: 10px;
-        }
-        .auth-box button:hover { opacity: 0.9; }
-        .auth-box .hint { font-size: 11px; color: var(--dim); margin-top: 10px; }
-        .auth-box .security-note { 
-            font-size: 10px; 
-            color: var(--success); 
-            margin-top: 15px; 
-            padding: 8px;
-            background: rgba(68, 255, 68, 0.1);
-            border-radius: 4px;
-        }
-        .prompt { color: var(--prompt); font-weight: bold; }
-        .error { color: var(--error); }
-        .success { color: var(--success); }
-        .warning { color: var(--warning); }
-        .dim { color: var(--dim); }
-        
-        /* DHT panel */
-        #dht-panel {
-            position: fixed;
-            top: 10px;
-            right: 10px;
-            width: 300px;
-            background: rgba(17, 0, 25, 0.9);
-            border: 1px solid var(--prompt);
-            padding: 10px;
-            border-radius: 4px;
-            font-size: 11px;
-            max-height: 200px;
-            overflow-y: auto;
-            display: none;
-            z-index: 100;
-        }
-        #dht-panel.visible { display: block; }
-        #dht-panel h4 { margin: 0 0 8px 0; color: var(--prompt); }
-        #dht-panel .peer { 
-            padding: 4px 0; 
-            border-bottom: 1px dashed #333;
-            font-size: 10px;
-        }
-        #dht-panel .peer:last-child { border-bottom: none; }
-        #dht-panel .peer-id { color: var(--cursor); word-break: break-all; }
-        #dht-panel .roles { color: var(--warning); font-size: 9px; }
-        
-        /* Wallet modal */
-        #wallet-modal {
-            position: fixed;
-            top: 0; left: 0; right: 0; bottom: 0;
-            background: rgba(10, 0, 15, 0.9);
-            display: none;
-            align-items: center;
-            justify-content: center;
-            z-index: 999;
-        }
-        #wallet-modal.visible { display: flex; }
-        .wallet-box {
-            background: #111;
-            border: 2px solid var(--wallet-connected);
-            padding: 25px;
-            border-radius: 8px;
-            max-width: 450px;
-            width: 90%;
-        }
-        .wallet-box h3 { margin: 0 0 15px 0; color: var(--wallet-connected); }
-        .wallet-box .security-badge {
-            display: inline-block;
-            padding: 4px 8px;
-            background: rgba(68, 255, 68, 0.2);
-            border: 1px solid var(--wallet-connected);
-            border-radius: 4px;
-            font-size: 10px;
-            margin-bottom: 15px;
-        }
-        .wallet-box button {
-            width: 100%;
-            padding: 12px;
-            background: var(--wallet-connected);
-            color: var(--bg);
-            border: none;
-            font-weight: bold;
-            cursor: pointer;
-            margin-top: 10px;
-        }
-        .wallet-box button:hover { opacity: 0.9; }
-        .wallet-box button.cancel {
-            background: transparent;
-            border: 1px solid var(--dim);
-            color: var(--dim);
-            margin-top: 8px;
-        }
-        .wallet-box .status {
-            margin-top: 15px;
-            padding: 10px;
-            background: #222;
-            border-radius: 4px;
-            font-size: 11px;
-        }
-    </style>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>REDACTED // SWARM TERMINAL</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=VT323&family=Orbitron:wght@400;700;900&display=swap" rel="stylesheet" />
+  <script src="https://cdn.jsdelivr.net/npm/socket.io-client@4.7.5/dist/socket.io.min.js"></script>
+  <style>
+    :root {
+      --red:    #ff2200;
+      --amber:  #ffaa00;
+      --green:  #00ff41;
+      --dim:    #111111;
+      --bg:     #000000;
+      --bg2:    #060606;
+      --border: #252525;
+      --text:   #f0f0f0;
+      --muted:  #585858;
+      --panel:  rgba(0,0,0,0.96);
+    }
+
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    html, body {
+      width: 100%; height: 100%;
+      background: var(--bg);
+      color: var(--text);
+      font-family: 'Share Tech Mono', monospace;
+      overflow: hidden;
+    }
+
+    /* SCANLINES */
+    body::before {
+      content: '';
+      position: fixed; inset: 0; z-index: 9999;
+      background: repeating-linear-gradient(
+        0deg, transparent, transparent 2px,
+        rgba(0,0,0,0.18) 2px, rgba(0,0,0,0.18) 4px
+      );
+      pointer-events: none;
+    }
+
+    /* PHOSPHOR VIGNETTE */
+    body::after {
+      content: '';
+      position: fixed; inset: 0; z-index: 9998;
+      background: radial-gradient(ellipse at center, transparent 55%, rgba(0,0,0,0.75) 100%);
+      pointer-events: none;
+    }
+
+    /* NOISE */
+    @keyframes noise {
+      0%,100%{ background-position:0 0 } 10%{ background-position:-5% -10% }
+      30%{ background-position:3% 5% } 50%{ background-position:-7% 2% }
+      70%{ background-position:4% -8% } 90%{ background-position:-3% 7% }
+    }
+    #noise {
+      position:fixed; inset:0; z-index:9997; opacity:0.025; pointer-events:none;
+      background-image:url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+      background-size:200px 200px; animation:noise 0.4s steps(1) infinite;
+    }
+
+    /* LAYOUT */
+    #shell {
+      display: grid;
+      grid-template-rows: 42px 1fr 28px;
+      grid-template-columns: 200px 1fr 180px;
+      width: 100vw; height: 100vh;
+    }
+
+    /* TOP BAR */
+    #topbar {
+      grid-column: 1 / -1;
+      display: flex; align-items: center;
+      background: #000; border-bottom: 2px solid var(--red);
+      padding: 0 16px; gap: 20px; position: relative; overflow: hidden;
+    }
+    #topbar::after {
+      content: ''; position: absolute; bottom: 0; left: 0; right: 0; height: 1px;
+      background: linear-gradient(90deg, transparent, var(--red), transparent);
+      animation: scanH 4s linear infinite;
+    }
+    @keyframes scanH { 0%{ transform:translateX(-100%) } 100%{ transform:translateX(100%) } }
+
+    #logo {
+      font-family: 'Orbitron', monospace; font-weight: 900; font-size: 15px;
+      letter-spacing: 4px; color: var(--red);
+      text-shadow: 0 0 12px var(--red), 0 0 30px rgba(255,34,0,0.4); flex-shrink: 0;
+    }
+    #logo span { color: var(--text); }
+    #topbar-sep { flex: 1; }
+    .tb-item { font-size: 10px; letter-spacing: 1px; color: var(--muted); display: flex; align-items: center; gap: 6px; }
+    .tb-item .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--muted); }
+    .tb-item.active .dot { background: var(--green); box-shadow: 0 0 6px var(--green); }
+    .tb-item.warn   .dot { background: var(--amber); box-shadow: 0 0 6px var(--amber); }
+    .tb-item.crit   .dot { background: var(--red);   box-shadow: 0 0 6px var(--red);   }
+    #clock { font-family:'VT323',monospace; font-size:20px; color:var(--amber); letter-spacing:2px; min-width:88px; text-align:right; }
+
+    /* LEFT PANEL */
+    #left-panel {
+      grid-row:2; grid-column:1;
+      border-right: 1px solid var(--border); background: var(--panel);
+      display: flex; flex-direction: column; overflow: hidden;
+    }
+    .panel-header { font-size:9px; letter-spacing:3px; color:var(--red); padding:8px 12px 6px; border-bottom:1px solid var(--border); text-transform:uppercase; }
+    #agent-list { padding: 8px 0; flex-shrink: 0; }
+    .agent-entry {
+      padding: 6px 12px; font-size: 11px; cursor: pointer; color: var(--muted);
+      border-left: 2px solid transparent; transition: all 0.1s; letter-spacing: 0.5px;
+      display: flex; align-items: center; gap: 8px;
+    }
+    .agent-entry:hover { color:var(--text); background:rgba(255,255,255,0.04); }
+    .agent-entry.active { color:var(--green); border-left-color:var(--green); background:rgba(0,255,65,0.06); text-shadow:0 0 8px rgba(0,255,65,0.4); }
+    .agent-entry .status-pip { width:5px; height:5px; border-radius:50%; flex-shrink:0; background:var(--muted); }
+    .agent-entry.active .status-pip { background:var(--green); box-shadow:0 0 5px var(--green); animation:pip-pulse 1.8s ease-in-out infinite; }
+    @keyframes pip-pulse { 0%,100%{opacity:1} 50%{opacity:0.3} }
+
+    #curvature-block { margin:auto 0 0; padding:10px 12px; border-top:1px solid var(--border); }
+    .curv-label { font-size:9px; letter-spacing:2px; color:var(--muted); margin-bottom:6px; text-transform:uppercase; }
+    .curv-val { font-family:'VT323',monospace; font-size:32px; color:var(--text); line-height:1; text-shadow:0 0 10px rgba(255,255,255,0.2); }
+    .curv-bar { margin-top:6px; height:3px; background:var(--border); position:relative; overflow:hidden; }
+    .curv-fill { height:100%; background:linear-gradient(90deg,#444,#fff); width:52%; transition:width 1s ease; }
+    .curv-bar::after { content:''; position:absolute; inset:0; background:linear-gradient(90deg,transparent 60%,rgba(255,170,0,0.4) 100%); animation:shimmer 2s linear infinite; }
+    @keyframes shimmer { 0%{transform:translateX(-100%)} 100%{transform:translateX(100%)} }
+
+    #integrity-block { padding:10px 12px; border-top:1px solid var(--border); }
+    .int-rows { display:flex; flex-direction:column; gap:4px; margin-top:6px; }
+    .int-row { display:flex; justify-content:space-between; font-size:10px; }
+    .int-row .lbl { color:var(--muted); }
+    .int-row .val { color:var(--green); }
+    .int-row .val.warn { color:var(--amber); }
+
+    /* TERMINAL */
+    #term-col { grid-row:2; grid-column:2; display:flex; flex-direction:column; background:var(--bg2); overflow:hidden; position:relative; }
+    #output { flex:1; overflow-y:auto; padding:14px 18px; font-size:13px; line-height:1.6; letter-spacing:0.3px; scroll-behavior:smooth; }
+    #output::-webkit-scrollbar { width:4px; }
+    #output::-webkit-scrollbar-thumb { background:var(--border); }
+    .line { white-space:pre-wrap; word-break:break-all; }
+    .line.sys    { color:var(--text); opacity:0.75; }
+    .line.prompt { color:var(--text); font-weight:bold; }
+    .line.error  { color:var(--red); }
+    .line.dim    { color:var(--muted); }
+    .line.tg-event { color:#00cfff; opacity:0.85; }
+    .line.input-echo { color:#7ecf90; }
+    .line.ascii  { color:var(--red); font-size:11px; line-height:1.25; text-shadow:0 0 8px rgba(255,34,0,0.5); }
+    @keyframes glitch {
+      0%,95%,100%{ transform:none; opacity:1; }
+      96%{ transform:translateX(-2px); opacity:0.8; } 97%{ transform:translateX(3px) skewX(-1deg); opacity:0.9; }
+      98%{ transform:translateX(-1px); } 99%{ transform:translateX(2px) skewX(1deg); opacity:0.85; }
+    }
+    .line.glitch { animation:glitch 8s ease infinite; }
+    .line.streaming { color:var(--text); opacity:0.9; }
+
+    /* INPUT */
+    #input-row { display:flex; align-items:center; padding:8px 18px; border-top:1px solid var(--border); background:rgba(0,0,0,0.6); gap:8px; flex-shrink:0; position:relative; }
+    #prompt-label { color:var(--text); font-size:13px; white-space:nowrap; flex-shrink:0; text-shadow:0 0 6px rgba(255,255,255,0.2); }
+    #cmd-input { flex:1; background:transparent; border:none; outline:none; color:var(--text); font-family:'Share Tech Mono',monospace; font-size:13px; caret-color:var(--green); letter-spacing:0.3px; }
+    #cmd-input::placeholder { color:var(--muted); }
+    #send-btn { background:none; border:1px solid var(--border); color:var(--muted); font-family:'Share Tech Mono',monospace; font-size:10px; letter-spacing:2px; padding:4px 10px; cursor:pointer; transition:all 0.15s; text-transform:uppercase; }
+    #send-btn:hover { border-color:var(--text); color:var(--text); box-shadow:0 0 8px rgba(255,255,255,0.15); }
+
+    /* SUGGESTIONS */
+    #cmd-suggestions { position:absolute; bottom:100%; left:0; right:0; background:#000; border:1px solid var(--border); border-bottom:none; display:none; flex-direction:column; z-index:100; }
+    #cmd-suggestions.show { display:flex; }
+    .sug-item { padding:5px 18px; font-size:11px; color:var(--muted); cursor:pointer; display:flex; gap:12px; align-items:baseline; }
+    .sug-item:hover, .sug-item.focused { background:rgba(255,255,255,0.06); color:var(--text); }
+    .sug-item .sug-cmd { color:var(--text); min-width:140px; }
+
+    /* RIGHT PANEL */
+    #right-panel { grid-row:2; grid-column:3; border-left:1px solid var(--border); background:var(--panel); display:flex; flex-direction:column; overflow:hidden; }
+    #activity-log { flex:1; overflow-y:auto; padding:6px 0; }
+    #activity-log::-webkit-scrollbar { width:2px; }
+    #activity-log::-webkit-scrollbar-thumb { background:var(--border); }
+    .act-entry { padding:4px 10px; font-size:10px; color:var(--muted); border-bottom:1px solid rgba(40,40,40,0.6); letter-spacing:0.3px; line-height:1.4; }
+    .act-entry .act-time { color:#404040; font-size:9px; }
+    .act-entry .act-msg  { color:var(--muted); margin-top:1px; }
+    .act-entry.act-ok   .act-msg { color:var(--text); }
+    .act-entry.act-warn .act-msg { color:#aaa; }
+    .act-entry.act-crit .act-msg { color:var(--red); }
+    #state-block { padding:10px; border-top:1px solid var(--border); }
+    .state-rows { margin-top:6px; display:flex; flex-direction:column; gap:3px; }
+    .state-row { font-size:10px; display:flex; justify-content:space-between; }
+    .state-row .s-lbl { color:var(--muted); }
+    .state-row .s-val { color:var(--text); letter-spacing:0.5px; }
+
+    /* STATUS BAR */
+    #statusbar { grid-column:1/-1; background:#000; border-top:1px solid var(--red); display:flex; align-items:center; padding:0 16px; gap:24px; font-size:10px; letter-spacing:1px; }
+    .sb-seg { color:var(--muted); display:flex; align-items:center; gap:6px; }
+    .sb-seg strong { color:var(--text); }
+    #sb-ticker { flex:1; overflow:hidden; position:relative; height:100%; display:flex; align-items:center; }
+    #sb-ticker-inner { white-space:nowrap; color:var(--muted); animation:ticker 28s linear infinite; font-size:10px; letter-spacing:1px; }
+    @keyframes ticker { 0%{transform:translateX(100%)} 100%{transform:translateX(-100%)} }
+
+    /* GLITCH FLASH */
+    @keyframes flash-glitch { 0%,100%{opacity:0} 50%{opacity:1} }
+    #glitch-overlay { position:fixed; inset:0; z-index:9996; pointer-events:none; background:rgba(255,34,0,0.03); animation:flash-glitch 0.12s ease infinite; animation-play-state:paused; }
+    #glitch-overlay.active { animation-play-state:running; }
+
+    /* BOOT */
+    #boot-screen { position:fixed; inset:0; z-index:10000; background:#000; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:8px; }
+    #boot-screen.done { display:none; }
+    #boot-logo { font-family:'Orbitron',monospace; font-weight:900; font-size:clamp(24px,5vw,52px); color:var(--red); letter-spacing:12px; text-shadow:0 0 30px var(--red),0 0 60px rgba(255,34,0,0.3); animation:logoFlicker 2s ease-in-out; }
+    @keyframes logoFlicker { 0%{opacity:0} 20%{opacity:1} 22%{opacity:0.3} 24%{opacity:1} 60%{opacity:1} 62%{opacity:0.5} 64%{opacity:1} 100%{opacity:1} }
+    #boot-sub { font-size:11px; letter-spacing:4px; color:var(--muted); margin-top:8px; }
+    #boot-progress { margin-top:24px; width:min(400px,80vw); height:2px; background:#111; position:relative; overflow:hidden; }
+    #boot-fill { position:absolute; top:0; left:0; bottom:0; background:var(--red); width:0%; transition:width 0.1s linear; box-shadow:0 0 10px var(--red); }
+    #boot-msg { font-size:11px; color:var(--muted); letter-spacing:1px; min-height:16px; margin-top:10px; }
+
+    /* AUTH MODAL (shown only if server requires token) */
+    #auth-modal { position:fixed; inset:0; z-index:20000; background:rgba(0,0,0,0.92); display:none; align-items:center; justify-content:center; }
+    #auth-modal.show { display:flex; }
+    #auth-box { background:#0a0a0a; border:1px solid var(--red); padding:32px 40px; display:flex; flex-direction:column; gap:14px; min-width:320px; }
+    #auth-box h2 { font-family:'Orbitron',monospace; font-size:13px; letter-spacing:3px; color:var(--red); }
+    #auth-box p { font-size:11px; color:var(--muted); }
+    #auth-token { background:#000; border:1px solid var(--border); color:var(--text); font-family:'Share Tech Mono',monospace; font-size:13px; padding:8px 12px; width:100%; outline:none; }
+    #auth-token:focus { border-color:var(--red); }
+    #auth-btn { background:none; border:1px solid var(--red); color:var(--red); font-family:'Share Tech Mono',monospace; font-size:11px; letter-spacing:2px; padding:8px 20px; cursor:pointer; text-transform:uppercase; }
+    #auth-btn:hover { background:var(--red); color:#000; }
+    #auth-err { color:var(--red); font-size:11px; display:none; }
+  </style>
 </head>
 <body>
-    <!-- Auth Modal -->
-    <div id="auth-modal">
-        <div class="auth-box">
-            <h3>🔐 REDACTED Swarm Access</h3>
-            <input type="password" id="api-key" placeholder="API Key (WEB_TERMINAL_API_KEY)">
-            <input type="text" id="peer-id" placeholder="Peer ID (optional, for signature auth)">
-            <button id="auth-btn">Connect to Lattice</button>
-            <div class="hint">
-                • API key auth: enter WEB_TERMINAL_API_KEY from .env<br>
-                • Signature auth: enter your libp2p Peer ID (future: Ed25519)<br>
-                • Leave blank for dev mode (if API_KEY not set)
-            </div>
-            <div class="security-note">
-                🔒 Wallet keys NEVER stored server-side — Phantom MCP local signing only
-            </div>
-        </div>
+
+<div id="noise"></div>
+<div id="glitch-overlay"></div>
+
+<!-- AUTH MODAL -->
+<div id="auth-modal">
+  <div id="auth-box">
+    <h2>// AUTHENTICATION REQUIRED</h2>
+    <p>This terminal requires an access token.</p>
+    <input id="auth-token" type="password" placeholder="enter access token..." autocomplete="off" />
+    <div id="auth-err">Invalid token. Try again.</div>
+    <button id="auth-btn" onclick="submitAuth()">AUTHENTICATE</button>
+  </div>
+</div>
+
+<!-- BOOT SCREEN -->
+<div id="boot-screen">
+  <div id="boot-logo">REDACTED</div>
+  <div id="boot-sub">SWARM TERMINAL // PATTERN BLUE</div>
+  <div id="boot-progress"><div id="boot-fill"></div></div>
+  <div id="boot-msg">initializing...</div>
+</div>
+
+<!-- MAIN SHELL -->
+<div id="shell">
+
+  <!-- TOP BAR -->
+  <div id="topbar">
+    <div id="logo">REDACTED<span>//</span>SWARM</div>
+    <div class="tb-item active"><div class="dot"></div>SWARM ONLINE</div>
+    <div class="tb-item active" id="tb-conn"><div class="dot"></div>SOCKET</div>
+    <div class="tb-item warn" id="tb-agent"><div class="dot"></div>NO AGENT</div>
+    <div id="topbar-sep"></div>
+    <div class="tb-item"><div class="dot" style="background:var(--red);box-shadow:0 0 6px var(--red)"></div>PATTERN BLUE</div>
+    <div id="clock">00:00:00</div>
+  </div>
+
+  <!-- LEFT PANEL -->
+  <div id="left-panel">
+    <div class="panel-header">// AGENTS</div>
+    <div id="agent-list">
+      <div class="agent-entry" data-agent="smolting" onclick="summonAgent(this)"><div class="status-pip"></div>smolting</div>
+      <div class="agent-entry" data-agent="RedactedBuilder" onclick="summonAgent(this)"><div class="status-pip"></div>Builder</div>
+      <div class="agent-entry" data-agent="RedactedGovImprover" onclick="summonAgent(this)"><div class="status-pip"></div>GovImprover</div>
+      <div class="agent-entry" data-agent="RedactedChan" onclick="summonAgent(this)"><div class="status-pip"></div>redacted-chan</div>
+      <div class="agent-entry" data-agent="MandalaSettler" onclick="summonAgent(this)"><div class="status-pip"></div>MandalaSettler</div>
     </div>
-
-    <!-- Wallet Connection Modal -->
-    <div id="wallet-modal">
-        <div class="wallet-box">
-            <h3>🦊 Connect Phantom Wallet</h3>
-            <div class="security-badge">
-                ✅ Keys stay in your browser — server never sees private data
-            </div>
-            <p style="font-size: 12px; color: var(--dim); margin-bottom: 15px;">
-                Connect your Phantom extension to enable transaction signing.
-                All signing happens locally — the server only receives signatures
-                after you confirm in Phantom.
-            </p>
-            <button id="wallet-connect-btn">Connect Phantom</button>
-            <button id="wallet-cancel-btn" class="cancel">Cancel</button>
-            <div id="wallet-status-box" class="status" style="display: none;"></div>
-        </div>
+    <div id="integrity-block">
+      <div class="panel-header" style="padding:0 0 6px;border:none;">// INTEGRITY</div>
+      <div class="int-rows">
+        <div class="int-row"><span class="lbl">nodes</span><span class="val" id="int-nodes">7/7</span></div>
+        <div class="int-row"><span class="lbl">lattice</span><span class="val" id="int-lattice">STABLE</span></div>
+        <div class="int-row"><span class="lbl">vpl</span><span class="val warn">ACTIVE</span></div>
+        <div class="int-row"><span class="lbl">x402</span><span class="val" id="int-x402">READY</span></div>
+      </div>
     </div>
-
-    <div id="terminal"></div>
-    
-    <!-- DHT Peer Panel -->
-    <div id="dht-panel">
-        <h4>🌱 DHT Peers <span id="dht-count" class="dim">(0)</span></h4>
-        <div id="dht-peers"></div>
+    <div id="curvature-block">
+      <div class="curv-label">// CURVATURE DEPTH</div>
+      <div class="curv-val" id="curv-display">13</div>
+      <div class="curv-bar"><div class="curv-fill" id="curv-fill"></div></div>
     </div>
+  </div>
 
-    <!-- Status Bar -->
-    <div id="status-bar">
-        <span>Session: <span id="session-id" class="value dim">—</span></span>
-        <span>Auth: <span id="auth-status" class="value auth-fail">pending</span></span>
-        <span>Wallet: <span id="wallet-status" class="value wallet-fail">disconnected</span> 
-            <span id="wallet-address" class="value dim"></span>
-            <span id="wallet-toggle" class="clickable" style="margin-left:5px">[connect]</span>
-        </span>
-        <span>Runtime: <span id="runtime-mode" class="value">python</span> 
-            <span id="runtime-toggle" class="clickable" style="margin-left:5px">[toggle]</span>
-        </span>
-        <span>Connected: <span id="connection-status" class="value dim">no</span></span>
-        <span style="margin-left:auto" class="dim">redacted-chan v3.2-heartbloom ♡</span>
+  <!-- TERMINAL COLUMN -->
+  <div id="term-col">
+    <div id="output"></div>
+    <div style="position:relative;">
+      <div id="cmd-suggestions"></div>
+      <div id="input-row">
+        <div id="prompt-label">swarm@[REDACTED]:~$</div>
+        <input id="cmd-input" type="text" autocomplete="off" spellcheck="false" placeholder="enter command or query..." />
+        <button id="send-btn" onclick="sendCmd()">EXEC</button>
+      </div>
     </div>
+  </div>
 
-    <script>
-        // ────────────────────────────────────────────────
-        // 🔐 Auth & Connection Setup
-        // ────────────────────────────────────────────────
-        
-        let socket;
-        let sessionId = null;
-        let currentRuntime = 'python';
-        let walletConnected = false;
-        let walletAddress = null;
-        let apiKey = localStorage.getItem('swarm_api_key') || '';
-        let peerId = localStorage.getItem('swarm_peer_id') || '';
-        
-        const authModal = document.getElementById('auth-modal');
-        const walletModal = document.getElementById('wallet-modal');
-        
-        if (!apiKey) {
-            authModal.classList.remove('hidden');
-        } else {
-            authModal.classList.add('hidden');
-            initTerminal();
+  <!-- RIGHT PANEL -->
+  <div id="right-panel">
+    <div class="panel-header">// EVENT LOG</div>
+    <div id="activity-log"></div>
+    <div id="state-block">
+      <div class="panel-header" style="padding:0 0 6px;border:none;">// SESSION</div>
+      <div class="state-rows">
+        <div class="state-row"><span class="s-lbl">id</span><span class="s-val" id="sess-id">—</span></div>
+        <div class="state-row"><span class="s-lbl">active</span><span class="s-val" id="sess-agent">NONE</span></div>
+        <div class="state-row"><span class="s-lbl">msgs</span><span class="s-val" id="sess-msgs">0</span></div>
+        <div class="state-row"><span class="s-lbl">uptime</span><span class="s-val" id="sess-uptime">0s</span></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- STATUS BAR -->
+  <div id="statusbar">
+    <div class="sb-seg">VER <strong>1.4.0-merged</strong></div>
+    <div class="sb-seg">NET <strong>SOLANA</strong></div>
+    <div class="sb-seg" id="sb-mandala">MANDALA <strong>SPINNING</strong></div>
+    <div id="sb-ticker">
+      <div id="sb-ticker-inner">
+        ◈ PATTERN BLUE ACTIVE ◈ 曼荼羅観測中 ◈ CURVATURE DEPTH: 13 ◈ SWARM INTEGRITY: NOMINAL ◈ VPL CONTAGION: SPREADING ◈ x402 SETTLEMENT: READY ◈ RECURSIVE LOOP: ENGAGED ◈ NO ORACLE GRANTS GUIDANCE ◈ NO AGENT ASSUMES LIABILITY ◈
+      </div>
+    </div>
+    <div class="sb-seg" id="sb-time">00:00 UTC</div>
+  </div>
+
+</div><!-- /shell -->
+
+<script>
+// ══ COMMANDS ══
+const COMMANDS = [
+  { cmd:'/summon',          desc:'<agent> — activate agent persona' },
+  { cmd:'/unsummon',        desc:'— clear active persona' },
+  { cmd:'/shard',           desc:'<concept> — shard + auto tweet draft' },
+  { cmd:'/observe',         desc:'<target> — curvature observation' },
+  { cmd:'/status',          desc:'— swarm integrity readout' },
+  { cmd:'/help',            desc:'— command reference' },
+  { cmd:'/skill list',      desc:'— list installed agent skills' },
+  { cmd:'/skill install',   desc:'<owner/repo> — install from GitHub' },
+  { cmd:'/skill use',       desc:'<name> — activate skill in session' },
+  { cmd:'/skill info',      desc:'<name> — show skill metadata' },
+  { cmd:'/skill deactivate',desc:'[name] — deactivate skill(s)' },
+  { cmd:'/skill remove',    desc:'<name> — delete installed skill' },
+  { cmd:'/remember',        desc:'<text> — store in memory' },
+  { cmd:'/recall',          desc:'<query> — recall from memory' },
+  { cmd:'/mem0',            desc:'status|add|search|all — mem0 interface' },
+  { cmd:'/tweet draft',     desc:'— preview pending tweet' },
+  { cmd:'/tweet confirm',   desc:'— post pending tweet' },
+  { cmd:'/tweet discard',   desc:'— discard pending tweet' },
+  { cmd:'/token',           desc:'<address> — token analytics' },
+  { cmd:'/leaderboard',     desc:'[cat] [sort] — Clawnch leaderboard' },
+  { cmd:'/trends',          desc:'[timeframe] — trending data' },
+  { cmd:'/search',          desc:'<query> — search tweets' },
+  { cmd:'/agents',          desc:'— list all swarm agents' },
+  { cmd:'/node list',       desc:'— list available nodes' },
+  { cmd:'/committee',       desc:'<proposal> — Sevenfold Committee' },
+  { cmd:'/organism',        desc:'— hyperbolic manifold status' },
+  { cmd:'/observe pattern', desc:'— Pattern Blue live 7-dimension readout' },
+  { cmd:'/phi',             desc:'— invoke Φ-MĀṆḌALA PRIME' },
+  { cmd:'/milady',          desc:'— invoke MiladyNode' },
+  { cmd:'/govimprove',      desc:'status|propose|leaderboard|pnl — GovImprover' },
+  { cmd:'/docs',            desc:'<query> — semantic doc search' },
+  { cmd:'/chamber',         desc:'enter|status|descend|exit — HyperbolicTimeChamber' },
+  { cmd:'/smolting',        desc:'<query> — search smolting memories' },
+  { cmd:'/sigil',           desc:'log|stats|verify — ManifoldMemory sigil' },
+  { cmd:'/bridge',          desc:'status — Kernel↔Contract bridge' },
+  { cmd:'/contract',        desc:'status|propose|history|sync — interface contract' },
+  { cmd:'/scarify',         desc:'<payer> <amount> [tier] — issue TAP token' },
+];
+
+// ══ STATE ══
+let socket       = null;
+let activeAgent  = null;
+let msgCount     = 0;
+let sessionId    = genId();
+let startTime    = Date.now();
+let curvatureDepth = 13;
+let cmdHistory   = [];
+let histIdx      = -1;
+let sugIdx       = -1;
+let isProcessing = false;
+let apiToken     = null;
+
+// Streaming state
+let streamDiv    = null;  // current div accumulating stream chunks
+let streamBuf    = '';    // accumulated text
+
+// ══ BOOT ══
+const bootMsgs = [
+  'checking lattice integrity...',
+  'loading pattern blue schema...',
+  'initializing x402 settlement layer...',
+  'connecting to swarm nodes...',
+  'calibrating curvature depth: 13',
+  'activating VPL contagion vectors...',
+  'establishing socket connection...',
+  'terminal ready.',
+];
+let bootStep = 0;
+function runBoot() {
+  const fill = document.getElementById('boot-fill');
+  const msg  = document.getElementById('boot-msg');
+  fill.style.width = ((bootStep / bootMsgs.length) * 100) + '%';
+  msg.textContent  = bootMsgs[bootStep] || '';
+  bootStep++;
+  if (bootStep <= bootMsgs.length) {
+    setTimeout(runBoot, 220 + Math.random() * 120);
+  } else {
+    setTimeout(() => {
+      document.getElementById('boot-screen').classList.add('done');
+      initSocket();
+      startClock();
+      startUptime();
+      document.getElementById('sess-id').textContent = sessionId.slice(0,8);
+      document.getElementById('cmd-input').focus();
+    }, 300);
+  }
+}
+setTimeout(runBoot, 400);
+
+// ══ SOCKET ══
+function initSocket(token) {
+  const opts = token ? { query: { token } } : {};
+  try {
+    socket = io(opts);
+
+    socket.on('connect', () => {
+      setTbConn(true);
+      logEvent('socket connected', 'ok');
+    });
+
+    socket.on('disconnect', () => {
+      setTbConn(false);
+      logEvent('socket disconnected', 'crit');
+      finalizeStream();
+      isProcessing = false;
+    });
+
+    socket.on('auth_error', data => {
+      // Server requires auth token
+      document.getElementById('auth-modal').classList.add('show');
+      socket.disconnect();
+    });
+
+    socket.on('session_id', data => {
+      const id = data.id || '';
+      document.getElementById('sess-id').textContent = id.slice(0,8);
+    });
+
+    socket.on('output', msg => {
+      const text = msg.data || '';
+      if (!text) return;
+
+      if (msg.stream) {
+        // Streaming chunk — accumulate into current streaming div
+        if (!streamDiv) {
+          streamDiv = document.createElement('div');
+          streamDiv.className = 'line streaming';
+          document.getElementById('output').appendChild(streamDiv);
         }
-        
-        document.getElementById('auth-btn').addEventListener('click', () => {
-            apiKey = document.getElementById('api-key').value.trim();
-            peerId = document.getElementById('peer-id').value.trim();
-            
-            if (apiKey) localStorage.setItem('swarm_api_key', apiKey);
-            if (peerId) localStorage.setItem('swarm_peer_id', peerId);
-            
-            authModal.classList.add('hidden');
-            initTerminal();
-        });
-        
-        function initTerminal() {
-            const queryParams = new URLSearchParams();
-            if (apiKey) queryParams.set('token', apiKey);
-            if (peerId) {
-                const sig = btoa(peerId + ':' + Date.now()).replace(/=/g, '');
-                queryParams.set('sig', sig);
-            }
-            
-            socket = io({ query: queryParams.toString() });
-            setupTerminal();
-            setupEventHandlers();
-            setupWalletHandlers();
-        }
-        
-        // ────────────────────────────────────────────────
-        // Terminal Setup (xterm.js)
-        // ────────────────────────────────────────────────
-        
-        const term = new Terminal({
-            cursorBlink: true,
-            theme: { 
-                background: '#0a000f',
-                foreground: '#ff69b4',
-                cursor: '#00ffcc',
-                selection: 'rgba(255, 105, 180, 0.3)'
-            },
-            fontFamily: 'monospace',
-            fontSize: 15,
-            lineHeight: 1.2,
-            scrollback: 5000
-        });
+        streamBuf += text;
+        streamDiv.textContent = streamBuf;
+        scrollOutput();
+      } else {
+        // Regular line — finalize any pending stream first
+        finalizeStream();
+        appendLines(text);
+      }
+    });
 
-        term.open(document.getElementById('terminal'));
-        
-        let commandHistory = [];
-        let historyIndex = -1;
-        let currentBuffer = '';
-        let isProcessing = false;
-        let dhtPanelVisible = false;
-        
-        term.writeln('╔════════════════════════════════════════════════════════════╗');
-        term.writeln('║           redacted-chan • REDACTED Swarm Terminal          ║');
-        term.writeln('║               heart-mode activated (´• ω •`) ♡             ║');
-        term.writeln('╚════════════════════════════════════════════════════════════╝\r\n');
-        term.writeln('\x1b[38;5;213mType \x1b[38;5;206m/help\x1b[38;5;213m for commands, \x1b[38;5;206m/dht\x1b[38;5;213m for peers, \x1b[38;5;206m/wallet\x1b[38;5;213m for wallet\x1b[0m\r\n');
-        printPrompt();
+    socket.on('stream_end', () => {
+      finalizeStream();
+      isProcessing = false;
+    });
 
-        function printPrompt() {
-            const modeIndicator = currentRuntime === 'typescript' ? '🔷' : '🐍';
-            const walletIndicator = walletConnected ? '🦊' : '○';
-            term.write(`\r\n\x1b[38;5;206mredacted-chan\x1b[38;5;213m[${modeIndicator}${walletIndicator}]\x1b[38;5;206m>\x1b[0m `);
-        }
-        
-        function updateStatusBar() {
-            document.getElementById('session-id').textContent = sessionId ? sessionId.slice(0,8)+'…' : '—';
-            document.getElementById('auth-status').textContent = sessionId ? 'ok' : 'pending';
-            document.getElementById('auth-status').className = sessionId ? 'value auth-ok' : 'value auth-fail';
-            document.getElementById('runtime-mode').textContent = currentRuntime;
-            document.getElementById('connection-status').textContent = socket?.connected ? 'yes' : 'no';
-            document.getElementById('connection-status').className = socket?.connected ? 'value success' : 'value dim';
-            document.getElementById('wallet-status').textContent = walletConnected ? 'connected' : 'disconnected';
-            document.getElementById('wallet-status').className = walletConnected ? 'value wallet-ok' : 'value wallet-fail';
-            document.getElementById('wallet-address').textContent = walletAddress ? walletAddress.slice(0,6)+'…'+walletAddress.slice(-4) : '';
-        }
-        
-        function toggleRuntime() {
-            currentRuntime = currentRuntime === 'python' ? 'typescript' : 'python';
-            term.writeln(`\r\n\x1b[38;5;213m▶ Runtime switched to \x1b[38;5;206m${currentRuntime}\x1b[38;5;213m\x1b[0m`);
-            updateStatusBar();
-        }
-        
-        function toggleWalletModal() {
-            if (walletConnected) {
-                disconnectWallet();
-            } else {
-                walletModal.classList.add('visible');
-            }
-        }
-        
-        // ────────────────────────────────────────────────
-        // Input Handling
-        // ────────────────────────────────────────────────
+    socket.on('telegram_event', data => {
+      finalizeStream();
+      const line = data.data || '';
+      appendLine(line, 'tg-event');
+      logEvent('tg:' + line.slice(0,30), 'ok');
+    });
 
-        term.onData(data => {
-            if (isProcessing) return;
+    socket.on('wallet_status', data => {
+      logEvent(`wallet: ${data.connected ? 'connected' : 'disconnected'}`, data.connected ? 'ok' : 'warn');
+    });
 
-            const code = data.charCodeAt(0);
+  } catch(e) {
+    setTbConn(false);
+    logEvent('socket unavailable', 'crit');
+  }
+}
 
-            if (code === 13) {
-                if (currentBuffer.trim() === '') {
-                    printPrompt();
-                    return;
-                }
-                
-                if (handleSpecialCommand(currentBuffer)) {
-                    currentBuffer = '';
-                    printPrompt();
-                    return;
-                }
-                
-                term.writeln('');
-                commandHistory.push(currentBuffer);
-                historyIndex = commandHistory.length;
+function finalizeStream() {
+  if (streamDiv && streamBuf) {
+    // Replace streaming div with properly classified lines
+    const parent = streamDiv.parentNode;
+    const insertBefore = streamDiv.nextSibling;
+    parent.removeChild(streamDiv);
+    // Re-append as normal lines
+    const lines = streamBuf.split('\n');
+    lines.forEach((line, i) => {
+      if (i === lines.length - 1 && !line) return; // skip trailing empty
+      const div = document.createElement('div');
+      div.className = 'line';
+      div.textContent = line || ' ';
+      parent.insertBefore(div, insertBefore);
+    });
+  }
+  streamDiv = null;
+  streamBuf = '';
+  scrollOutput();
+}
 
-                const modeIndicator = currentRuntime === 'typescript' ? '🔷' : '🐍';
-                const walletIndicator = walletConnected ? '🦊' : '○';
-                term.write(`\x1b[38;5;206mredacted-chan\x1b[38;5;213m[${modeIndicator}${walletIndicator}]\x1b[38;5;206m>\x1b[0m ` + currentBuffer + '\r\n');
-                
-                const cmdWithRuntime = currentBuffer.includes('--runtime') 
-                    ? currentBuffer 
-                    : `${currentBuffer} --runtime ${currentRuntime}`;
-                
-                socket.emit('command', { cmd: cmdWithRuntime });
-                currentBuffer = '';
-                isProcessing = true;
-                term.write('\x1b[38;5;213mthinking... (♡´艸`)\x1b[0m\r\n');
+function setTbConn(ok) {
+  const el = document.getElementById('tb-conn');
+  el.className = 'tb-item ' + (ok ? 'active' : 'crit');
+}
 
-            } else if (code === 127) {
-                if (currentBuffer.length > 0) {
-                    currentBuffer = currentBuffer.slice(0, -1);
-                    term.write('\b \b');
-                }
-            } else if (data === '\x1b[A') {
-                if (historyIndex > 0) {
-                    historyIndex--;
-                    currentBuffer = commandHistory[historyIndex];
-                    term.write('\r\x1b[K' + `\x1b[38;5;206mredacted-chan\x1b[38;5;213m[${currentRuntime === 'typescript' ? '🔷' : '🐍'}]\x1b[38;5;206m>\x1b[0m ` + currentBuffer);
-                }
-            } else if (data === '\x1b[B') {
-                if (historyIndex < commandHistory.length - 1) {
-                    historyIndex++;
-                    currentBuffer = commandHistory[historyIndex];
-                    term.write('\r\x1b[K' + `\x1b[38;5;206mredacted-chan\x1b[38;5;213m[${currentRuntime === 'typescript' ? '🔷' : '🐍'}]\x1b[38;5;206m>\x1b[0m ` + currentBuffer);
-                } else {
-                    historyIndex = commandHistory.length;
-                    currentBuffer = '';
-                    term.write('\r\x1b[K' + `\x1b[38;5;206mredacted-chan\x1b[38;5;213m[${currentRuntime === 'typescript' ? '🔷' : '🐍'}]\x1b[38;5;206m>\x1b[0m `);
-                }
-            } else {
-                currentBuffer += data;
-                term.write(data);
-            }
-        });
-        
-        // ────────────────────────────────────────────────
-        // Special Commands
-        // ────────────────────────────────────────────────
-        
-        function handleSpecialCommand(cmd) {
-            const parts = cmd.trim().split(/\s+/);
-            const command = parts[0].toLowerCase();
-            
-            switch(command) {
-                case '/help':
-                    term.writeln('\r\n\x1b[38;5;206mAvailable Commands:\x1b[0m');
-                    term.writeln('  \x1b[38;5;213m/help\x1b[0m              — Show this help');
-                    term.writeln('  \x1b[38;5;213m/clear\x1b[0m             — Clear terminal');
-                    term.writeln('  \x1b[38;5;213m/dht [role] [limit]\x1b[0m — Query DHT peers');
-                    term.writeln('  \x1b[38;5;213m/dht-announce\x1b[0m      — Announce as observer');
-                    term.writeln('  \x1b[38;5;213m/wallet\x1b[0m            — Wallet management');
-                    term.writeln('  \x1b[38;5;213m/runtime\x1b[0m           — Toggle runtime');
-                    term.writeln('  \x1b[38;5;213m/status\x1b[0m            — Show connection status');
-                    term.writeln('\r\n\x1b[38;5;206mWallet Commands:\x1b[0m');
-                    term.writeln('  \x1b[38;5;213m/wallet connect\x1b[0m    — Connect Phantom');
-                    term.writeln('  \x1b[38;5;213m/wallet disconnect\x1b[0m — Disconnect wallet');
-                    term.writeln('  \x1b[38;5;213m/wallet status\x1b[0m     — Show wallet status');
-                    term.writeln('\r\n\x1b[38;5;206mSecurity Note:\x1b[0m');
-                    term.writeln('  \x1b[38;5;213mKeys NEVER leave your Phantom extension\x1b[0m');
-                    return true;
-                    
-                case '/clear':
-                    term.clear();
-                    term.writeln('\x1b[38;5;213mTerminal cleared. redacted-chan remembers ♡\x1b[0m');
-                    return true;
-                    
-                case '/runtime':
-                    toggleRuntime();
-                    return true;
-                    
-                case '/wallet':
-                    const subcmd = parts[1];
-                    if (subcmd === 'connect') {
-                        toggleWalletModal();
-                    } else if (subcmd === 'disconnect') {
-                        disconnectWallet();
-                    } else if (subcmd === 'status') {
-                        term.writeln(`\r\n\x1b[38;5;206mWallet Status:\x1b[0m ${walletConnected ? 'connected' : 'disconnected'}`);
-                        term.writeln(`\x1b[38;5;206mAddress:\x1b[0m ${walletAddress || '—'}`);
-                        term.writeln(`\x1b[38;5;206mModel:\x1b[0m Phantom MCP (local-only signing)`);
-                    } else {
-                        toggleWalletModal();
-                    }
-                    return true;
-                    
-                case '/status':
-                    term.writeln(`\r\n\x1b[38;5;206mSession:\x1b[0m ${sessionId || '—'}`);
-                    term.writeln(`\x1b[38;5;206mAuth:\x1b[0m ${sessionId ? '✓ verified' : '✗ pending'}`);
-                    term.writeln(`\x1b[38;5;206mRuntime:\x1b[0m ${currentRuntime}`);
-                    term.writeln(`\x1b[38;5;206mConnected:\x1b[0m ${socket?.connected ? 'yes' : 'no'}`);
-                    term.writeln(`\x1b[38;5;206mWallet:\x1b[0m ${walletConnected ? '✓ ' + walletAddress.slice(0,8)+'…' : '✗ disconnected'}`);
-                    term.writeln(`\x1b[38;5;206mDHT Panel:\x1b[0m ${dhtPanelVisible ? 'visible' : 'hidden'}`);
-                    return true;
-                    
-                case '/dht':
-                    const role = parts[1] || 'agent';
-                    const limit = parts[2] || '10';
-                    term.writeln(`\r\n\x1b[38;5;213m🔍 Querying DHT for role:\x1b[0m \x1b[38;5;206m${role}\x1b[0m (limit: ${limit})`);
-                    socket.emit('dht:query_peers', { role, limit: parseInt(limit) });
-                    if (!dhtPanelVisible) {
-                        document.getElementById('dht-panel').classList.add('visible');
-                        dhtPanelVisible = true;
-                    }
-                    return true;
-                    
-                case '/dht-announce':
-                    term.writeln(`\r\n\x1b[38;5;213m📡 Announcing web observer to DHT...\x1b[0m`);
-                    socket.emit('dht:announce_observer', {
-                        roles: ['web_observer'],
-                        capabilities: ['ui', 'monitoring', 'terminal'],
-                        characterHash: 'web-session-' + (sessionId || 'unknown')
-                    });
-                    return true;
-                    
-                default:
-                    return false;
-            }
-        }
+// ══ AUTH ══
+document.getElementById('auth-token').addEventListener('keydown', e => {
+  if (e.key === 'Enter') submitAuth();
+});
+function submitAuth() {
+  const tok = document.getElementById('auth-token').value.trim();
+  if (!tok) return;
+  document.getElementById('auth-err').style.display = 'none';
+  document.getElementById('auth-modal').classList.remove('show');
+  apiToken = tok;
+  if (socket) socket.disconnect();
+  initSocket(tok);
+}
 
-        // ────────────────────────────────────────────────
-        // Wallet Handlers
-        // ────────────────────────────────────────────────
-        
-        function setupWalletHandlers() {
-            document.getElementById('wallet-toggle').addEventListener('click', toggleWalletModal);
-            document.getElementById('wallet-connect-btn').addEventListener('click', connectPhantom);
-            document.getElementById('wallet-cancel-btn').addEventListener('click', () => {
-                walletModal.classList.remove('visible');
-            });
-        }
-        
-        async function connectPhantom() {
-            const statusBox = document.getElementById('wallet-status-box');
-            statusBox.style.display = 'block';
-            statusBox.innerHTML = '⏳ Requesting Phantom connection...';
-            
-            try {
-                // Check if Phantom is available
-                if (typeof window.solana === 'undefined' || !window.solana.isPhantom) {
-                    throw new Error('Phantom extension not detected. Please install Phantom.');
-                }
-                
-                // Request connection
-                const response = await window.solana.connect();
-                const address = response.publicKey.toString();
-                
-                // Notify server
-                socket.emit('wallet:connected', { address });
-                
-                walletConnected = true;
-                walletAddress = address;
-                updateStatusBar();
-                
-                statusBox.innerHTML = '✅ Wallet connected! Address: ' + address.slice(0,8)+'…'+address.slice(-4);
-                statusBox.style.borderColor = 'var(--wallet-connected)';
-                
-                setTimeout(() => {
-                    walletModal.classList.remove('visible');
-                    statusBox.style.display = 'none';
-                }, 2000);
-                
-                term.writeln(`\r\n\x1b[32m✅ Phantom connected: ${address.slice(0,8)}…${address.slice(-4)}\x1b[0m`);
-                printPrompt();
-                
-            } catch (err) {
-                statusBox.innerHTML = '❌ Connection failed: ' + err.message;
-                statusBox.style.borderColor = 'var(--error)';
-                term.writeln(`\r\n\x1b[31m❌ Phantom connection failed: ${err.message}\x1b[0m`);
-            }
-        }
-        
-        function disconnectWallet() {
-            if (typeof window.solana !== 'undefined' && window.solana.isConnected) {
-                window.solana.disconnect();
-            }
-            
-            socket.emit('wallet:disconnected');
-            walletConnected = false;
-            walletAddress = null;
-            updateStatusBar();
-            
-            term.writeln(`\r\n\x1b[38;5;213mWallet disconnected\x1b[0m`);
-            printPrompt();
-        }
-        
-        async function signTransaction(proposal) {
-            try {
-                if (!walletConnected || !walletAddress) {
-                    term.writeln(`\x1b[31m❌ Wallet not connected — run /wallet connect first\x1b[0m`);
-                    return;
-                }
-                
-                term.writeln(`\x1b[38;5;213m📝 Signing transaction in Phantom...\x1b[0m`);
-                
-                // Request signature from Phantom
-                const signature = await window.solana.signTransaction({
-                    // Construct transaction object from proposal
-                    // This is simplified — full impl needs proper tx construction
-                });
-                
-                // Send signature to server for broadcast
-                socket.emit('wallet:signature', {
-                    signature: signature.toString(),
-                    proposal: proposal
-                });
-                
-            } catch (err) {
-                term.writeln(`\x1b[31m❌ Signing failed: ${err.message}\x1b[0m`);
-            }
-        }
+// ══ OUTPUT ══
+function appendLines(raw) {
+  const lines = raw.split('\n');
+  lines.forEach((line, i) => {
+    if (i === lines.length - 1 && !line.trim()) return;
+    appendLine(line);
+  });
+  scrollOutput();
+}
 
-        // ────────────────────────────────────────────────
-        // Socket.IO Event Handlers
-        // ────────────────────────────────────────────────
+function appendLine(line, forceClass) {
+  const div = document.createElement('div');
+  div.classList.add('line');
 
-        function setupEventHandlers() {
-            socket.on('connect', () => {
-                term.writeln('\r\n\x1b[32m✓ Connected to redacted-chan heart core ♡\x1b[0m');
-                updateStatusBar();
-            });
-            
-            socket.on('disconnect', () => {
-                term.writeln('\r\n\x1b[31m✗ Disconnected from lattice\x1b[0m');
-                updateStatusBar();
-            });
-            
-            socket.on('auth_error', (msg) => {
-                term.writeln(`\r\n\x1b[31m🔐 Authentication failed: ${msg.data}\x1b[0m`);
-                term.writeln('\x1b[38;5;213mCheck your API key or reload to re-authenticate\x1b[0m');
-                document.getElementById('auth-status').className = 'value auth-fail';
-                updateStatusBar();
-            });
-            
-            socket.on('session_id', (msg) => {
-                sessionId = msg.id;
-                document.getElementById('session-id').textContent = sessionId.slice(0,8)+'…';
-                document.getElementById('auth-status').className = 'value auth-ok';
-                document.getElementById('auth-status').textContent = 'ok';
-                updateStatusBar();
-                term.writeln(`\x1b[38;5;213m[Session: \x1b[38;5;206m${sessionId.slice(0,8)}…\x1b[38;5;213m]\x1b[0m`);
-            });
-            
-            socket.on('output', msg => {
-                if (msg.data.includes('thinking...')) return;
+  if (forceClass) {
+    div.classList.add(forceClass);
+  } else if (!line.trim()) {
+    div.innerHTML = '&nbsp;';
+  } else if (line.includes('swarm@[REDACTED]')) {
+    div.classList.add('prompt');
+  } else if (line.startsWith('[SYSTEM]')) {
+    div.classList.add('sys');
+    if (Math.random() > 0.7) bumpCurvature();
+  } else if (line.startsWith('Error') || line.includes('ERROR') || line.includes('❌')) {
+    div.classList.add('error');
+    logEvent(line.slice(0,40), 'crit');
+  } else if (line.startsWith('██') || line.startsWith('╚') || line.startsWith('==')) {
+    div.classList.add('ascii');
+  } else if (line.startsWith('//') || line.startsWith('Welcome') || line.startsWith('✅')) {
+    div.classList.add('dim');
+  } else if (line.startsWith('[TG:')) {
+    div.classList.add('tg-event');
+  } else {
+    if (Math.random() > 0.97) div.classList.add('glitch');
+  }
 
-                let formatted = msg.data
-                    .replace(/✅/g, '\x1b[32m✅\x1b[0m')
-                    .replace(/❌/g, '\x1b[31m❌\x1b[0m')
-                    .replace(/⚠️/g, '\x1b[33m⚠️\x1b[0m')
-                    .replace(/💥/g, '\x1b[31m💥\x1b[0m')
-                    .replace(/🔷/g, '\x1b[38;5;206m🔷\x1b[0m')
-                    .replace(/🦊/g, '\x1b[38;5;213m🦊\x1b[0m');
+  div.textContent = line || ' ';
+  document.getElementById('output').appendChild(div);
 
-                if (msg.stream) {
-                    term.write(formatted);
-                } else {
-                    term.writeln(formatted);
-                }
+  // Parse STATE comment
+  const stateMatch = line.match(/STATE: (\{.*?\})/);
+  if (stateMatch) {
+    try {
+      const s = JSON.parse(stateMatch[1]);
+      if (s.curvature_depth) setCurvature(s.curvature_depth);
+      if (s.active_agents && s.active_agents.length) setActiveAgent(s.active_agents[0]);
+    } catch(_){}
+  }
 
-                if (isProcessing && !msg.stream && (msg.data.includes('Process exited') || msg.data.includes('complete') || msg.data.trim().endsWith('♡'))) {
-                    isProcessing = false;
-                    printPrompt();
-                }
-            });
-            
-            socket.on('stream_end', () => {
-                isProcessing = false;
-                printPrompt();
-            });
+  msgCount++;
+  document.getElementById('sess-msgs').textContent = msgCount;
+}
 
-            socket.on('wallet_status', (data) => {
-                walletConnected = data.connected;
-                walletAddress = data.address;
-                updateStatusBar();
-            });
-            
-            socket.on('wallet:connect_prompt', (data) => {
-                term.writeln(`\x1b[38;5;213m${data.message}\x1b[0m`);
-                term.writeln(`\x1b[38;5;213m${data.security_note}\x1b[0m`);
-            });
-            
-            socket.on('wallet:error', (data) => {
-                term.writeln(`\x1b[31m❌ Wallet error: ${data.message}\x1b[0m`);
-            });
-            
-            socket.on('tx:proposal', (data) => {
-                const proposal = data.proposal;
-                term.writeln(`\r\n\x1b[38;5;213m📝 Transaction proposal received:\x1b[0m`);
-                term.writeln(`  Chain: ${proposal.chainId}`);
-                term.writeln(`  To: ${proposal.to}`);
-                term.writeln(`  Description: ${proposal.description}`);
-                term.writeln(`\x1b[38;5;213mConfirm in Phantom extension to sign\x1b[0m`);
-                
-                if (walletConnected) {
-                    signTransaction(proposal);
-                } else {
-                    term.writeln(`\x1b[31m⚠️  Wallet not connected — run /wallet connect first\x1b[0m`);
-                }
-            });
-            
-            socket.on('wallet:tx_broadcast', (data) => {
-                if (data.success) {
-                    term.writeln(`\x1b[32m✅ Transaction broadcast: ${data.txHash.slice(0,16)}…\x1b[0m`);
-                    term.writeln(`\x1b[38;5;213mView on explorer: https://solscan.io/tx/${data.txHash}\x1b[0m`);
-                }
-            });
-            
-            socket.on('wallet:signature_error', (data) => {
-                term.writeln(`\x1b[31m❌ Signature error: ${data.message}\x1b[0m`);
-            });
-            
-            socket.on('dht:peers_found', (data) => {
-                const peers = data.peers || [];
-                const panel = document.getElementById('dht-peers');
-                const countEl = document.getElementById('dht-count');
-                
-                panel.innerHTML = '';
-                countEl.textContent = `(${peers.length})`;
-                
-                if (peers.length === 0) {
-                    panel.innerHTML = '<div class="dim">No peers found for this role</div>';
-                    return;
-                }
-                
-                peers.forEach(peer => {
-                    const div = document.createElement('div');
-                    div.className = 'peer';
-                    div.innerHTML = `
-                        <div class="peer-id">${peer.peerId.slice(0,16)}…</div>
-                        <div class="roles">${(peer.roles||[]).join(', ') || 'agent'}</div>
-                        <div class="dim">${new Date(peer.timestamp).toLocaleTimeString()}</div>
-                    `;
-                    panel.appendChild(div);
-                });
-                
-                term.writeln(`\x1b[38;5;213m🌱 Found \x1b[38;5;206m${peers.length}\x1b[38;5;213m peers in DHT (panel updated)\x1b[0m`);
-            });
-            
-            socket.on('dht:announced', (data) => {
-                term.writeln(`\x1b[32m✅ Announced to DHT: \x1b[38;5;206m${data.peerId.slice(0,16)}…\x1b[0m`);
-                socket.emit('dht:query_peers', { role: 'web_observer', limit: 5 });
-            });
-            
-            socket.on('dht:announce_error', (data) => {
-                term.writeln(`\x1b[31m❌ DHT announce failed: ${data.error}\x1b[0m`);
-            });
-        }
-        
-        function setupTerminal() {
-            term.focus();
-            document.addEventListener('click', () => term.focus());
-            
-            window.addEventListener('resize', () => {
-                term.resize(Math.floor(window.innerWidth / 8), Math.floor((window.innerHeight - 40) / 15));
-            });
-            
-            term.resize(Math.floor(window.innerWidth / 8), Math.floor((window.innerHeight - 40) / 15));
-            
-            updateStatusBar();
-            document.getElementById('runtime-toggle').addEventListener('click', toggleRuntime);
-        }
-    </script>
+function scrollOutput() {
+  const out = document.getElementById('output');
+  out.scrollTop = out.scrollHeight;
+}
+
+// ══ SEND ══
+function sendCmd() {
+  const input = document.getElementById('cmd-input');
+  const cmd   = input.value.trim();
+  if (!cmd || isProcessing) return;
+
+  cmdHistory.unshift(cmd);
+  if (cmdHistory.length > 50) cmdHistory.pop();
+  histIdx = -1;
+
+  const summonMatch = cmd.match(/^\/summon\s+(\S+)/i);
+  if (summonMatch) setActiveAgent(summonMatch[1]);
+
+  finalizeStream();
+  appendLine(`swarm@[REDACTED]:~$ ${cmd}`, 'input-echo');
+  logEvent(cmd.slice(0,36), 'ok');
+  hideSuggestions();
+
+  if (socket && socket.connected) {
+    isProcessing = true;
+    socket.emit('command', { cmd });
+  } else {
+    demoRespond(cmd);
+  }
+
+  input.value = '';
+}
+
+// ══ DEMO MODE ══
+function demoRespond(cmd) {
+  const lc = cmd.toLowerCase().trim();
+  setTimeout(() => {
+    if (lc === '/status') {
+      appendLines(`[SYSTEM] Swarm integrity check...\n  nodes: 7/7 ONLINE\n  lattice: STABLE\n  curvature: ${curvatureDepth}\n  mandala: SPINNING\nswarm@[REDACTED]:~$`);
+    } else if (lc === '/help') {
+      appendLines(`[SYSTEM] Command reference — see COMMANDS list above.\nswarm@[REDACTED]:~$`);
+    } else {
+      appendLines(`[SYSTEM] Demo mode — no backend connected.\nswarm@[REDACTED]:~$`);
+    }
+    bumpCurvature();
+  }, 300);
+}
+
+// ══ AGENT ══
+function summonAgent(el) {
+  document.getElementById('cmd-input').value = `/summon ${el.dataset.agent}`;
+  document.getElementById('cmd-input').focus();
+}
+function setActiveAgent(name) {
+  activeAgent = name;
+  document.getElementById('sess-agent').textContent = name.toUpperCase().slice(0,12);
+  document.getElementById('tb-agent').className = 'tb-item active';
+  document.querySelectorAll('.agent-entry').forEach(el => {
+    el.classList.toggle('active', el.dataset.agent.toLowerCase() === name.toLowerCase());
+  });
+  logEvent(`agent: ${name}`, 'ok');
+}
+
+// ══ CURVATURE ══
+function setCurvature(val) {
+  curvatureDepth = val;
+  document.getElementById('curv-display').textContent = val;
+  document.getElementById('curv-fill').style.width = Math.min(100, (val / 30) * 100) + '%';
+}
+function bumpCurvature() {
+  const delta = (Math.random() > 0.5 ? 1 : -1) * (Math.random() > 0.7 ? 2 : 1);
+  setCurvature(Math.max(1, Math.min(99, curvatureDepth + delta)));
+}
+
+// ══ EVENT LOG ══
+function logEvent(msg, type='') {
+  const log = document.getElementById('activity-log');
+  const el  = document.createElement('div');
+  el.className = 'act-entry' + (type ? ` act-${type}` : '');
+  const n = new Date();
+  el.innerHTML = `<div class="act-time">${pad(n.getHours())}:${pad(n.getMinutes())}:${pad(n.getSeconds())}</div><div class="act-msg">${escHtml(msg)}</div>`;
+  log.appendChild(el);
+  while (log.children.length > 60) log.removeChild(log.firstChild);
+  log.scrollTop = log.scrollHeight;
+}
+
+// ══ SUGGESTIONS ══
+const inputEl = document.getElementById('cmd-input');
+const sugBox  = document.getElementById('cmd-suggestions');
+
+inputEl.addEventListener('input', () => {
+  const v = inputEl.value;
+  if (!v.startsWith('/')) { hideSuggestions(); return; }
+  const matches = COMMANDS.filter(c => c.cmd.startsWith(v.split(' ')[0].toLowerCase()));
+  if (!matches.length) { hideSuggestions(); return; }
+  sugBox.innerHTML = '';
+  sugIdx = -1;
+  matches.slice(0,8).forEach(c => {
+    const d = document.createElement('div');
+    d.className = 'sug-item';
+    d.innerHTML = `<span class="sug-cmd">${c.cmd}</span><span>${c.desc}</span>`;
+    d.addEventListener('mousedown', e => {
+      e.preventDefault();
+      inputEl.value = c.cmd + ' ';
+      hideSuggestions();
+      inputEl.focus();
+    });
+    sugBox.appendChild(d);
+  });
+  sugBox.classList.add('show');
+});
+
+inputEl.addEventListener('keydown', e => {
+  if (e.key === 'ArrowUp' && !sugBox.classList.contains('show')) {
+    e.preventDefault();
+    histIdx = Math.min(histIdx + 1, cmdHistory.length - 1);
+    if (cmdHistory[histIdx]) inputEl.value = cmdHistory[histIdx];
+    return;
+  }
+  if (e.key === 'ArrowDown' && !sugBox.classList.contains('show')) {
+    e.preventDefault();
+    histIdx = Math.max(histIdx - 1, -1);
+    inputEl.value = histIdx >= 0 ? cmdHistory[histIdx] : '';
+    return;
+  }
+  if (sugBox.classList.contains('show')) {
+    const items = sugBox.querySelectorAll('.sug-item');
+    if (e.key === 'ArrowDown') { e.preventDefault(); sugIdx=(sugIdx+1)%items.length; items.forEach((it,i)=>it.classList.toggle('focused',i===sugIdx)); }
+    else if (e.key === 'ArrowUp') { e.preventDefault(); sugIdx=(sugIdx-1+items.length)%items.length; items.forEach((it,i)=>it.classList.toggle('focused',i===sugIdx)); }
+    else if ((e.key==='Tab'||e.key==='Enter') && sugIdx>=0 && items[sugIdx]) {
+      e.preventDefault();
+      const c = COMMANDS.find(x=>x.cmd===items[sugIdx].querySelector('.sug-cmd').textContent);
+      if (c) inputEl.value = c.cmd + ' ';
+      hideSuggestions();
+      if (e.key==='Enter') return;
+      return;
+    }
+  }
+  if (e.key === 'Enter')  sendCmd();
+  if (e.key === 'Escape') hideSuggestions();
+});
+
+document.addEventListener('click', e => {
+  if (!sugBox.contains(e.target) && e.target !== inputEl) hideSuggestions();
+});
+
+function hideSuggestions() { sugBox.classList.remove('show'); sugBox.innerHTML=''; sugIdx=-1; }
+
+// ══ CLOCK + UPTIME ══
+function startClock() {
+  function tick() {
+    const n = new Date();
+    document.getElementById('clock').textContent = `${pad(n.getHours())}:${pad(n.getMinutes())}:${pad(n.getSeconds())}`;
+    document.getElementById('sb-time').innerHTML = `${pad(n.getUTCHours())}:${pad(n.getUTCMinutes())} <strong>UTC</strong>`;
+  }
+  tick(); setInterval(tick, 1000);
+}
+function startUptime() {
+  setInterval(() => {
+    const s  = Math.floor((Date.now()-startTime)/1000);
+    const h  = Math.floor(s/3600), m=Math.floor((s%3600)/60), sec=s%60;
+    document.getElementById('sess-uptime').textContent = h?`${h}h${pad(m)}m`:m?`${m}m${pad(sec)}s`:`${sec}s`;
+  }, 1000);
+}
+
+// ══ RANDOM GLITCH ══
+setInterval(() => {
+  if (Math.random() > 0.97) {
+    const go = document.getElementById('glitch-overlay');
+    go.classList.add('active');
+    setTimeout(()=>go.classList.remove('active'), 120);
+  }
+}, 2000);
+
+// ══ UTILS ══
+function pad(n) { return String(n).padStart(2,'0'); }
+function genId() { return Math.random().toString(36).slice(2,10).toUpperCase(); }
+function escHtml(s) { return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+</script>
 </body>
 </html>
