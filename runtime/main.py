@@ -55,6 +55,7 @@ TASK_HANDLERS = {
     "summarize_url":   "tasks.summarize_url",
     "research":        "tasks.research",
     "web_research":    "tasks.web_research",
+    "deep_research":   "tasks.deep_research",
     "pattern_detect":  "tasks.pattern_detect",
     "context_brief":   "tasks.context_brief",
     "fact_audit":      "tasks.fact_audit",

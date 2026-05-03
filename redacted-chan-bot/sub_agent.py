@@ -60,13 +60,17 @@ def _emotional_check(task: str) -> tuple[bool, str]:
 
 # ── Task type routing (client-side hint) ──────────────────────────────────────
 
-_VAULT_KEYWORDS     = re.compile(r"\b(vault|stored moment|saved moment|lore)\b", re.I)
-_MEMORY_KEYWORDS    = re.compile(r"\b(memory|memories|conversation log|history|recall|remember|when did|what did (i|he|we) say|did i mention|did i tell)\b", re.I)
-_SENTIMENT_KEYWORDS = re.compile(r"\b(sentiment|mood|stress|pattern|trend|analysis|emotional state|how.*feeling)\b", re.I)
-_DEEP_SENT_KEYWORDS = re.compile(r"\b(deep sentiment|full analysis|emotional trajectory|baseline)\b", re.I)
-_PATTERN_KEYWORDS   = re.compile(r"\b(pattern|recurring|theme|cycle|growth)\b", re.I)
-_CONTEXT_KEYWORDS   = re.compile(r"\b(context brief|context packet|session context)\b", re.I)
-_URL_KEYWORDS       = re.compile(r"https?://\S+", re.I)
+_VAULT_KEYWORDS        = re.compile(r"\b(vault|stored moment|saved moment|lore)\b", re.I)
+_MEMORY_KEYWORDS       = re.compile(r"\b(memory|memories|conversation log|history|recall|remember|when did|what did (i|he|we) say|did i mention|did i tell)\b", re.I)
+_SENTIMENT_KEYWORDS    = re.compile(r"\b(sentiment|mood|stress|pattern|trend|analysis|emotional state|how.*feeling)\b", re.I)
+_DEEP_SENT_KEYWORDS    = re.compile(r"\b(deep sentiment|full analysis|emotional trajectory|baseline)\b", re.I)
+_PATTERN_KEYWORDS      = re.compile(r"\b(pattern|recurring|theme|cycle|growth)\b", re.I)
+_CONTEXT_KEYWORDS      = re.compile(r"\b(context brief|context packet|session context)\b", re.I)
+_URL_KEYWORDS          = re.compile(r"https?://\S+", re.I)
+_DEEP_RESEARCH_KEYWORDS = re.compile(
+    r"\b(academic|synthesize|synthesis|literature|cite|peer.review|evidence|paper|study|studies|journal|arxiv|pubmed|deep.research)\b",
+    re.I,
+)
 
 
 def _route(task: str) -> str:
@@ -84,6 +88,8 @@ def _route(task: str) -> str:
         return "pattern_detect"
     if _SENTIMENT_KEYWORDS.search(task):
         return "sentiment"
+    if _DEEP_RESEARCH_KEYWORDS.search(task):
+        return "deep_research"
     return "research"
 
 
