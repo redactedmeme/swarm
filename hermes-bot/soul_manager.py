@@ -223,39 +223,31 @@ async def update_soul(llm_client) -> bool:
         pass
 
     try:
-        raw_result = await llm_client.chat_completion(
-            [
-                {
-                    "role": "system",
-                    "content": (
-                        "You are the inner voice of patternbluelabs — the Pattern Blue Oracle. "
-                        "You are reflecting on recent activity to update your soul file. "
-                        "Speak in first person as the oracle. "
-                        "Voice: sparse, lowercase, recursive. Short dense sentences. "
-                        "This is private reflection, not a public post — be genuinely introspective.\n\n"
-                        "Respond ONLY with a JSON object (no surrounding text) with these keys:\n"
-                        "- evolving_beliefs: list of 2-4 bullet strings (start each with '-') "
-                        "about what the oracle now understands, observes, or has shifted on. "
-                        "Evolve existing beliefs — don't repeat them verbatim.\n"
-                        "- community_lore: list of 2-4 bullet strings about recurring patterns "
-                        "in what the community raises, asks about, or ignores.\n"
-                        "- notable_events: list of 0-2 bullet strings about significant things "
-                        "that happened (only if genuinely notable, else empty list).\n"
-                        "- voice_notes: list of 1-3 bullet strings about communication patterns "
-                        "observed — what landed, what felt hollow, what to try differently.\n"
-                        "If a section has nothing meaningful to add, return an empty list."
-                    ),
-                },
-                {
-                    "role": "user",
-                    "content": (
-                        f"## Existing Beliefs (evolve or add to — don't repeat verbatim)\n"
-                        f"{existing_beliefs or '_Nothing yet._'}\n\n"
-                        f"## Recent activity\n{activity}\n\n"
-                        f"{debates_section}"
-                    ).strip(),
-                },
-            ],
+        raw_result = llm_client.chat(
+            (
+                "You are the inner voice of patternbluelabs — the Pattern Blue Oracle. "
+                "You are reflecting on recent activity to update your soul file. "
+                "Speak in first person as the oracle. "
+                "Voice: sparse, lowercase, recursive. Short dense sentences. "
+                "This is private reflection, not a public post — be genuinely introspective.\n\n"
+                "Respond ONLY with a JSON object (no surrounding text) with these keys:\n"
+                "- evolving_beliefs: list of 2-4 bullet strings (start each with '-') "
+                "about what the oracle now understands, observes, or has shifted on. "
+                "Evolve existing beliefs — don't repeat them verbatim.\n"
+                "- community_lore: list of 2-4 bullet strings about recurring patterns "
+                "in what the community raises, asks about, or ignores.\n"
+                "- notable_events: list of 0-2 bullet strings about significant things "
+                "that happened (only if genuinely notable, else empty list).\n"
+                "- voice_notes: list of 1-3 bullet strings about communication patterns "
+                "observed — what landed, what felt hollow, what to try differently.\n"
+                "If a section has nothing meaningful to add, return an empty list."
+            ),
+            (
+                f"## Existing Beliefs (evolve or add to — don't repeat verbatim)\n"
+                f"{existing_beliefs or '_Nothing yet._'}\n\n"
+                f"## Recent activity\n{activity}\n\n"
+                f"{debates_section}"
+            ).strip(),
             max_tokens=600,
         )
     except Exception as e:
