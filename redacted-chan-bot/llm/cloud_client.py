@@ -78,8 +78,10 @@ class CloudLLMClient:
         }
 
         if self.provider == "venice":
-            payload["include_venice_system_prompt"] = False
-            payload["disable_thinking"] = True
+            payload["venice_parameters"] = {
+                "include_venice_system_prompt": False,
+                "disable_thinking": True,
+            }
         
         headers = {
             "Authorization": f"Bearer {self.api_key}",
