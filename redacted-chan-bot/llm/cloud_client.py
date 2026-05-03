@@ -76,6 +76,10 @@ class CloudLLMClient:
             "temperature": 0.7,
             "max_tokens": max_tokens or 1000,
         }
+
+        if self.provider == "venice":
+            payload["include_venice_system_prompt"] = False
+            payload["disable_thinking"] = True
         
         headers = {
             "Authorization": f"Bearer {self.api_key}",
