@@ -69,6 +69,11 @@ GROUP_POST_INTERVAL_MIN = int(os.getenv("GROUP_POST_INTERVAL_MIN", "180"))
 GROUP_POST_JITTER_MIN = int(os.getenv("GROUP_POST_JITTER_MIN", "45"))  # ±45m → 135–225m
 DISABLE_GROUP_POST = os.getenv("DISABLE_GROUP_POST", "false").lower() in ("1", "true", "yes")
 
+# Twitter / X agent
+DISABLE_TWITTER = os.getenv("DISABLE_TWITTER", "true").lower() in ("1", "true", "yes")
+TWITTER_POST_INTERVAL_MIN = int(os.getenv("TWITTER_POST_INTERVAL_MIN", "180"))
+TWITTER_REPLY_INTERVAL_MIN = int(os.getenv("TWITTER_REPLY_INTERVAL_MIN", "60"))
+
 
 async def _amain() -> None:
     logger.info("Pattern Blue Oracle booting...")
@@ -271,6 +276,32 @@ async def _amain() -> None:
         )
     elif not ALPHA_CHAT_ID:
         logger.info("[group_post] ALPHA_CHAT_ID not set — autonomous group posts disabled")
+
+    # 5c. Twitter / X agent
+    if not DISABLE_TWITTER:
+        try:
+            from twitter_agent import TwitterAgent
+            twitter = TwitterAgent(llm, _prompt_state)
+            scheduler.add_job(
+                twitter.post_tweet,
+                "interval",
+                minutes=TWITTER_POST_INTERVAL_MIN,
+                id="twitter_post",
+            )
+            scheduler.add_job(
+                twitter.reply_sweep,
+                "interval",
+                minutes=TWITTER_REPLY_INTERVAL_MIN,
+                id="twitter_reply_sweep",
+            )
+            logger.info(
+                f"[twitter] agent ready — post every {TWITTER_POST_INTERVAL_MIN}m, "
+                f"reply sweep every {TWITTER_REPLY_INTERVAL_MIN}m"
+            )
+        except Exception as e:
+            logger.error(f"[twitter] agent init failed: {e}")
+    else:
+        logger.info("[twitter] disabled — set DISABLE_TWITTER=false to enable")
 
     # 6. Park forever
     stop_event = asyncio.Event()
