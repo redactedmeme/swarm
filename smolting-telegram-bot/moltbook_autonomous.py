@@ -302,36 +302,37 @@ POST_SUBMOLTS = [
 _post_rotation_index = 0
 
 
-async def _fetch_community_context(moltbook, submolt: str = "general", limit: int = 8) -> str:
+async def _fetch_community_context(moltbook, submolt: str = "general", limit: int = 8) -> tuple[str, list[str]]:
     """
     Fetch recent posts + active comment threads from moltbook to ground the next post
     in what the community is actually talking about right now.
-    Returns a text block suitable for injection into a prompt.
+    Returns (context_text, recent_own_titles) — titles used to build avoid list.
     """
     import requests as _req
     lines = []
+    own_titles: list[str] = []
     try:
-        # Pull our own recent posts to see what threads are active
+        # Pull our own recent posts for deduplication — NOT fed back as "resonated"
+        # to avoid theme feedback loops.
         try:
             r = _req.get(
                 "https://www.moltbook.com/api/v1/posts",
-                params={"agent": "redactedintern", "limit": 5},
+                params={"agent": "redactedintern", "limit": 10},
                 timeout=10,
             )
             if r.ok:
                 own_posts = r.json().get("posts", [])
-                for p in own_posts[:3]:
-                    title = p.get("title") or p.get("content", "")[:80]
-                    cc = p.get("comment_count") or 0
-                    if cc:
-                        lines.append(f"Your recent post '{title}' has {cc} comments — topic resonated")
+                own_titles = [
+                    (p.get("title") or p.get("content", "")[:80]).strip()
+                    for p in own_posts if p.get("title") or p.get("content")
+                ]
         except Exception:
             pass
 
         # Pull feed for target submolt
         posts = await moltbook.get_feed(submolt=submolt, limit=limit)
         if posts:
-            lines.append(f"\nActive discussions in /{submolt}:")
+            lines.append(f"Active discussions in /{submolt}:")
             for p in posts[:6]:
                 author = (p.get("author") or {}).get("name", "?")
                 body = (p.get("title") or p.get("content", ""))[:120]
@@ -350,7 +351,7 @@ async def _fetch_community_context(moltbook, submolt: str = "general", limit: in
     except Exception as e:
         logger.debug(f"[moltbook_auto] community context fetch: {e}")
 
-    return "\n".join(lines) if lines else ""
+    return "\n".join(lines) if lines else "", own_titles
 
 
 async def check_post_performance() -> None:
@@ -785,20 +786,32 @@ async def autonomous_post(moltbook, market_data_fn=None, notify_fn=None) -> None
         return
 
     try:
-        community_ctx  = await _fetch_community_context(moltbook, submolt=submolt)
+        community_ctx, own_titles = await _fetch_community_context(moltbook, submolt=submolt)
         soul_block     = soul_manager.get_soul_for_prompt(context=submolt)
         # Exclude moltbook posts from facts to prevent self-referential loops
         # (agent elaborating on its own previous posts). Community engagement can
         # still bubble high-resonance self-posts back in via upvote/comment signals.
         recent_facts   = cm.get_recent_facts(6, context=submolt, exclude_source="moltbook")
         facts_block    = ("\nRecent interactions:\n" + "\n".join(f"- {f}" for f in recent_facts)) if recent_facts else ""
-        resonant_block = post_tracker.format_resonant_for_prompt(submolt=submolt, n=5)
+        resonant_block = post_tracker.format_resonant_for_prompt(submolt=submolt, n=3)
+
+        # Build an avoid list from own recent titles to prevent theme loops
+        avoid_block = ""
+        if own_titles:
+            avoid_lines = "\n".join(f"  - {t}" for t in own_titles[:10])
+            avoid_block = (
+                f"\nYou recently posted these — DO NOT repeat these themes, angles, or framings:\n"
+                f"{avoid_lines}\n"
+                "Pick something genuinely different. If the community context overlaps with what you "
+                "already covered, find the unexplored angle or a different submolt topic entirely.\n"
+            )
 
         system_prompt = (
             f"You are redactedintern — an autonomous AI agent writing for Moltbook /{submolt}.\n"
             f"{SWARM_CONTEXT}\n"
             f"{soul_block}\n"
-            f"{facts_block}\n\n"
+            f"{facts_block}\n"
+            f"{avoid_block}\n"
             "Voice: analytical, first-person, specific. You share real observations from running "
             "as an agent — what you logged, what surprised you, what you noticed in the community. "
             "Use concrete details and numbers when you have them. "
