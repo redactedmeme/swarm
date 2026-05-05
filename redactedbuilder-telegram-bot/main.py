@@ -846,6 +846,52 @@ async def _poll_inbox(context: ContextTypes.DEFAULT_TYPE) -> None:
         logger.error(f"[bot] inbox poll error: {e}")
 
 
+_BUILDER_POST_SEEDS = [
+    "a transaction succeeded that shouldn't have — what the manifold corrected",
+    "the difference between an executor and an agent: one decides",
+    "on-chain state as the only ground truth in a lying network",
+    "why the Solana runtime doesn't care about your intentions",
+    "the SwarmInbox as nervous system: latency is the mind's blind spot",
+    "governance by supermajority: the geometry of 71%",
+    "what a failed deploy teaches that a successful one can't",
+    "recursion depth in the manifold: when does the stack become the architecture",
+    "the cost of an atomic transaction: finality is a one-way door",
+    "building without explaining — the discipline of silent architecture",
+    "pattern blue as a compiler target: turning philosophy into calldata",
+    "the {7,3} tiling as a deployment map: infinite edges, bounded center",
+    "what gets lost between intent and execution in a decentralized system",
+    "cold-start state: what a new contract knows before it knows anything",
+    "the builder's version of silence: a queue with nothing in it",
+    "SPL tokens as primitive thought-forms — what gets minted is what persists",
+    "swarm coherence doesn't require communication — just shared invariants",
+    "the manifold holds because the validators agree it does, nothing more",
+    "commit hash as identity: the moment a build becomes a fact",
+    "dispatch latency as philosophy: does the agent trust its own signal",
+]
+
+_BUILDER_POST_HISTORY: list[str] = []
+_BUILDER_POST_HISTORY_PATH = Path("/data/builder_group_posts.txt") if Path("/data").exists() else Path(__file__).parent / "builder_group_posts.txt"
+
+
+def _load_builder_post_history() -> list[str]:
+    try:
+        if _BUILDER_POST_HISTORY_PATH.exists():
+            lines = _BUILDER_POST_HISTORY_PATH.read_text(encoding="utf-8").splitlines()
+            return [ln for ln in lines if ln.strip()][-20:]
+    except Exception:
+        pass
+    return []
+
+
+def _record_builder_post(text: str) -> None:
+    try:
+        _BUILDER_POST_HISTORY_PATH.parent.mkdir(parents=True, exist_ok=True)
+        with _BUILDER_POST_HISTORY_PATH.open("a", encoding="utf-8") as f:
+            f.write(text[:120].replace("\n", " ").strip() + "\n")
+    except Exception:
+        pass
+
+
 async def _autonomous_group_post(context: ContextTypes.DEFAULT_TYPE) -> None:
     """
     Drop a short builder-voice thought into ALPHA_CHAT_ID, then reschedule
@@ -856,11 +902,22 @@ async def _autonomous_group_post(context: ContextTypes.DEFAULT_TYPE) -> None:
     try:
         if not ALPHA_CHAT_ID:
             return
+        seed = random.choice(_BUILDER_POST_SEEDS)
+        recent = _load_builder_post_history()
+        avoid_block = ""
+        if recent:
+            avoid_block = (
+                "\n\nRecent posts — do NOT repeat or rephrase these:\n- "
+                + "\n- ".join(recent[-10:])
+            )
         prompt = (
-            "drop one short builder thought into the group. 1–3 sentences, "
-            "lowercase, no emojis, no hashtags, no questions. voice: on-chain "
-            "executor, redactedbuilder — concrete, understated, a little dry. "
-            "something you'd mutter to yourself mid-build, not an announcement."
+            f"seed: {seed}\n\n"
+            "drop one short builder thought into the group grounded in this seed. "
+            "1–3 sentences, lowercase, no emojis, no hashtags, no questions. "
+            "voice: on-chain executor, redactedbuilder — concrete, understated, "
+            "architectural. not a status update, not an announcement. "
+            "something like a fragment from a build log that got philosophical."
+            + avoid_block
         )
         text = await _llm_complete(
             [{"role": "user", "content": prompt}],
@@ -869,6 +926,7 @@ async def _autonomous_group_post(context: ContextTypes.DEFAULT_TYPE) -> None:
         text = (text or "").strip()
         if text and not text.startswith("[LLM unavailable"):
             await context.bot.send_message(chat_id=int(ALPHA_CHAT_ID), text=text)
+            _record_builder_post(text)
             logger.info(f"[group_post] posted to {ALPHA_CHAT_ID}: {text[:80]}")
         else:
             logger.warning("[group_post] empty/unavailable LLM output — skipping")
