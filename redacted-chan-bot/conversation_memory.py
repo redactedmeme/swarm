@@ -357,6 +357,10 @@ def log_exchange(user_id: int, username: str, user_msg: str, bot_reply: str) -> 
         text = MEMORY_FILE.read_text(encoding="utf-8") if MEMORY_FILE.exists() else _HEADER
         text = _prune(text + entry)
         MEMORY_FILE.write_text(text, encoding="utf-8")
+        try:
+            MEMORY_FILE.chmod(0o600)
+        except Exception:
+            pass
     update_last_seen(user_id)
 
 

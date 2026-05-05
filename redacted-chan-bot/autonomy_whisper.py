@@ -36,7 +36,7 @@ import database_encryption as db_enc
 # Auto-approve threshold: whispers with confidence >= this value auto-approve without operator prompt
 # Range: 0.0 (always ask) to 1.0 (always auto-approve)
 # 0.7 = moderate confidence; high-signal whispers skip approval step
-AUTOAPPROVE_THRESHOLD = 0.7
+AUTOAPPROVE_THRESHOLD = 1.01  # effectively disabled — all whispers require manual /approve_whisper
 
 # ── Storage ────────────────────────────────────────────────────────────────────
 
@@ -369,6 +369,10 @@ def _apply_to_soul(w: dict) -> str:
             soul = soul + f"\n\n{marker}{entry}\n"
 
         SOUL_PATH.write_text(soul, encoding="utf-8")
+        try:
+            SOUL_PATH.chmod(0o600)
+        except Exception:
+            pass
         return entry.strip()
     except Exception as e:
         return f"apply failed: {e}"

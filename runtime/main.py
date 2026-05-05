@@ -75,7 +75,7 @@ async def _dispatch(req: TaskRequest) -> TaskResponse:
         result, model_used, sources = await mod.run(req.task, req.context or {})
     except Exception as e:
         logger.warning(f"[dispatch] {task_type} failed: {e}")
-        result = f"Task failed: {e}"
+        result = "Task failed. Check service logs for details."
         model_used = ""
         sources = []
 
@@ -127,13 +127,14 @@ async def run_task_async(req: TaskRequest):
             resp = await _dispatch(req)
             _async_tasks[task_id] = {"status": "done", "result": resp.model_dump()}
         except Exception as e:
-            _async_tasks[task_id] = {"status": "error", "result": str(e)}
+            logger.warning(f"[async_task] {task_id} failed: {e}")
+            _async_tasks[task_id] = {"status": "error", "result": "Task failed. Check service logs."}
 
     asyncio.create_task(_bg())
     return {"task_id": task_id, "status": "pending"}
 
 
-@app.get("/task/{task_id}")
+@app.get("/task/{task_id}", dependencies=[Depends(verify_token)])
 async def get_task_result(task_id: str):
     entry = _async_tasks.get(task_id)
     if not entry:

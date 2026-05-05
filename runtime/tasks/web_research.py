@@ -6,6 +6,7 @@ import asyncio
 
 import aiohttp
 import llm_client as llm
+from url_guard import validate_url
 
 logger = logging.getLogger(__name__)
 
@@ -20,7 +21,11 @@ def _strip_html(raw: str) -> str:
 
 async def _fetch_body(url: str, session: aiohttp.ClientSession) -> str:
     try:
-        async with session.get(url, timeout=aiohttp.ClientTimeout(total=8), allow_redirects=True) as r:
+        validate_url(url)
+    except ValueError:
+        return ""
+    try:
+        async with session.get(url, timeout=aiohttp.ClientTimeout(total=8), allow_redirects=False) as r:
             if r.status != 200:
                 return ""
             ct = r.headers.get("Content-Type", "")
