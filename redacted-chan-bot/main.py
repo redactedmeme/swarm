@@ -531,7 +531,6 @@ class RedactedChanBot:
             _guard = rg.get_guard()
             if _INJECTION_RE.search(text):
                 _guard.on_injection_detected()
-                import asyncio
                 asyncio.create_task(_guard.alert_admin({"user_id": user_id, "text_preview": text[:80]}))
         except Exception:
             _guard = None
