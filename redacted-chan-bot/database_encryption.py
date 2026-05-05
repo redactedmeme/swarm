@@ -31,8 +31,8 @@ def get_or_generate_key() -> str:
         # Generate a new key on first run
         key = secrets.token_hex(32)
         logger.warning(
-            f"[encryption] Generated new DATABASE_ENCRYPTION_KEY (first run). "
-            f"Add to Railway secrets: DATABASE_ENCRYPTION_KEY={key}"
+            "[encryption] Generated new DATABASE_ENCRYPTION_KEY (first run). "
+            "Add to Railway secrets as DATABASE_ENCRYPTION_KEY (value withheld from logs)."
         )
 
     _DB_KEY = key
@@ -66,8 +66,10 @@ def get_encrypted_connection(db_path: str | Path) -> sqlite3.Connection:
         return conn
 
     except ImportError:
-        # Fallback to unencrypted if sqlcipher3 not installed
-        logger.warning("[encryption] sqlcipher3 not available — using unencrypted SQLite")
+        logger.warning(
+            "[encryption] sqlcipher3 not available — falling back to unencrypted SQLite. "
+            "Install sqlcipher3 and set DATABASE_ENCRYPTION_KEY for at-rest encryption."
+        )
         conn = sqlite3.connect(str(db_path), check_same_thread=False)
         conn.row_factory = sqlite3.Row
         return conn

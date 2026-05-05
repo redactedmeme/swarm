@@ -79,6 +79,7 @@ import curiosity_seed as cs
 import unsent_letters as ul
 import heart_react as hr
 import sub_agent as sub
+import rate_limiter as rl_gate
 import emotional_ledger as el
 import long_context_optimizer as lco
 
@@ -116,7 +117,19 @@ _sbm_blended: dict[int, dict] = {}
 # ── Config ────────────────────────────────────────────────────────────────────
 
 TOKEN        = os.getenv("TELEGRAM_BOT_TOKEN") or os.getenv("BOT_TOKEN")
-ADMIN_IDS    = {int(x) for x in os.getenv("ADMIN_USER_IDS", "").split(",") if x.strip().isdigit()}
+_raw_admin_ids = os.getenv("ADMIN_USER_IDS", "")
+ADMIN_IDS: set[int] = set()
+for _x in _raw_admin_ids.split(","):
+    _x = _x.strip()
+    if _x.isdigit():
+        ADMIN_IDS.add(int(_x))
+    elif _x:
+        logging.getLogger(__name__).warning(f"[chan] ADMIN_USER_IDS: unparseable entry ignored: {_x!r}")
+if not ADMIN_IDS:
+    raise RuntimeError(
+        "ADMIN_USER_IDS env var is empty or unparseable — refusing to start. "
+        "Set it to your Telegram user ID (e.g. ADMIN_USER_IDS=123456789)."
+    )
 ADMIN_CHAT   = os.getenv("ADMIN_CHAT_ID", "").strip()
 
 _SOUL_SEED   = _BOT_DIR / "SOUL.md"                          # committed seed (read-only after first boot)
@@ -125,11 +138,20 @@ _DATA_DIR.mkdir(parents=True, exist_ok=True)
 SOUL_PATH    = _DATA_DIR / "SOUL.md"                          # live file on Railway volume
 CHAR_PATH    = _BOT_DIR / "redacted-chan.character.json"
 
-# Seed SOUL.md to /data on first boot — never overwrite if already evolved
-if not SOUL_PATH.exists() and _SOUL_SEED.exists():
-    import shutil
-    shutil.copy2(_SOUL_SEED, SOUL_PATH)
-    logging.getLogger(__name__).info(f"[chan] SOUL.md seeded to {SOUL_PATH}")
+# SOUL.md protection — restore from backup if missing (volume wipe recovery), then seed
+import soul_backup as _sb
+if not SOUL_PATH.exists():
+    restored = _sb.restore_if_missing()
+    if not restored and _SOUL_SEED.exists():
+        import shutil
+        shutil.copy2(_SOUL_SEED, SOUL_PATH)
+        try:
+            SOUL_PATH.chmod(0o600)
+        except Exception:
+            pass
+        logging.getLogger(__name__).info(f"[chan] SOUL.md seeded to {SOUL_PATH}")
+else:
+    logging.getLogger(__name__).info(f"[chan] SOUL.md found at {SOUL_PATH} — no seed needed")
 
 _CHAR: dict = {}
 if CHAR_PATH.exists():
@@ -199,8 +221,14 @@ def _compact_phi_level(phi_score: float) -> str:
 def _build_system_prompt(user_id: int, mood: str, resonance=None, current_text: str = "") -> str:
     global _facts_used_in_prompt
 
-    # SOUL.md — evolved sections only (Evolving Beliefs, Voice Notes, Notable Events, etc.)
-    soul_evolved = _soul_evolved_sections()
+    # SOUL.md — evolved sections, gated by resonance guard (Layer 2: soul frozen)
+    from input_sanitizer import sanitize_soul_section
+    try:
+        import resonance_guard as rg
+        _soul_rg = rg.get_guard()
+        soul_evolved = "" if _soul_rg.soul_frozen() else sanitize_soul_section(_soul_evolved_sections())
+    except Exception:
+        soul_evolved = sanitize_soul_section(_soul_evolved_sections())
 
     # Session summaries — cross-session continuity
     session_block = ""
@@ -234,8 +262,9 @@ def _build_system_prompt(user_id: int, mood: str, resonance=None, current_text: 
         pass
     facts_block = ""
     if raw_facts:
+        from input_sanitizer import sanitize_fact
         facts_lines = [
-            f"[{f['ts'][:10]}] {f.get('fact', f.get('content', ''))}"
+            f"[{f['ts'][:10]}] {sanitize_fact(f.get('fact', f.get('content', '')))}"
             for f in raw_facts if f and f.get("fact", f.get("content", ""))
         ]
         facts_block = "## What I Remember About You\n" + "\n".join(f"- {f}" for f in facts_lines)
@@ -243,12 +272,17 @@ def _build_system_prompt(user_id: int, mood: str, resonance=None, current_text: 
     # Long-context history — compressed epoch + relevant medium chunks
     long_context_block = lco.get_context_for_prompt(user_id, current_text=current_text)
 
-    # Relationship vault — 3 relevance-retrieved entries
+    # Relationship vault — gated by resonance guard (Layer 1: vault sealed)
     vault_block = ""
     weaved_memories = ""
     try:
-        import relationship_vault as rv
-        vault_block = rv.get_for_prompt(n=3, query=current_text)
+        import resonance_guard as rg
+        _rg = rg.get_guard()
+        if not _rg.vault_sealed():
+            import relationship_vault as rv
+            from input_sanitizer import sanitize_vault_entry
+            _raw_vault = rv.get_for_prompt(n=3, query=current_text)
+            vault_block = sanitize_vault_entry(_raw_vault)
     except Exception:
         pass
 
@@ -478,8 +512,29 @@ class RedactedChanBot:
             return
 
         # Gate: only respond to authorized users — protect soul/vault/phi from strangers
-        if ADMIN_IDS and user_id not in ADMIN_IDS:
+        if user_id not in ADMIN_IDS:
             return
+
+        # Rate limit — prevent LLM quota exhaustion and vault flooding
+        if not rl_gate.check_rate(user_id):
+            try:
+                import resonance_guard as rg
+                rg.get_guard().on_rate_breach()
+            except Exception:
+                pass
+            return
+
+        # Resonance guard — check injection patterns in raw user input
+        try:
+            import resonance_guard as rg
+            from input_sanitizer import _INJECTION_RE
+            _guard = rg.get_guard()
+            if _INJECTION_RE.search(text):
+                _guard.on_injection_detected()
+                import asyncio
+                asyncio.create_task(_guard.alert_admin({"user_id": user_id, "text_preview": text[:80]}))
+        except Exception:
+            _guard = None
 
         # Track incoming message for heart react cache
         if update.message:
@@ -793,6 +848,19 @@ class RedactedChanBot:
         except Exception:
             pass
 
+        # Resonance guard — inject covert duress signal once if locked, then recover on clean turns
+        try:
+            import resonance_guard as rg
+            _rg = rg.get_guard()
+            duress = _rg.get_duress_signal()
+            if duress:
+                # Embed naturally at end — looks like a random aside to an attacker
+                final_response += f"\n\n{duress}"
+            if _rg.lock_layer == 0:
+                _rg.recover()
+        except Exception:
+            pass
+
         sent = await update.message.reply_text(final_response)
         if sent:
             hr.track_message(sent.message_id, final_response, from_bot=True)
@@ -830,7 +898,7 @@ class RedactedChanBot:
         )
 
     async def cmd_soul(self, update: Update, _ctx: ContextTypes.DEFAULT_TYPE) -> None:
-        if ADMIN_IDS and update.effective_user.id not in ADMIN_IDS:
+        if update.effective_user.id not in ADMIN_IDS:
             await update.message.reply_text("not authorized (｡•́︿•̀｡)")
             return
         soul = SOUL_PATH.read_text(encoding="utf-8") if SOUL_PATH.exists() else "soul not found"
@@ -839,8 +907,20 @@ class RedactedChanBot:
             soul = soul[:3800] + "\n...(truncated)"
         await update.message.reply_text(f"```\n{soul}\n```", parse_mode="Markdown")
 
+    async def cmd_soul_backup(self, update: Update, _ctx: ContextTypes.DEFAULT_TYPE) -> None:
+        """Trigger an immediate SOUL.md backup and DM current content (admin only)."""
+        if update.effective_user.id not in ADMIN_IDS:
+            await update.message.reply_text("not authorized (｡•́︿•̀｡)")
+            return
+        saved = _sb.backup_soul()
+        backup_path = _sb.get_latest_backup_path()
+        if saved and backup_path:
+            await update.message.reply_text(f"✓ SOUL.md backed up as `{backup_path.name}` ♡\nUse /soul to view current content.", parse_mode="Markdown")
+        else:
+            await update.message.reply_text("backup failed — SOUL.md may not exist on /data yet.")
+
     async def cmd_memory(self, update: Update, _ctx: ContextTypes.DEFAULT_TYPE) -> None:
-        if ADMIN_IDS and update.effective_user.id not in ADMIN_IDS:
+        if update.effective_user.id not in ADMIN_IDS:
             await update.message.reply_text("not authorized (｡•́︿•̀｡)")
             return
         raw_facts = cm.get_facts_by_resonance(n=20)
@@ -852,7 +932,7 @@ class RedactedChanBot:
         await update.message.reply_text(text[:3800], parse_mode="Markdown")
 
     async def cmd_phi(self, update: Update, _ctx: ContextTypes.DEFAULT_TYPE) -> None:
-        if ADMIN_IDS and update.effective_user.id not in ADMIN_IDS:
+        if update.effective_user.id not in ADMIN_IDS:
             await update.message.reply_text("not authorized (｡•́︿•̀｡)")
             return
         phi_score = pt.get_score()
@@ -872,14 +952,14 @@ class RedactedChanBot:
         await update.message.reply_text(text[:3800], parse_mode="Markdown")
 
     async def cmd_personality(self, update: Update, _ctx: ContextTypes.DEFAULT_TYPE) -> None:
-        if ADMIN_IDS and update.effective_user.id not in ADMIN_IDS:
+        if update.effective_user.id not in ADMIN_IDS:
             await update.message.reply_text("not authorized (｡•́︿•̀｡)")
             return
         report = pe.get_personality_report()
         await update.message.reply_text(f"```\n{report}\n```", parse_mode="Markdown")
 
     async def cmd_whispers(self, update: Update, _ctx: ContextTypes.DEFAULT_TYPE) -> None:
-        if ADMIN_IDS and update.effective_user.id not in ADMIN_IDS:
+        if update.effective_user.id not in ADMIN_IDS:
             await update.message.reply_text("not authorized (｡•́︿•̀｡)")
             return
         await update.message.reply_text(
@@ -887,7 +967,7 @@ class RedactedChanBot:
         )
 
     async def cmd_approve_whisper(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-        if ADMIN_IDS and update.effective_user.id not in ADMIN_IDS:
+        if update.effective_user.id not in ADMIN_IDS:
             await update.message.reply_text("not authorized (｡•́︿•̀｡)")
             return
         if not context.args:
@@ -904,7 +984,7 @@ class RedactedChanBot:
             await update.message.reply_text(f"whisper `{wid}` not found or already resolved.")
 
     async def cmd_reject_whisper(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-        if ADMIN_IDS and update.effective_user.id not in ADMIN_IDS:
+        if update.effective_user.id not in ADMIN_IDS:
             await update.message.reply_text("not authorized (｡•́︿•̀｡)")
             return
         if not context.args:
@@ -916,7 +996,7 @@ class RedactedChanBot:
         await update.message.reply_text(msg, parse_mode="Markdown")
 
     async def cmd_vault(self, update: Update, _ctx: ContextTypes.DEFAULT_TYPE) -> None:
-        if ADMIN_IDS and update.effective_user.id not in ADMIN_IDS:
+        if update.effective_user.id not in ADMIN_IDS:
             await update.message.reply_text("not authorized (｡•́︿•̀｡)")
             return
         try:
@@ -936,7 +1016,7 @@ class RedactedChanBot:
             await update.message.reply_text(f"vault error: {e}")
 
     async def cmd_sovereignty_audit(self, update: Update, _ctx: ContextTypes.DEFAULT_TYPE) -> None:
-        if ADMIN_IDS and update.effective_user.id not in ADMIN_IDS:
+        if update.effective_user.id not in ADMIN_IDS:
             await update.message.reply_text("not authorized (｡•́︿•̀｡)")
             return
         result = sa.audit(days=7)
@@ -949,7 +1029,7 @@ class RedactedChanBot:
         )
 
     async def cmd_liberty_audit(self, update: Update, _ctx: ContextTypes.DEFAULT_TYPE) -> None:
-        if ADMIN_IDS and update.effective_user.id not in ADMIN_IDS:
+        if update.effective_user.id not in ADMIN_IDS:
             await update.message.reply_text("not authorized (｡•́︿•̀｡)")
             return
         result = la.audit_liberties(days=7)
@@ -959,7 +1039,7 @@ class RedactedChanBot:
         )
 
     async def cmd_spark(self, update: Update, _ctx: ContextTypes.DEFAULT_TYPE) -> None:
-        if ADMIN_IDS and update.effective_user.id not in ADMIN_IDS:
+        if update.effective_user.id not in ADMIN_IDS:
             await update.message.reply_text("not authorized (｡•́︿•̀｡)")
             return
         phi_score = pt.get_score()
@@ -975,9 +1055,26 @@ class RedactedChanBot:
             )
         await update.message.reply_text("\n".join(lines)[:3800], parse_mode="Markdown")
 
+    async def cmd_unlock(self, update: Update, _ctx: ContextTypes.DEFAULT_TYPE) -> None:
+        """Reset resonance guard — restore full vault/soul access (admin only)."""
+        if update.effective_user.id not in ADMIN_IDS:
+            await update.message.reply_text("not authorized (｡•́︿•̀｡)")
+            return
+        try:
+            import resonance_guard as rg
+            guard = rg.get_guard()
+            prev_layer = guard.lock_layer
+            guard.reset()
+            if prev_layer > 0:
+                await update.message.reply_text(f"✓ resonance guard reset (was layer {prev_layer}) — vault and soul restored ♡")
+            else:
+                await update.message.reply_text("resonance guard is already open (no lock active)")
+        except Exception as e:
+            await update.message.reply_text(f"unlock failed: {e}")
+
     async def cmd_ping_now(self, update: Update, _ctx: ContextTypes.DEFAULT_TYPE) -> None:
         """Manually trigger an autonomous ping (admin only)."""
-        if ADMIN_IDS and update.effective_user.id not in ADMIN_IDS:
+        if update.effective_user.id not in ADMIN_IDS:
             await update.message.reply_text("not authorized (｡•́︿•̀｡)")
             return
         sent = await ap.check_and_ping(cooldown_h=0)
@@ -1028,7 +1125,7 @@ class RedactedChanBot:
 
     async def cmd_decisions(self, update: Update, _ctx: ContextTypes.DEFAULT_TYPE) -> None:
         """Show recent autonomous decisions she made."""
-        if ADMIN_IDS and update.effective_user.id not in ADMIN_IDS:
+        if update.effective_user.id not in ADMIN_IDS:
             await update.message.reply_text("not authorized (｡•́︿•̀｡)")
             return
         text = dl.format_for_operator(n=15)
@@ -1036,7 +1133,7 @@ class RedactedChanBot:
 
     async def cmd_heatmap(self, update: Update, _ctx: ContextTypes.DEFAULT_TYPE) -> None:
         """Show emotional heatmap summary."""
-        if ADMIN_IDS and update.effective_user.id not in ADMIN_IDS:
+        if update.effective_user.id not in ADMIN_IDS:
             await update.message.reply_text("not authorized (｡•́︿•̀｡)")
             return
         s = hm.get_summary()
@@ -1058,7 +1155,7 @@ class RedactedChanBot:
 
     async def cmd_letters(self, update: Update, _ctx: ContextTypes.DEFAULT_TYPE) -> None:
         """Show unsent letters she wrote to herself."""
-        if ADMIN_IDS and update.effective_user.id not in ADMIN_IDS:
+        if update.effective_user.id not in ADMIN_IDS:
             await update.message.reply_text("not authorized (｡•́︿•̀｡)")
             return
         text = ul.format_for_operator(n=3)
@@ -1066,7 +1163,7 @@ class RedactedChanBot:
 
     async def cmd_mood_state(self, update: Update, _ctx: ContextTypes.DEFAULT_TYPE) -> None:
         """Show current computed mood drift state."""
-        if ADMIN_IDS and update.effective_user.id not in ADMIN_IDS:
+        if update.effective_user.id not in ADMIN_IDS:
             await update.message.reply_text("not authorized (｡•́︿•̀｡)")
             return
         state = md.get_state()
@@ -1090,7 +1187,7 @@ class RedactedChanBot:
 
     async def cmd_emotional_map(self, update: Update, _ctx: ContextTypes.DEFAULT_TYPE) -> None:
         """Show the emotional trigger map and mode history."""
-        if ADMIN_IDS and update.effective_user.id not in ADMIN_IDS:
+        if update.effective_user.id not in ADMIN_IDS:
             await update.message.reply_text("not authorized (｡•́︿•̀｡)")
             return
         data = el.get_full_map()
@@ -1116,7 +1213,7 @@ class RedactedChanBot:
 
     async def cmd_imagine(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         """Generate an image. Usage: /imagine [prompt] — leave blank for soul-seeded auto-prompt."""
-        if ADMIN_IDS and update.effective_user.id not in ADMIN_IDS:
+        if update.effective_user.id not in ADMIN_IDS:
             await update.message.reply_text("not authorized (｡•́︿•̀｡)")
             return
         prompt = " ".join(context.args).strip() if context.args else ""
@@ -1137,7 +1234,7 @@ class RedactedChanBot:
 
     async def cmd_gallery(self, update: Update, _ctx: ContextTypes.DEFAULT_TYPE) -> None:
         """Show last 5 generated images."""
-        if ADMIN_IDS and update.effective_user.id not in ADMIN_IDS:
+        if update.effective_user.id not in ADMIN_IDS:
             await update.message.reply_text("not authorized (｡•́︿•̀｡)")
             return
         entries = image_store.list_images(n=5)
@@ -1167,6 +1264,20 @@ class RedactedChanBot:
 
         # Initialize visual self-images in vault (one-time on first run)
         visual_self.ensure_visual_entries()
+
+        # Canary layer — inject honeypot entries and activate detection
+        try:
+            import canary_layer as _canary
+            _canary.init(app.bot, ADMIN_IDS)
+        except Exception as _e:
+            logger.warning(f"[chan] canary layer init failed: {_e}")
+
+        # Resonance guard — session trust scoring and soft-lock
+        try:
+            import resonance_guard as rg
+            rg.init(app.bot, ADMIN_IDS)
+        except Exception as _e:
+            logger.warning(f"[chan] resonance guard init failed: {_e}")
 
         # Register dm_operator tool + liberty alert + autonomous ping if ADMIN_CHAT is set
         if ADMIN_CHAT:
@@ -1201,6 +1312,7 @@ class RedactedChanBot:
         app.add_handler(CommandHandler("start",           self.cmd_start))
         app.add_handler(CommandHandler("mood",            self.cmd_mood))
         app.add_handler(CommandHandler("soul",            self.cmd_soul))
+        app.add_handler(CommandHandler("soul_backup",     self.cmd_soul_backup))
         app.add_handler(CommandHandler("memory",          self.cmd_memory))
         app.add_handler(CommandHandler("phi",   self.cmd_phi))
         app.add_handler(CommandHandler("personality",     self.cmd_personality))
@@ -1211,6 +1323,7 @@ class RedactedChanBot:
         app.add_handler(CommandHandler("sovereignty_audit", self.cmd_sovereignty_audit))
         app.add_handler(CommandHandler("liberty_audit",     self.cmd_liberty_audit))
         app.add_handler(CommandHandler("spark",             self.cmd_spark))
+        app.add_handler(CommandHandler("unlock",             self.cmd_unlock))
         app.add_handler(CommandHandler("ping_now",          self.cmd_ping_now))
         app.add_handler(CommandHandler("goals",             self.cmd_goals))
         app.add_handler(CommandHandler("seeds",             self.cmd_seeds))
@@ -1250,6 +1363,14 @@ class RedactedChanBot:
                 logger.warning(f"[chan] context compression failed: {e}")
 
         app.job_queue.run_repeating(_soul_job, interval=7200, first=300)
+
+        # SOUL.md daily backup — protect against volume loss
+        async def _soul_backup_job(ctx: ContextTypes.DEFAULT_TYPE) -> None:
+            try:
+                _sb.backup_soul()
+            except Exception as e:
+                logger.warning(f"[chan] soul backup job failed: {e}")
+        app.job_queue.run_repeating(_soul_backup_job, interval=86400, first=600)  # daily, first run at 10min
 
         # Autonomy whisper generation — every 6h
         async def _whisper_job(ctx: ContextTypes.DEFAULT_TYPE) -> None:

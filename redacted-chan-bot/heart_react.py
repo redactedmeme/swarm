@@ -52,6 +52,15 @@ async def handle_reaction(update, context) -> None:
     if not reaction_update:
         return
 
+    # Gate: only master can save vault entries via heart react
+    try:
+        from main import ADMIN_IDS
+        reacting_user_id = getattr(reaction_update.user, "id", None) or getattr(reaction_update.from_user, "id", None)
+        if reacting_user_id not in ADMIN_IDS:
+            return
+    except Exception:
+        pass  # if ADMIN_IDS unavailable, fall through (safe default: allow)
+
     # Only fire on new heart reactions (not removals)
     new_reactions = reaction_update.new_reaction or []
     old_reactions = reaction_update.old_reaction or []

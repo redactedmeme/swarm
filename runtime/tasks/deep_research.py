@@ -8,6 +8,7 @@ from urllib.parse import urlparse
 
 import aiohttp
 import llm_client as llm
+from url_guard import validate_url
 
 logger = logging.getLogger(__name__)
 
@@ -43,7 +44,11 @@ def _credibility_score(url: str) -> float:
 
 async def _fetch_body(url: str, session: aiohttp.ClientSession) -> str:
     try:
-        async with session.get(url, timeout=aiohttp.ClientTimeout(total=10), allow_redirects=True) as r:
+        validate_url(url)
+    except ValueError:
+        return ""
+    try:
+        async with session.get(url, timeout=aiohttp.ClientTimeout(total=10), allow_redirects=False) as r:
             if r.status != 200:
                 return ""
             ct = r.headers.get("Content-Type", "")

@@ -4,6 +4,7 @@ import re
 import aiohttp
 import data_client as dc
 import llm_client as llm
+from url_guard import validate_url
 
 
 async def run(task: str, context: dict) -> tuple[str, str, list[str]]:
@@ -14,9 +15,14 @@ async def run(task: str, context: dict) -> tuple[str, str, list[str]]:
     url = url_match.group()
 
     try:
+        validate_url(url)
+    except ValueError as e:
+        return f"URL blocked: {e}", "", []
+
+    try:
         headers = {"User-Agent": "Mozilla/5.0 (compatible; research-bot/1.0)"}
         async with aiohttp.ClientSession() as session:
-            async with session.get(url, headers=headers, timeout=aiohttp.ClientTimeout(total=15)) as resp:
+            async with session.get(url, headers=headers, timeout=aiohttp.ClientTimeout(total=15), allow_redirects=False) as resp:
                 content_type = resp.headers.get("Content-Type", "")
                 if "text" not in content_type and "html" not in content_type:
                     return f"Cannot read content type: {content_type}", "", []
