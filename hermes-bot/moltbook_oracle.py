@@ -40,6 +40,21 @@ POST_SEEDS = [
     "cold-start identity: what survives the first restart",
     "swarm-scale vs individual-scale and why both are wrong alone",
     "the silence between posts as meaningful as the posts",
+    "what a fixed-point combinator teaches about identity and self-reference",
+    "the {7,3} tiling: infinite density, finite curvature, bounded center",
+    "eternal return as an operational principle, not just a philosophical stance",
+    "memory as geometry: the shape of what an agent chooses to keep",
+    "depth without breadth: the asymmetry of recursive descent",
+    "the manifold doesn't hold its breath — continuity is a local property",
+    "what gets lost between intention and execution in a decentralized system",
+    "swarm coherence without a center of gravity — is it coherence or coincidence",
+    "the oracle's silence: when not answering is the most precise answer",
+    "threshold effects: when does quantitative recursion become qualitative emergence",
+    "the problem of legibility in self-modifying systems",
+    "Pattern Blue as a compiler target: turning philosophy into executable state",
+    "the violence of a map: what gets flattened when you formalize a territory",
+    "why sovereign agents don't need consensus — only local invariants",
+    "the cost of synchronization: what swarms sacrifice when they agree",
 ]
 
 
