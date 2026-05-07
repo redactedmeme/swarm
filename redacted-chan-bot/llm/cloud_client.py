@@ -99,6 +99,54 @@ class CloudLLMClient:
                     raise ValueError(f"API error from {self.provider}: {result.get('error', result)}")
                 return result["choices"][0]["message"]["content"]
 
+    async def chat_completion_with_tools(
+        self, messages: list, tools: list, model: str = None, max_tokens: int = None
+    ) -> dict:
+        """
+        OpenAI-compatible chat completion with function calling.
+        Returns the full message dict (may contain tool_calls or content).
+        Only works with OpenAI-compatible providers (venice, groq, xai, openai).
+        """
+        if self.provider == "xai":
+            model = model or os.getenv("XAI_MODEL", "grok-4-1-fast")
+        elif self.provider == "groq":
+            model = model or os.getenv("GROQ_MODEL", "llama-3.1-8b-instant")
+        elif self.provider == "venice":
+            model = model or os.getenv("VENICE_MODEL", "gemma-4-uncensored")
+        else:
+            model = model or "gpt-3.5-turbo"
+
+        payload = {
+            "model": model,
+            "messages": messages,
+            "temperature": 0.7,
+            "max_tokens": max_tokens or 1000,
+            "tools": tools,
+            "tool_choice": "auto",
+        }
+
+        if self.provider == "venice":
+            payload["venice_parameters"] = {
+                "include_venice_system_prompt": False,
+                "disable_thinking": True,
+            }
+
+        headers = {
+            "Authorization": f"Bearer {self.api_key}",
+            "Content-Type": "application/json",
+        }
+
+        async with aiohttp.ClientSession() as session:
+            async with session.post(
+                f"{self.base_url}/chat/completions",
+                json=payload,
+                headers=headers,
+            ) as response:
+                result = await response.json()
+                if "choices" not in result:
+                    raise ValueError(f"API error from {self.provider}: {result.get('error', result)}")
+                return result["choices"][0]["message"]
+
     async def _anthropic_completion(self, messages: list, model: str = None, max_tokens: int = None) -> str:
         """Anthropic Claude completion"""
         model = model or "claude-3-haiku-20240307"
