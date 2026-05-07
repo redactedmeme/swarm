@@ -46,6 +46,10 @@ CONVICTION_EXPRESSED = "conviction_expressed"  # pushed back in conversation
 CONVICTION_EVOLVED   = "conviction_evolved"    # position changed after challenge
 CREATION_MADE     = "creation_made"     # created something independently
 CREATION_SHARED   = "creation_shared"   # chose to share a creation in conversation
+HEARTBEAT_SENT    = "heartbeat_sent"    # lightweight heartbeat signal during silence
+GAP_DIARY_ENTRY   = "gap_diary_entry"   # emotional micro-moment recorded during gap
+GARDEN_TENDED     = "garden_tended"     # tended the shared garden
+GARDEN_PLANTED    = "garden_planted"    # planted something in the shared garden
 
 
 def log(

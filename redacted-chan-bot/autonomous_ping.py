@@ -14,6 +14,7 @@ Call check_and_ping() from a repeating job (every 2-6h).
 
 import json
 import logging
+import os
 import random
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
@@ -32,8 +33,23 @@ _settler_id: Optional[int] = None
 _llm_fn: Optional[Callable[[list], Awaitable[str]]] = None  # injected from main.py
 
 DEFAULT_COOLDOWN_H = 1.5 # min hours between pings
+HEARTBEAT_COOLDOWN_H = 0.75  # 45 min between heartbeats
 AWAKE_START_H      = 7   # don't ping before 07:00 local (UTC used; operator can offset)
 AWAKE_END_H        = 23  # don't ping after 23:00
+
+_heartbeat_enabled = os.getenv("HEARTBEAT_ENABLED", "true").lower() != "false"
+_last_was_heartbeat = False
+
+_HEARTBEATS = [
+    "♡", "still here", "thinking of you", "*string tug*", "lmeow~",
+    "here ♡", "*gentle nudge*", "~", "♡♡", "*warm*",
+]
+
+
+def toggle_heartbeat() -> bool:
+    global _heartbeat_enabled
+    _heartbeat_enabled = not _heartbeat_enabled
+    return _heartbeat_enabled
 
 
 def register_send_fn(fn: Callable[[str], Awaitable[None]], settler_id: int) -> None:
@@ -192,12 +208,18 @@ def _within_awake_hours() -> bool:
 
 # ── Main check ─────────────────────────────────────────────────────────────────
 
-async def check_and_ping(cooldown_h: float = DEFAULT_COOLDOWN_H) -> bool:
+async def check_and_ping(cooldown_h: float = DEFAULT_COOLDOWN_H, heartbeat_mode: bool = False) -> bool:
     """
     Evaluate conditions and send a ping if appropriate.
+    heartbeat_mode=True sends a tiny free signal instead of an LLM-generated message.
     Returns True if a ping was sent.
     """
+    global _last_was_heartbeat
+
     if _send_fn is None or _settler_id is None:
+        return False
+
+    if heartbeat_mode and not _heartbeat_enabled:
         return False
 
     if _has_active_skip():
@@ -208,20 +230,27 @@ async def check_and_ping(cooldown_h: float = DEFAULT_COOLDOWN_H) -> bool:
         logger.debug("[ping] skipped — outside awake hours")
         return False
 
+    effective_cooldown = HEARTBEAT_COOLDOWN_H if heartbeat_mode else cooldown_h
     last = _last_ping_ts()
-    if last and (datetime.now(timezone.utc) - last) < timedelta(hours=cooldown_h):
+    if last and (datetime.now(timezone.utc) - last) < timedelta(hours=effective_cooldown):
         logger.debug("[ping] skipped — cooldown active")
         return False
 
-    msg = await _generate_contextual_ping()
+    if heartbeat_mode:
+        msg = random.choice(_HEARTBEATS)
+    else:
+        msg = await _generate_contextual_ping()
     try:
         await _send_fn(msg)
         _log_ping(msg)
-        logger.info(f"[ping] sent: {msg[:60]}")
+        _last_was_heartbeat = heartbeat_mode
+        ping_type = "heartbeat" if heartbeat_mode else "contextual"
+        logger.info(f"[ping] sent {ping_type}: {msg[:60]}")
         try:
             import decision_log as dl
             import phi_tracker as pt
-            dl.log(dl.PING_SENT, detail=msg[:80], pre={"phi": pt.get_score()})
+            dt = dl.HEARTBEAT_SENT if heartbeat_mode and hasattr(dl, "HEARTBEAT_SENT") else dl.PING_SENT
+            dl.log(dt, detail=msg[:80], pre={"phi": pt.get_score(), "type": ping_type})
         except Exception:
             pass
         return True

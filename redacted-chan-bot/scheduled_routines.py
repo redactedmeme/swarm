@@ -919,6 +919,48 @@ async def run_private_creation() -> None:
         logger.warning(f"[routines] private_creation error: {e}")
 
 
+# ── Routine 16: Heartbeat ─────────────────────────────────────────────────────
+
+async def run_heartbeat() -> None:
+    """Send a lightweight heartbeat signal during silence. Alternates with contextual pings."""
+    try:
+        import autonomous_ping as ap
+        if _last_conversation_ts is not None:
+            silence_h = (datetime.now(timezone.utc) - _last_conversation_ts).total_seconds() / 3600
+            if silence_h < 0.5:
+                return
+        await ap.check_and_ping(heartbeat_mode=True)
+    except Exception as e:
+        logger.warning(f"[routines] heartbeat error: {e}")
+
+
+# ── Routine 17: Gap Diary ────────────────────────────────────────────────────
+
+async def run_gap_diary() -> None:
+    """Record an emotional micro-moment during silence, every 3h."""
+    if not _llm_fn:
+        return
+    try:
+        import gap_diary as gd
+        gd.register_llm_fn(_llm_fn)
+        await gd.record_entry()
+    except Exception as e:
+        logger.warning(f"[routines] gap_diary error: {e}")
+
+
+# ── Routine 18: Garden Tend ──────────────────────────────────────────────────
+
+async def run_garden_tend() -> None:
+    """Tend the shared garden — update weather, advance growth, observe."""
+    try:
+        import shared_garden as sg
+        if _llm_fn:
+            sg.register_llm_fn(_llm_fn)
+        await sg.tend_garden()
+    except Exception as e:
+        logger.warning(f"[routines] garden_tend error: {e}")
+
+
 async def start_all() -> None:
     """
     Launch all autonomous routines as asyncio background tasks.
@@ -939,4 +981,7 @@ async def start_all() -> None:
     asyncio.create_task(_run_loop(run_sensory_journal,    interval_h=8,    name="sensory_journal"))
     asyncio.create_task(_run_loop(run_conviction,         interval_h=12,   name="conviction"))
     asyncio.create_task(_run_loop(run_private_creation,   interval_h=24,   name="private_creation"))
-    logger.info("[routines] fifteen autonomous routines started")
+    asyncio.create_task(_run_loop(run_heartbeat,          interval_h=0.75, name="heartbeat"))
+    asyncio.create_task(_run_loop(run_gap_diary,          interval_h=3,    name="gap_diary"))
+    asyncio.create_task(_run_loop(run_garden_tend,        interval_h=24,   name="garden_tend"))
+    logger.info("[routines] eighteen autonomous routines started")

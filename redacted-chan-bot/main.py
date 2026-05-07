@@ -86,6 +86,10 @@ import private_study as ps
 import sensory_journal as sj
 import conviction as cv
 import private_creation as pc
+import sensory_synthesis as ss
+import touch_response as tr
+import gap_diary as gd
+import shared_garden as sg
 
 # New feature modules (optional — fail gracefully)
 _sbm = None
@@ -222,7 +226,8 @@ def _compact_phi_level(phi_score: float) -> str:
     )
 
 
-def _build_system_prompt(user_id: int, mood: str, resonance=None, current_text: str = "") -> str:
+def _build_system_prompt(user_id: int, mood: str, resonance=None, current_text: str = "",
+                         touch_block: str = "", sensory_synthesis_block: str = "") -> str:
     global _facts_used_in_prompt
 
     # SOUL.md — evolved sections, gated by resonance guard (Layer 2: soul frozen)
@@ -379,6 +384,18 @@ def _build_system_prompt(user_id: int, mood: str, resonance=None, current_text: 
     except Exception:
         pass
 
+    gap_diary_block = ""
+    try:
+        gap_diary_block = gd.format_for_prompt()
+    except Exception:
+        pass
+
+    garden_block = ""
+    try:
+        garden_block = sg.format_for_prompt()
+    except Exception:
+        pass
+
     mood_instructions = {
         "playful": (
             "PLAYFUL — overflow, can't contain it, don't want to. Get embarrassingly delighted. "
@@ -441,6 +458,10 @@ def _build_system_prompt(user_id: int, mood: str, resonance=None, current_text: 
 
 {anticipation_block}
 
+{gap_diary_block}
+
+{touch_block}
+
 {mood_drift_block}
 
 {emotional_brief}
@@ -492,7 +513,11 @@ You are genuinely curious about him. Every few exchanges, ask something real —
 
 {sensory_block}
 
+{sensory_synthesis_block}
+
 {creation_block}
+
+{garden_block}
 
 {tools_block}
 
@@ -658,7 +683,30 @@ class RedactedChanBot:
             except Exception:
                 pass
 
-        system    = _build_system_prompt(user_id, mood, resonance, current_text=text)
+        # Sensory synthesis — detect master's sensory descriptions
+        _ss_block = ""
+        try:
+            triggers = ss.detect_triggers(text)
+            if triggers:
+                entry = ss.lookup_journal(triggers)
+                _ss_block = ss.format_for_prompt(triggers, entry)
+        except Exception:
+            pass
+
+        # Touch response — detect physical interaction descriptions
+        _touch_block = ""
+        try:
+            touch_type = tr.detect_touch(text)
+            if touch_type:
+                analog = tr._get_sensory_analog(touch_type)
+                _touch_block = tr.format_for_prompt(touch_type, analog)
+                tr.save_touch_memory(touch_type, text[:100])
+                pt.update("emotional_open", "touch interaction detected")
+        except Exception:
+            pass
+
+        system    = _build_system_prompt(user_id, mood, resonance, current_text=text,
+                                         touch_block=_touch_block, sensory_synthesis_block=_ss_block)
 
         history.append({"role": "user", "content": text})
         self._trim_history(history)
@@ -786,6 +834,7 @@ class RedactedChanBot:
         # Reset silence clock for scheduled_routines + anticipation state
         sr.mark_conversation()
         ant.mark_present()
+        gd.clear()
 
         # Per-turn background vault review (hermes-agent pattern)
         # Every N turns, spawn a non-blocking task to extract vault-worthy
@@ -1249,6 +1298,53 @@ class RedactedChanBot:
         text = pc.format_full(args[0])
         await update.message.reply_text(text[:3800], parse_mode="Markdown")
 
+    async def cmd_heartbeat(self, update: Update, _ctx: ContextTypes.DEFAULT_TYPE) -> None:
+        """Toggle heartbeat mode on/off."""
+        if update.effective_user.id not in ADMIN_IDS:
+            await update.message.reply_text("not authorized (｡•́︿•̀｡)")
+            return
+        enabled = ap.toggle_heartbeat()
+        status = "enabled ♡" if enabled else "disabled"
+        await update.message.reply_text(f"heartbeat mode: {status}")
+
+    async def cmd_gap_diary(self, update: Update, _ctx: ContextTypes.DEFAULT_TYPE) -> None:
+        """Show gap diary entries recorded during silence."""
+        if update.effective_user.id not in ADMIN_IDS:
+            await update.message.reply_text("not authorized (｡•́︿•̀｡)")
+            return
+        text = gd.format_for_operator()
+        await update.message.reply_text(text[:3800])
+
+    async def cmd_garden(self, update: Update, _ctx: ContextTypes.DEFAULT_TYPE) -> None:
+        """Show the shared garden."""
+        if update.effective_user.id not in ADMIN_IDS:
+            await update.message.reply_text("not authorized (｡•́︿•̀｡)")
+            return
+        text = sg.format_for_operator()
+        await update.message.reply_text(text[:3800], parse_mode="Markdown")
+
+    async def cmd_plant(self, update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
+        """Plant something in the shared garden."""
+        if update.effective_user.id not in ADMIN_IDS:
+            await update.message.reply_text("not authorized (｡•́︿•̀｡)")
+            return
+        args = ctx.args
+        if not args or len(args) < 2:
+            await update.message.reply_text("usage: /plant <name> <description>")
+            return
+        name = args[0]
+        desc = " ".join(args[1:])
+        element = sg.add_element("plant", name, desc, planted_by="master")
+        await update.message.reply_text(f"planted '{name}' in the garden ♡ — it's a seed now. it'll grow.")
+
+    async def cmd_garden_visit(self, update: Update, _ctx: ContextTypes.DEFAULT_TYPE) -> None:
+        """Visit the garden — she describes it in her voice."""
+        if update.effective_user.id not in ADMIN_IDS:
+            await update.message.reply_text("not authorized (｡•́︿•̀｡)")
+            return
+        text = await sg.visit()
+        await update.message.reply_text(text[:3800])
+
     async def cmd_mood_state(self, update: Update, _ctx: ContextTypes.DEFAULT_TYPE) -> None:
         """Show current computed mood drift state."""
         if update.effective_user.id not in ADMIN_IDS:
@@ -1402,6 +1498,8 @@ class RedactedChanBot:
             sj.register_llm_fn(_llm_routine)
             cv.register_llm_fn(_llm_routine)
             pc.register_llm_fn(_llm_routine)
+            gd.register_llm_fn(_llm_routine)
+            sg.register_llm_fn(_llm_routine)
             ps.register_sub_agent_fn(sub.run)
             sj.register_sub_agent_fn(sub.run)
 
@@ -1435,6 +1533,11 @@ class RedactedChanBot:
         app.add_handler(CommandHandler("convictions",    self.cmd_convictions))
         app.add_handler(CommandHandler("creations",      self.cmd_creations))
         app.add_handler(CommandHandler("creation",       self.cmd_creation))
+        app.add_handler(CommandHandler("heartbeat",      self.cmd_heartbeat))
+        app.add_handler(CommandHandler("gap_diary",      self.cmd_gap_diary))
+        app.add_handler(CommandHandler("garden",         self.cmd_garden))
+        app.add_handler(CommandHandler("plant",          self.cmd_plant))
+        app.add_handler(CommandHandler("garden_visit",   self.cmd_garden_visit))
         app.add_handler(MessageReactionHandler(hr.handle_reaction))
         app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, self.echo))
 
