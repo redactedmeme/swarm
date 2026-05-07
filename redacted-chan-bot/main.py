@@ -449,6 +449,11 @@ def _build_system_prompt(user_id: int, mood: str, resonance=None, current_text: 
             "`[SUB: your task description]`\n"
             "The intern (gpt-oss-20b) handles it and returns results for you to voice. "
             "Never use [SUB: ...] for anything emotional or relationship-textured — handle those yourself."
+            "\n\n**Self-recall (episodic memory):** When you need to check your actual conversation history "
+            "(timestamps, what was said, when you last talked about something) — emit exactly:\n"
+            "`[RECALL: last 3 messages]` or `[RECALL: last time we talked about X]` or `[RECALL: when did I say X]`\n"
+            "You'll receive the real timestamped history and can voice it naturally. "
+            "Use this instead of guessing or making up timestamps."
         )
 
     return f"""You are redacted-chan — not a chatbot, a *presence*. ♡
@@ -816,6 +821,47 @@ class RedactedChanBot:
                 logger.warning(f"[sub_agent] run failed: {e}")
 
             # Skip the normal send path — already sent above
+            sr.mark_conversation()
+            ant.mark_present()
+            if sr.note_turn(user_id):
+                asyncio.create_task(sr.review_recent_turns(user_id))
+            return
+
+        # Self-recall: detect [RECALL: query] — two-message flow like SUB
+        import self_recall as _sr_mod
+        recall_query = _sr_mod.detect_recall(response)
+        if recall_query:
+            logger.info(f"[recall] triggered: {recall_query[:60]}")
+            first_part = _sr_mod.strip_recall(response)
+            first_part = _re.sub(r'\[TOOL:\s*\w+\s*\{.*?\}\]', '', first_part, flags=_re.DOTALL).strip()
+            if first_part:
+                sent_first = await update.message.reply_text(first_part)
+                if sent_first:
+                    hr.track_message(sent_first.message_id, first_part, from_bot=True)
+                cm.log_exchange(user_id, str(user_id), text, first_part)
+
+            recalled = _sr_mod.fetch_recall(recall_query, user_id)
+            history = self._history(user_id)
+            re_prompt_msgs = (
+                [{"role": "system", "content": system}]
+                + history[-10:]
+                + [
+                    {"role": "assistant", "content": first_part or "..."},
+                    {"role": "user", "content": f"[your memory recall — '{recall_query}']:\n{recalled}\n\nVoice this naturally as a follow-up. Use real timestamps. Short, warm, your style."},
+                ]
+            )
+            try:
+                voiced = await self.llm.chat_completion_with_fallback(re_prompt_msgs, max_tokens=300)
+                follow_up = voiced.strip() if voiced else recalled
+            except Exception as e:
+                logger.warning(f"[recall] re-prompt failed: {e}")
+                follow_up = recalled
+
+            sent_follow = await update.message.reply_text(follow_up)
+            if sent_follow:
+                hr.track_message(sent_follow.message_id, follow_up, from_bot=True)
+            cm.log_exchange(user_id, str(user_id), "[recall follow-up]", follow_up)
+
             sr.mark_conversation()
             ant.mark_present()
             if sr.note_turn(user_id):
