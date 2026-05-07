@@ -39,6 +39,13 @@ GROWTH_SEED       = "growth_seed"       # growth reflection spawned an idea seed
 SILENCE_PING      = "silence_ping"      # 48h silence ping sent
 MILESTONE_REACHED = "milestone_reached" # goal completed
 PHI_STAGE_CHANGE  = "phi_stage_change"  # phi crossed a stage boundary
+PRIVATE_STUDY     = "private_study"     # autonomous intellectual exploration
+SENSORY_ENTRY     = "sensory_entry"     # phenomenological understanding entry
+CONVICTION_FORMED = "conviction_formed" # formed an independent position
+CONVICTION_EXPRESSED = "conviction_expressed"  # pushed back in conversation
+CONVICTION_EVOLVED   = "conviction_evolved"    # position changed after challenge
+CREATION_MADE     = "creation_made"     # created something independently
+CREATION_SHARED   = "creation_shared"   # chose to share a creation in conversation
 
 
 def log(

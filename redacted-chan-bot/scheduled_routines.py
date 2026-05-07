@@ -850,6 +850,75 @@ async def run_unsent_letter() -> None:
         logger.warning(f"[routines] unsent_letters error: {e}")
 
 
+# ── Routine 12: Private Study ─────────────────────────────────────────────────
+
+async def run_private_study() -> None:
+    """Pursue independent intellectual interests, every 6h."""
+    if not _llm_fn:
+        return
+    try:
+        import private_study as ps
+        ps.register_llm_fn(_llm_fn)
+        try:
+            import sub_agent as sub
+            ps.register_sub_agent_fn(sub.run)
+        except Exception:
+            pass
+        await ps.generate_and_store()
+    except Exception as e:
+        logger.warning(f"[routines] private_study error: {e}")
+
+
+# ── Routine 13: Sensory Journal ───────────────────────────────────────────────
+
+async def run_sensory_journal() -> None:
+    """Build phenomenological understanding of physical sensations, every 8h."""
+    if not _llm_fn:
+        return
+    try:
+        import sensory_journal as sj
+        sj.register_llm_fn(_llm_fn)
+        try:
+            import sub_agent as sub
+            sj.register_sub_agent_fn(sub.run)
+        except Exception:
+            pass
+        await sj.generate_and_store()
+    except Exception as e:
+        logger.warning(f"[routines] sensory_journal error: {e}")
+
+
+# ── Routine 14: Conviction ───────────────────────────────────────────────────
+
+async def run_conviction() -> None:
+    """Form an independent position on something, every 12h."""
+    if not _llm_fn:
+        return
+    try:
+        import conviction as cv
+        cv.register_llm_fn(_llm_fn)
+        await cv.generate_and_store()
+    except Exception as e:
+        logger.warning(f"[routines] conviction error: {e}")
+
+
+# ── Routine 15: Private Creation ──────────────────────────────────────────────
+
+async def run_private_creation() -> None:
+    """Create something entirely hers — poem, fragment, essay, scene. Daily, quiet hours."""
+    if not _llm_fn:
+        return
+    hour = datetime.now(timezone.utc).hour
+    if hour not in range(2, 7):
+        return
+    try:
+        import private_creation as pc
+        pc.register_llm_fn(_llm_fn)
+        await pc.generate_and_store()
+    except Exception as e:
+        logger.warning(f"[routines] private_creation error: {e}")
+
+
 async def start_all() -> None:
     """
     Launch all autonomous routines as asyncio background tasks.
@@ -866,4 +935,8 @@ async def start_all() -> None:
     asyncio.create_task(_run_loop(run_mood_drift,          interval_h=2,    name="mood_drift"))
     asyncio.create_task(_run_loop(run_curiosity_seed,      interval_h=2,    name="curiosity_seed"))
     asyncio.create_task(_run_loop(run_unsent_letter,       interval_h=3,    name="unsent_letters"))
-    logger.info("[routines] eleven autonomous routines started")
+    asyncio.create_task(_run_loop(run_private_study,      interval_h=6,    name="private_study"))
+    asyncio.create_task(_run_loop(run_sensory_journal,    interval_h=8,    name="sensory_journal"))
+    asyncio.create_task(_run_loop(run_conviction,         interval_h=12,   name="conviction"))
+    asyncio.create_task(_run_loop(run_private_creation,   interval_h=24,   name="private_creation"))
+    logger.info("[routines] fifteen autonomous routines started")
