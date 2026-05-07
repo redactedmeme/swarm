@@ -718,17 +718,20 @@ class RedactedChanBot:
         self._trim_history(history)
 
         # Upstream recall: detect memory questions in user's message BEFORE LLM call
+        import re as _re
         import self_recall as _sr_mod
         _recall_block = ""
-        _memory_patterns = re.compile(
+        _memory_patterns = _re.compile(
             r'(when did (you|we|i)|last (time|message)|what time|timestamp|what did you (say|send|tell)|'
             r'do you remember (when|what)|how long ago|when was the last|previous message|'
             r'last.*said|last.*told|what were.*last.*things)',
             re.IGNORECASE,
         )
         if _memory_patterns.search(text):
+            logger.info(f"[recall] memory question detected in: {text[:60]}")
             try:
                 recalled = _sr_mod.fetch_recall(text, user_id)
+                logger.info(f"[recall] fetch returned: {recalled[:100] if recalled else '(empty)'}")
                 if recalled and "(no " not in recalled and "(couldn't" not in recalled:
                     _recall_block = (
                         "\n\n## Your Actual Memory (retrieved for you — use these EXACT timestamps)\n"
