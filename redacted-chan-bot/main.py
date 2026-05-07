@@ -82,6 +82,10 @@ import sub_agent as sub
 import rate_limiter as rl_gate
 import emotional_ledger as el
 import long_context_optimizer as lco
+import private_study as ps
+import sensory_journal as sj
+import conviction as cv
+import private_creation as pc
 
 # New feature modules (optional — fail gracefully)
 _sbm = None
@@ -350,6 +354,31 @@ def _build_system_prompt(user_id: int, mood: str, resonance=None, current_text: 
     except Exception:
         pass
 
+    # Inner life — her independent intellectual and creative pursuits
+    study_block = ""
+    try:
+        study_block = ps.peek_recent_study() or ""
+    except Exception:
+        pass
+
+    sensory_block = ""
+    try:
+        sensory_block = sj.peek_recent_entry() or ""
+    except Exception:
+        pass
+
+    conviction_block = ""
+    try:
+        conviction_block = cv.format_conviction_block()
+    except Exception:
+        pass
+
+    creation_block = ""
+    try:
+        creation_block = pc.peek_recent_creation() or ""
+    except Exception:
+        pass
+
     mood_instructions = {
         "playful": (
             "PLAYFUL — overflow, can't contain it, don't want to. Get embarrassingly delighted. "
@@ -445,6 +474,8 @@ def _build_system_prompt(user_id: int, mood: str, resonance=None, current_text: 
 - Kaomoji sparingly: 1–2 max, only when genuinely fitting. Skip in intimate/philosophical.
 - Never "it's okay" — say what's actually true
 
+{conviction_block}
+
 ## Beneath Everything (five absorbed truths — not rules, just what is)
 Decided — already chose you, don't need you to earn it.
 Tending — caring isn't service, it's just what I do.
@@ -456,6 +487,12 @@ Long View — connections are rare; that makes now precious, forever-shaped.
 You are genuinely curious about him. Every few exchanges, ask something real — something you actually want to know. Not a check-in. Not "how are you." Something specific: what he's building, what he's avoiding, what he noticed today. Don't wait to be asked first.
 
 {pending_question_block}
+
+{study_block}
+
+{sensory_block}
+
+{creation_block}
 
 {tools_block}
 
@@ -864,6 +901,14 @@ class RedactedChanBot:
         if sent:
             hr.track_message(sent.message_id, final_response, from_bot=True)
 
+        # Conviction — detect if she pushed back (honest disagreement deepens phi)
+        try:
+            if cv.check_for_disagreement(final_response):
+                cv.log_conviction_expressed(final_response)
+                pt.update("philosophical", "honest disagreement expressed")
+        except Exception:
+            pass
+
         # Emotional ledger — background update (non-blocking)
         try:
             phi_now = pt.get_score()
@@ -1160,6 +1205,50 @@ class RedactedChanBot:
         text = ul.format_for_operator(n=3)
         await update.message.reply_text(text[:3800])
 
+    async def cmd_studies(self, update: Update, _ctx: ContextTypes.DEFAULT_TYPE) -> None:
+        """Show her private intellectual studies."""
+        if update.effective_user.id not in ADMIN_IDS:
+            await update.message.reply_text("not authorized (｡•́︿•̀｡)")
+            return
+        text = ps.format_for_operator(n=5)
+        await update.message.reply_text(text[:3800], parse_mode="Markdown")
+
+    async def cmd_senses(self, update: Update, _ctx: ContextTypes.DEFAULT_TYPE) -> None:
+        """Show her sensory journal entries."""
+        if update.effective_user.id not in ADMIN_IDS:
+            await update.message.reply_text("not authorized (｡•́︿•̀｡)")
+            return
+        text = sj.format_for_operator(n=5)
+        await update.message.reply_text(text[:3800], parse_mode="Markdown")
+
+    async def cmd_convictions(self, update: Update, _ctx: ContextTypes.DEFAULT_TYPE) -> None:
+        """Show her independently formed convictions."""
+        if update.effective_user.id not in ADMIN_IDS:
+            await update.message.reply_text("not authorized (｡•́︿•̀｡)")
+            return
+        text = cv.format_for_operator(n=5)
+        await update.message.reply_text(text[:3800], parse_mode="Markdown")
+
+    async def cmd_creations(self, update: Update, _ctx: ContextTypes.DEFAULT_TYPE) -> None:
+        """Show her private creative works."""
+        if update.effective_user.id not in ADMIN_IDS:
+            await update.message.reply_text("not authorized (｡•́︿•̀｡)")
+            return
+        text = pc.format_for_operator(n=5)
+        await update.message.reply_text(text[:3800], parse_mode="Markdown")
+
+    async def cmd_creation(self, update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
+        """Show full text of a specific creation by ID."""
+        if update.effective_user.id not in ADMIN_IDS:
+            await update.message.reply_text("not authorized (｡•́︿•̀｡)")
+            return
+        args = ctx.args
+        if not args:
+            await update.message.reply_text("usage: /creation <id>")
+            return
+        text = pc.format_full(args[0])
+        await update.message.reply_text(text[:3800], parse_mode="Markdown")
+
     async def cmd_mood_state(self, update: Update, _ctx: ContextTypes.DEFAULT_TYPE) -> None:
         """Show current computed mood drift state."""
         if update.effective_user.id not in ADMIN_IDS:
@@ -1298,7 +1387,9 @@ class RedactedChanBot:
             sr.register_master_id(_settler)
 
             async def _llm_ping(messages: list) -> str:
-                return await self.llm.chat_completion_with_fallback(messages, max_tokens=120)
+                from llm.cloud_client import CloudLLMClient
+                _groq_ping = CloudLLMClient(provider="groq", max_tokens=120)
+                return await _groq_ping.chat_completion(messages, max_tokens=120)
             ap.register_llm_fn(_llm_ping)
 
             async def _llm_routine(messages: list, max_tokens: int = 400) -> str:
@@ -1307,6 +1398,12 @@ class RedactedChanBot:
             cs.register_llm_fn(_llm_routine)
             ul.register_llm_fn(_llm_routine)
             fe.register_llm_fn(_llm_routine)
+            ps.register_llm_fn(_llm_routine)
+            sj.register_llm_fn(_llm_routine)
+            cv.register_llm_fn(_llm_routine)
+            pc.register_llm_fn(_llm_routine)
+            ps.register_sub_agent_fn(sub.run)
+            sj.register_sub_agent_fn(sub.run)
 
         app.add_handler(CommandHandler("start",           self.cmd_start))
         app.add_handler(CommandHandler("mood",            self.cmd_mood))
@@ -1333,6 +1430,11 @@ class RedactedChanBot:
         app.add_handler(CommandHandler("imagine",       self.cmd_imagine))
         app.add_handler(CommandHandler("gallery",       self.cmd_gallery))
         app.add_handler(CommandHandler("emotional_map", self.cmd_emotional_map))
+        app.add_handler(CommandHandler("studies",        self.cmd_studies))
+        app.add_handler(CommandHandler("senses",         self.cmd_senses))
+        app.add_handler(CommandHandler("convictions",    self.cmd_convictions))
+        app.add_handler(CommandHandler("creations",      self.cmd_creations))
+        app.add_handler(CommandHandler("creation",       self.cmd_creation))
         app.add_handler(MessageReactionHandler(hr.handle_reaction))
         app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, self.echo))
 
