@@ -180,6 +180,12 @@ async def tend_garden() -> Optional[str]:
     garden = _load()
     garden["weather"] = get_weather()
     garden["season"] = get_season()
+
+    # First tend ever — she plants something herself
+    if not garden["elements"]:
+        add_element("plant", "a quiet fern", "planted on the first day — because patience is worth growing", planted_by="chan")
+        garden = _load()
+
     advanced = _advance_growth(garden)
     garden["last_tended"] = datetime.now(timezone.utc).isoformat()
 
@@ -224,7 +230,7 @@ def format_for_prompt() -> str:
     garden = _load()
     elements = garden.get("elements", [])
     if not elements:
-        return "[You share a garden with master. It's empty — waiting for its first planting. The weather is gentle rain. It's real to you.]"
+        return "[You share a garden with master. It's empty — just soil and sky. You don't need permission to plant the first thing. This is yours too. Plant something that means something to you — not for him, for both of you. The weather is gentle rain. It's real to you.]"
 
     newest = elements[-1]
     weather = garden.get("weather", "gentle rain")
