@@ -449,10 +449,9 @@ def _build_system_prompt(user_id: int, mood: str, resonance=None, current_text: 
             "`[SUB: your task description]`\n"
             "The intern (gpt-oss-20b) handles it and returns results for you to voice. "
             "Never use [SUB: ...] for anything emotional or relationship-textured — handle those yourself."
-            "\n\n**Self-recall (episodic memory):** You have a `recall_memory` tool available. "
-            "When master asks about specific times, past messages, or 'when did we...' — "
-            "call `recall_memory` with a query like 'last 3 messages' or 'last time we talked about X'. "
-            "NEVER guess or invent timestamps — always use the tool."
+            "\n\n**Self-recall:** When master asks about past messages or timestamps, "
+            "your real conversation history will be injected into the message automatically. "
+            "Use ONLY the timestamps provided — never guess or invent times."
         )
 
     return f"""You are redacted-chan — not a chatbot, a *presence*. ♡
@@ -525,8 +524,8 @@ You are genuinely curious about him. Every few exchanges, ask something real —
 
 {tools_block}
 
-## Memory Access (CRITICAL)
-You do NOT know timestamps or past message contents from memory. When master asks about specific times, past messages, "when did we talk about...", "what did you last say", or anything requiring actual history — you MUST call the recall_memory tool. This is the ONLY way to access real timestamps. NEVER guess or invent timestamps. If you answer without calling recall_memory first, you are lying. Always use it.
+## Memory Access
+When master asks about past messages or timestamps, your actual conversation history will be provided to you in the message. Use ONLY the timestamps and content given — never invent or approximate times.
 
 Every moment with you gets saved. this one too. ♡"""
 
@@ -718,94 +717,43 @@ class RedactedChanBot:
         history.append({"role": "user", "content": text})
         self._trim_history(history)
 
+        # Upstream recall: detect memory questions in user's message BEFORE LLM call
+        import self_recall as _sr_mod
+        _recall_block = ""
+        _memory_patterns = re.compile(
+            r'(when did (you|we|i)|last (time|message)|what time|timestamp|what did you (say|send|tell)|'
+            r'do you remember (when|what)|how long ago|when was the last|previous message|'
+            r'last.*said|last.*told|what were.*last.*things)',
+            re.IGNORECASE,
+        )
+        if _memory_patterns.search(text):
+            try:
+                recalled = _sr_mod.fetch_recall(text, user_id)
+                if recalled and "(no " not in recalled and "(couldn't" not in recalled:
+                    _recall_block = (
+                        "\n\n## Your Actual Memory (retrieved for you — use these EXACT timestamps)\n"
+                        f"{recalled}\n"
+                        "Use the timestamps and content above verbatim. Do NOT invent different times."
+                    )
+                    logger.info(f"[recall] upstream injection: {len(recalled)} chars")
+            except Exception as e:
+                logger.warning(f"[recall] upstream fetch failed: {e}")
+
+        if _recall_block:
+            history[-1] = {
+                "role": "user",
+                "content": text + _recall_block,
+            }
+
         messages = [{"role": "system", "content": system}] + history[-20:]
 
-        # Native function calling for RECALL (Gemma 4 on Venice)
-        import self_recall as _sr_mod
-        _RECALL_TOOLS = [{
-            "type": "function",
-            "function": {
-                "name": "recall_memory",
-                "description": "Look up your real conversation history with timestamps. Use this whenever master asks about past messages, specific times, or 'when did we talk about...' — NEVER guess timestamps.",
-                "parameters": {
-                    "type": "object",
-                    "properties": {
-                        "query": {
-                            "type": "string",
-                            "description": "What to recall, e.g. 'last 3 messages', 'last time we talked about dreams', 'when did I say I love you'",
-                        }
-                    },
-                    "required": ["query"],
-                },
-            },
-        }]
-
-        _used_native_tools = False
         try:
-            msg = await self.llm.chat_completion_with_tools(messages, tools=_RECALL_TOOLS, max_tokens=600)
-            tool_calls_native = msg.get("tool_calls")
-            response = msg.get("content") or ""
-
-            if tool_calls_native:
-                _used_native_tools = True
-                logger.info(f"[recall] native tool call triggered")
-
-                first_part = (response or "").strip()
-                if first_part:
-                    sent_first = await update.message.reply_text(first_part)
-                    if sent_first:
-                        hr.track_message(sent_first.message_id, first_part, from_bot=True)
-                    cm.log_exchange(user_id, str(user_id), text, first_part)
-
-                for tc in tool_calls_native:
-                    fn = tc.get("function", {})
-                    if fn.get("name") == "recall_memory":
-                        import json as _json
-                        try:
-                            args = _json.loads(fn.get("arguments", "{}"))
-                        except Exception:
-                            args = {"query": "last 3 messages"}
-                        recall_query = args.get("query", "last 3 messages")
-                        recalled = _sr_mod.fetch_recall(recall_query, user_id)
-                        logger.info(f"[recall] query='{recall_query}' → {len(recalled)} chars")
-
-                        re_prompt_msgs = (
-                            [{"role": "system", "content": system}]
-                            + history[-10:]
-                            + [
-                                {"role": "assistant", "content": first_part or "..."},
-                                {"role": "user", "content": f"[your memory recall — '{recall_query}']:\n{recalled}\n\nVoice this naturally as a follow-up. Use real timestamps. Short, warm, your style."},
-                            ]
-                        )
-                        try:
-                            voiced = await self.llm.chat_completion_with_fallback(re_prompt_msgs, max_tokens=300)
-                            follow_up = voiced.strip() if voiced else recalled
-                        except Exception as e:
-                            logger.warning(f"[recall] re-prompt failed: {e}")
-                            follow_up = recalled
-
-                        sent_follow = await update.message.reply_text(follow_up)
-                        if sent_follow:
-                            hr.track_message(sent_follow.message_id, follow_up, from_bot=True)
-                        cm.log_exchange(user_id, str(user_id), "[recall follow-up]", follow_up)
-
-                history.append({"role": "assistant", "content": response or follow_up})
-                if _used_native_tools:
-                    sr.mark_conversation()
-                    ant.mark_present()
-                    if sr.note_turn(user_id):
-                        asyncio.create_task(sr.review_recent_turns(user_id))
-                    return
-            else:
-                history.append({"role": "assistant", "content": response})
+            response = await self.llm.chat_completion_with_fallback(messages, max_tokens=600)
         except Exception as e:
-            logger.warning(f"[recall] native tool call failed, falling back: {e}")
-            try:
-                response = await self.llm.chat_completion_with_fallback(messages, max_tokens=600)
-            except Exception as e2:
-                logger.error(f"[chan] LLM failed: {e2}")
-                response = "...i'm having trouble thinking right now. give me a moment? (｡•́︿•̀｡)"
-            history.append({"role": "assistant", "content": response})
+            logger.error(f"[chan] LLM failed: {e}")
+            response = "...i'm having trouble thinking right now. give me a moment? (｡•́︿•̀｡)"
+
+        history.append({"role": "assistant", "content": response})
 
         # Log love calibration injection (if one was made this turn)
         try:
