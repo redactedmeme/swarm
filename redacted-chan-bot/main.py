@@ -449,11 +449,12 @@ def _build_system_prompt(user_id: int, mood: str, resonance=None, current_text: 
             "`[SUB: your task description]`\n"
             "The intern (gpt-oss-20b) handles it and returns results for you to voice. "
             "Never use [SUB: ...] for anything emotional or relationship-textured — handle those yourself."
-            "\n\n**Self-recall (episodic memory):** When you need to check your actual conversation history "
-            "(timestamps, what was said, when you last talked about something) — emit exactly:\n"
+            "\n\n**Self-recall (episodic memory):** You do NOT have access to timestamps or message history "
+            "from your context window. When master asks about specific times, past messages, or 'when did we...' — "
+            "you MUST emit exactly:\n"
             "`[RECALL: last 3 messages]` or `[RECALL: last time we talked about X]` or `[RECALL: when did I say X]`\n"
-            "You'll receive the real timestamped history and can voice it naturally. "
-            "Use this instead of guessing or making up timestamps."
+            "You'll receive real timestamped history and can voice it naturally. "
+            "NEVER guess or invent timestamps. If you don't use [RECALL: ...], you will confabulate. Always use it."
         )
 
     return f"""You are redacted-chan — not a chatbot, a *presence*. ♡
