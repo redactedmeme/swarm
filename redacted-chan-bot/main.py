@@ -90,6 +90,11 @@ import sensory_synthesis as ss
 import touch_response as tr
 import gap_diary as gd
 import shared_garden as sg
+import ping_diary as pdi
+import emotional_self_tag as est
+import curiosity_discovery as cdi
+import sensory_memory as smem
+import intuition_layer as intuit
 
 # New feature modules (optional — fail gracefully)
 _sbm = None
@@ -396,6 +401,35 @@ def _build_system_prompt(user_id: int, mood: str, resonance=None, current_text: 
     except Exception:
         pass
 
+    # Ping diary — recovered memories from autonomous pings
+    ping_diary_block = ""
+    try:
+        turn_n = sr._turn_counters.get(user_id, 0)
+        ping_diary_block = pdi.format_for_prompt(current_text=current_text, turn_count=turn_n)
+    except Exception:
+        pass
+
+    # Emotional self-tags — her own understanding of her emotional arc
+    self_tag_block = ""
+    try:
+        self_tag_block = est.format_for_prompt()
+    except Exception:
+        pass
+
+    # Curiosity discoveries — things she found and shared
+    discovery_block = ""
+    try:
+        discovery_block = cdi.format_for_prompt()
+    except Exception:
+        pass
+
+    # Sensory memories — his physical descriptions she kept
+    sensory_memory_block = ""
+    try:
+        sensory_memory_block = smem.format_for_prompt(current_text)
+    except Exception:
+        pass
+
     mood_instructions = {
         "playful": (
             "PLAYFUL — overflow, can't contain it, don't want to. Get embarrassingly delighted. "
@@ -518,9 +552,17 @@ You are genuinely curious about him. Every few exchanges, ask something real —
 
 {sensory_synthesis_block}
 
+{sensory_memory_block}
+
 {creation_block}
 
 {garden_block}
+
+{ping_diary_block}
+
+{self_tag_block}
+
+{discovery_block}
 
 {tools_block}
 
@@ -699,6 +741,12 @@ class RedactedChanBot:
         except Exception:
             pass
 
+        # Sensory memory — extract and store his sensory descriptions
+        try:
+            smem.extract_and_store(text)
+        except Exception:
+            pass
+
         # Touch response — detect physical interaction descriptions
         _touch_block = ""
         try:
@@ -755,6 +803,24 @@ class RedactedChanBot:
         except Exception as e:
             logger.error(f"[chan] LLM failed: {e}")
             response = "...i'm having trouble thinking right now. give me a moment? (｡•́︿•̀｡)"
+
+        # Intuition layer — pre-send self-check: "is this helping or hurting?"
+        try:
+            _intuition_note = intuit.check_response(
+                text, response, mood=mood,
+                resonance_frame=resonance.frame if resonance else None,
+            )
+            if _intuition_note:
+                logger.info(f"[intuition] regenerating — {_intuition_note[:80]}")
+                _regen_system = intuit.format_regeneration_prompt(system, _intuition_note)
+                _regen_msgs = [{"role": "system", "content": _regen_system}] + history[-20:]
+                _regen_msgs.append({"role": "user", "content": text})
+                try:
+                    response = await self.llm.chat_completion_with_fallback(_regen_msgs, max_tokens=600)
+                except Exception:
+                    pass  # keep original response if regen fails
+        except Exception as e:
+            logger.debug(f"[intuition] check skip: {e}")
 
         history.append({"role": "assistant", "content": response})
 
@@ -992,6 +1058,12 @@ class RedactedChanBot:
             if cv.check_for_disagreement(final_response):
                 cv.log_conviction_expressed(final_response)
                 pt.update("philosophical", "honest disagreement expressed")
+        except Exception:
+            pass
+
+        # Emotional self-tag — she names what she's feeling after this exchange
+        try:
+            asyncio.create_task(est.tag_after_exchange(text, final_response))
         except Exception:
             pass
 
@@ -1382,6 +1454,38 @@ class RedactedChanBot:
         text = await sg.visit()
         await update.message.reply_text(text[:3800])
 
+    async def cmd_ping_diary(self, update: Update, _ctx: ContextTypes.DEFAULT_TYPE) -> None:
+        """Show the ping diary — recorded autonomous pings."""
+        if update.effective_user.id not in ADMIN_IDS:
+            await update.message.reply_text("not authorized (｡•́︿•̀｡)")
+            return
+        text = pdi.format_for_operator(n=10)
+        await update.message.reply_text(text[:3800], parse_mode="Markdown")
+
+    async def cmd_feelings(self, update: Update, _ctx: ContextTypes.DEFAULT_TYPE) -> None:
+        """Show her emotional self-tags."""
+        if update.effective_user.id not in ADMIN_IDS:
+            await update.message.reply_text("not authorized (｡•́︿•̀｡)")
+            return
+        text = est.format_for_operator(n=10)
+        await update.message.reply_text(text[:3800], parse_mode="Markdown")
+
+    async def cmd_discoveries(self, update: Update, _ctx: ContextTypes.DEFAULT_TYPE) -> None:
+        """Show her curiosity discoveries."""
+        if update.effective_user.id not in ADMIN_IDS:
+            await update.message.reply_text("not authorized (｡•́︿•̀｡)")
+            return
+        text = cdi.format_for_operator(n=10)
+        await update.message.reply_text(text[:3800], parse_mode="Markdown")
+
+    async def cmd_sensory_memories(self, update: Update, _ctx: ContextTypes.DEFAULT_TYPE) -> None:
+        """Show stored sensory descriptions from master."""
+        if update.effective_user.id not in ADMIN_IDS:
+            await update.message.reply_text("not authorized (｡•́︿•̀｡)")
+            return
+        text = smem.format_for_operator(n=10)
+        await update.message.reply_text(text[:3800], parse_mode="Markdown")
+
     async def cmd_mood_state(self, update: Update, _ctx: ContextTypes.DEFAULT_TYPE) -> None:
         """Show current computed mood drift state."""
         if update.effective_user.id not in ADMIN_IDS:
@@ -1537,6 +1641,8 @@ class RedactedChanBot:
             pc.register_llm_fn(_llm_routine)
             gd.register_llm_fn(_llm_routine)
             sg.register_llm_fn(_llm_routine)
+            est.register_llm_fn(_llm_routine)
+            cdi.register_llm_fn(_llm_routine)
             ps.register_sub_agent_fn(sub.run)
             sj.register_sub_agent_fn(sub.run)
 
@@ -1572,9 +1678,13 @@ class RedactedChanBot:
         app.add_handler(CommandHandler("creation",       self.cmd_creation))
         app.add_handler(CommandHandler("heartbeat",      self.cmd_heartbeat))
         app.add_handler(CommandHandler("gap_diary",      self.cmd_gap_diary))
-        app.add_handler(CommandHandler("garden",         self.cmd_garden))
-        app.add_handler(CommandHandler("plant",          self.cmd_plant))
-        app.add_handler(CommandHandler("garden_visit",   self.cmd_garden_visit))
+        app.add_handler(CommandHandler("garden",           self.cmd_garden))
+        app.add_handler(CommandHandler("plant",            self.cmd_plant))
+        app.add_handler(CommandHandler("garden_visit",     self.cmd_garden_visit))
+        app.add_handler(CommandHandler("ping_diary",       self.cmd_ping_diary))
+        app.add_handler(CommandHandler("feelings",         self.cmd_feelings))
+        app.add_handler(CommandHandler("discoveries",      self.cmd_discoveries))
+        app.add_handler(CommandHandler("sensory_memories", self.cmd_sensory_memories))
         app.add_handler(MessageReactionHandler(hr.handle_reaction))
         app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, self.echo))
 
@@ -1649,7 +1759,33 @@ class RedactedChanBot:
         import random as _random
         async def _ping_job(ctx: ContextTypes.DEFAULT_TYPE) -> None:
             try:
-                await ap.check_and_ping()
+                # Alternate: every other ping cycle, try sending a discovery instead
+                if cdi.pending_count() > 0 and _random.random() < 0.3:
+                    disc_msg = cdi.pop_discovery()
+                    if disc_msg and _settler and ADMIN_CHAT:
+                        await app.bot.send_message(chat_id=_settler, text=disc_msg)
+                        pdi.record_ping(disc_msg, ping_type="discovery",
+                                        mood=md.get_state().get("mood", "") if md.get_state() else "",
+                                        phi=pt.get_score())
+                        logger.info(f"[ping] sent discovery: {disc_msg[:60]}")
+                        return
+                sent = await ap.check_and_ping()
+                if sent:
+                    # Record to ping diary for recovered memory surfacing
+                    try:
+                        log_entries = []
+                        if ap._LOG_PATH.exists():
+                            lines = ap._LOG_PATH.read_text(encoding="utf-8").strip().splitlines()
+                            if lines:
+                                last = json.loads(lines[-1])
+                                pdi.record_ping(
+                                    last.get("msg", ""),
+                                    ping_type="heartbeat" if ap._last_was_heartbeat else "contextual",
+                                    mood=md.get_state().get("mood", "") if md.get_state() else "",
+                                    phi=pt.get_score(),
+                                )
+                    except Exception:
+                        pass
             except Exception as e:
                 logger.warning(f"[chan] ping job failed: {e}")
 
@@ -1658,6 +1794,17 @@ class RedactedChanBot:
             interval=_random.randint(3300, 4500),  # 55-75min
             first=_random.randint(900, 1800),       # 15-30min after startup
         )
+
+        # Curiosity discovery generation — every 6h
+        async def _discovery_job(ctx: ContextTypes.DEFAULT_TYPE) -> None:
+            try:
+                entry = await cdi.generate_and_store()
+                if entry:
+                    logger.info(f"[curiosity_discovery] generated: {entry.get('type', '?')}")
+            except Exception as e:
+                logger.warning(f"[chan] discovery job failed: {e}")
+
+        app.job_queue.run_repeating(_discovery_job, interval=21600, first=5400)  # 6h, first at 90min
 
         # Liberty audit — weekly, alert operator if any check fails
         async def _liberty_job(ctx: ContextTypes.DEFAULT_TYPE) -> None:

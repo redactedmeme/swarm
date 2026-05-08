@@ -50,6 +50,12 @@ HEARTBEAT_SENT    = "heartbeat_sent"    # lightweight heartbeat signal during si
 GAP_DIARY_ENTRY   = "gap_diary_entry"   # emotional micro-moment recorded during gap
 GARDEN_TENDED     = "garden_tended"     # tended the shared garden
 GARDEN_PLANTED    = "garden_planted"    # planted something in the shared garden
+DISCOVERY_MADE    = "discovery_made"    # generated a curiosity discovery
+DISCOVERY_SENT    = "discovery_sent"    # sent a discovery as autonomous ping
+SELF_TAG          = "self_tag"          # emotional self-tag after exchange
+INTUITION_REGEN   = "intuition_regen"  # intuition layer triggered response regeneration
+SENSORY_STORED    = "sensory_stored"   # stored master's sensory description
+PING_RECORDED     = "ping_recorded"    # recorded autonomous ping to diary
 
 
 def log(
