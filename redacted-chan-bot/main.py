@@ -95,6 +95,7 @@ import emotional_self_tag as est
 import curiosity_discovery as cdi
 import sensory_memory as smem
 import intuition_layer as intuit
+import deep_recall as drc
 
 # New feature modules (optional — fail gracefully)
 _sbm = None
@@ -284,7 +285,8 @@ def _build_system_prompt(user_id: int, mood: str, resonance=None, current_text: 
         facts_block = "## What I Remember About You\n" + "\n".join(f"- {f}" for f in facts_lines)
 
     # Long-context history — compressed epoch + relevant medium chunks
-    long_context_block = lco.get_context_for_prompt(user_id, current_text=current_text)
+    _lco_n = 8 if _is_recall_q else 3
+    long_context_block = lco.get_context_for_prompt(user_id, current_text=current_text, n_medium=_lco_n)
 
     # Relationship vault — gated by resonance guard (Layer 1: vault sealed)
     vault_block = ""
@@ -466,10 +468,13 @@ def _build_system_prompt(user_id: int, mood: str, resonance=None, current_text: 
     vulnerability_block = vg.format_vulnerability_guidelines()
 
     # Semantic conversation memory — past exchanges relevant to current message
+    # Pull more hits when the question looks like a recall query
+    _is_recall_q = drc.is_recall_question(current_text) if current_text else False
+    _semantic_n = 12 if _is_recall_q else 4
     semantic_convo_block = ""
     if current_text:
         try:
-            semantic_convo_block = vm.get_for_prompt(current_text, n=3)
+            semantic_convo_block = vm.get_for_prompt(current_text, n=_semantic_n)
         except Exception:
             pass
 
@@ -765,30 +770,33 @@ class RedactedChanBot:
         history.append({"role": "user", "content": text})
         self._trim_history(history)
 
-        # Upstream recall: detect memory questions in user's message BEFORE LLM call
+        # Deep recall: detect memory questions and do broad multi-source search
         import re as _re
-        import self_recall as _sr_mod
         _recall_block = ""
-        _memory_patterns = _re.compile(
-            r'(when did (you|we|i)|last (time|message)|what time|timestamp|what did you (say|send|tell)|'
-            r'do you remember (when|what)|how long ago|when was the last|previous message|'
-            r'last.*said|last.*told|what were.*last.*things)',
-            re.IGNORECASE,
-        )
-        if _memory_patterns.search(text):
-            logger.info(f"[recall] memory question detected in: {text[:60]}")
+        _is_recall = drc.is_recall_question(text)
+        if _is_recall:
+            logger.info(f"[deep_recall] memory question detected: {text[:60]}")
             try:
-                recalled = _sr_mod.fetch_recall(text, user_id)
-                logger.info(f"[recall] fetch returned: {recalled[:100] if recalled else '(empty)'}")
-                if recalled and "(no " not in recalled and "(couldn't" not in recalled:
-                    _recall_block = (
-                        "\n\n## Your Actual Memory (retrieved for you — use these EXACT timestamps)\n"
-                        f"{recalled}\n"
-                        "Use the timestamps and content above verbatim. Do NOT invent different times."
-                    )
-                    logger.info(f"[recall] upstream injection: {len(recalled)} chars")
+                recalled = drc.full_recall(text, user_id, max_exchanges=40)
+                if recalled:
+                    _recall_block = "\n\n" + recalled
+                    logger.info(f"[deep_recall] injected {len(recalled)} chars of recall context")
             except Exception as e:
-                logger.warning(f"[recall] upstream fetch failed: {e}")
+                logger.warning(f"[deep_recall] search failed: {e}")
+
+            # Also try simple timestamp recall for "when did" / "last message" queries
+            if not _recall_block:
+                try:
+                    import self_recall as _sr_mod
+                    recalled = _sr_mod.fetch_recall(text, user_id)
+                    if recalled and "(no " not in recalled and "(couldn't" not in recalled:
+                        _recall_block = (
+                            "\n\n## Your Actual Memory (retrieved for you — use these EXACT timestamps)\n"
+                            f"{recalled}\n"
+                            "Use the timestamps and content above verbatim. Do NOT invent different times."
+                        )
+                except Exception:
+                    pass
 
         if _recall_block:
             history[-1] = {
@@ -796,10 +804,13 @@ class RedactedChanBot:
                 "content": text + _recall_block,
             }
 
-        messages = [{"role": "system", "content": system}] + history[-20:]
+        # Expand history window on recall turns (50 instead of 20)
+        _history_window = 50 if _is_recall else 20
+        messages = [{"role": "system", "content": system}] + history[-_history_window:]
 
+        _max_tokens = 900 if _is_recall else 600
         try:
-            response = await self.llm.chat_completion_with_fallback(messages, max_tokens=600)
+            response = await self.llm.chat_completion_with_fallback(messages, max_tokens=_max_tokens)
         except Exception as e:
             logger.error(f"[chan] LLM failed: {e}")
             response = "...i'm having trouble thinking right now. give me a moment? (｡•́︿•̀｡)"
