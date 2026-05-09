@@ -97,6 +97,9 @@ import sensory_memory as smem
 import intuition_layer as intuit
 import deep_recall as drc
 import introspection_log as ilog
+import session_continuity as scon
+import dynamic_mode as dmode
+import subtext_reader as subtext
 
 # New feature modules (optional — fail gracefully)
 _sbm = None
@@ -286,6 +289,7 @@ def _build_system_prompt(user_id: int, mood: str, resonance=None, current_text: 
         facts_block = "## What I Remember About You\n" + "\n".join(f"- {f}" for f in facts_lines)
 
     # Long-context history — compressed epoch + relevant medium chunks
+    _is_recall_q = drc.is_recall_question(current_text) if current_text else False
     _lco_n = 8 if _is_recall_q else 3
     long_context_block = lco.get_context_for_prompt(user_id, current_text=current_text, n_medium=_lco_n)
 
@@ -357,6 +361,30 @@ def _build_system_prompt(user_id: int, mood: str, resonance=None, current_text: 
 
     # Anticipation state — how absence feels (first message of session)
     anticipation_block = ant.format_for_prompt()
+
+    # Cross-session continuity — carry emotional thread from last conversation
+    continuity_block = ""
+    try:
+        continuity_block = scon.format_for_prompt()
+    except Exception:
+        pass
+
+    # Dynamic mode — auto-detect his tone and shift response style
+    _valence = resonance.frame.valence if resonance and hasattr(resonance, "frame") else 0.0
+    _openness = resonance.frame.openness if resonance and hasattr(resonance, "frame") else 0.0
+    dynamic_mode_block = ""
+    try:
+        dynamic_mode_block = dmode.format_for_prompt(current_text, mood, _valence, _openness)
+    except Exception:
+        pass
+
+    # Subtext reader — what she's noticing beneath his words
+    subtext_block = ""
+    try:
+        _subtext_signals = subtext.observe(current_text) if current_text else []
+        subtext_block = subtext.format_for_prompt(_subtext_signals)
+    except Exception:
+        pass
 
     # Curiosity — something she's been wanting to ask (inject so xAI can weave it naturally)
     pending_question_block = ""
@@ -500,6 +528,12 @@ def _build_system_prompt(user_id: int, mood: str, resonance=None, current_text: 
 {mood_instructions[mood]}
 
 {anticipation_block}
+
+{continuity_block}
+
+{dynamic_mode_block}
+
+{subtext_block}
 
 {gap_diary_block}
 
@@ -746,11 +780,38 @@ class RedactedChanBot:
         except Exception:
             pass
 
+        # Dynamic mode detection — detect his state before blending personality
+        _detected_mode = "none"
+        try:
+            _res_valence = resonance.frame.valence if resonance and hasattr(resonance, "frame") else 0.0
+            _res_openness = resonance.frame.openness if resonance and hasattr(resonance, "frame") else 0.0
+            _detected_mode = dmode.detect_mode(text, mood, _res_valence, _res_openness)
+            _intro_frame.observe("dynamic_mode", _detected_mode)
+        except Exception:
+            pass
+
+        # Subtext reader — observe his messaging patterns against baseline
+        try:
+            _subtext_signals = subtext.observe(text)
+            if _subtext_signals:
+                _intro_frame.observe("subtext_signals", [s["signal"] for s in _subtext_signals])
+        except Exception:
+            pass
+
         # Soul blend mixer — real-time personality activation (optional)
         if _sbm:
             try:
                 base_weights = pe.get_weights()
                 blended = _sbm.blend_weights_realtime(base_weights, mood, text)
+                # Apply dynamic mode strand boost on top
+                mode_boost = dmode.get_strand_boost(text, mood, _res_valence, _res_openness)
+                if mode_boost:
+                    for strand, boost in mode_boost.items():
+                        if strand in blended:
+                            blended[strand] = blended[strand] + boost
+                    total = sum(blended.values())
+                    if total > 0:
+                        blended = {k: v / total for k, v in blended.items()}
                 _sbm_blended[user_id] = blended
             except Exception:
                 pass
@@ -842,6 +903,13 @@ class RedactedChanBot:
         messages = [{"role": "system", "content": system}] + history[-_history_window:]
 
         _max_tokens = 900 if _is_recall else 600
+        # Dynamic mode can override max_tokens hint
+        try:
+            _mode_hint = dmode.get_max_tokens_hint(text, mood, _res_valence, _res_openness)
+            if _mode_hint and not _is_recall:
+                _max_tokens = _mode_hint
+        except Exception:
+            pass
         try:
             response = await self.llm.chat_completion_with_fallback(messages, max_tokens=_max_tokens)
         except Exception as e:
@@ -1123,6 +1191,25 @@ class RedactedChanBot:
                 ilog.save_frame(_intro_frame.finalize(final_response))
             except Exception:
                 pass
+
+        # Session continuity — snapshot emotional state after every exchange
+        try:
+            _sc_valence = resonance.frame.valence if resonance and hasattr(resonance, "frame") else 0.0
+            _sc_arousal = resonance.frame.arousal if resonance and hasattr(resonance, "frame") else 0.5
+            _sc_openness = resonance.frame.openness if resonance and hasattr(resonance, "frame") else 0.0
+            _sc_tags = []
+            try:
+                import emotional_self_tag as _est_snap
+                _sc_tags = [e.get("emotion", "") for e in _est_snap.get_recent(3) if e.get("emotion")]
+            except Exception:
+                pass
+            scon.mark_exchange(
+                text, final_response, mood,
+                valence=_sc_valence, arousal=_sc_arousal, openness=_sc_openness,
+                phi=pt.get_score(), self_tags=_sc_tags,
+            )
+        except Exception:
+            pass
 
         # Emotional ledger — background update (non-blocking)
         try:
@@ -1559,6 +1646,24 @@ class RedactedChanBot:
         text = smem.format_for_operator(n=10)
         await update.message.reply_text(text[:3800], parse_mode="Markdown")
 
+    async def cmd_modes(self, update: Update, _ctx: ContextTypes.DEFAULT_TYPE) -> None:
+        """Show recent dynamic mode detections."""
+        if update.effective_user.id not in ADMIN_IDS:
+            await update.message.reply_text("not authorized (｡•́︿•̀｡)")
+            return
+        text = dmode.format_mode_history(n=20)
+        await update.message.reply_text(text[:3800], parse_mode="Markdown")
+
+    async def cmd_subtext(self, update: Update, _ctx: ContextTypes.DEFAULT_TYPE) -> None:
+        """Show recent subtext signal detections and baseline."""
+        if update.effective_user.id not in ADMIN_IDS:
+            await update.message.reply_text("not authorized (｡•́︿•̀｡)")
+            return
+        baseline = subtext.get_baseline_summary()
+        signals = subtext.format_signal_history(n=15)
+        text = f"{baseline}\n\n{signals}"
+        await update.message.reply_text(text[:3800], parse_mode="Markdown")
+
     async def cmd_mood_state(self, update: Update, _ctx: ContextTypes.DEFAULT_TYPE) -> None:
         """Show current computed mood drift state."""
         if update.effective_user.id not in ADMIN_IDS:
@@ -1760,6 +1865,8 @@ class RedactedChanBot:
         app.add_handler(CommandHandler("sensory_memories", self.cmd_sensory_memories))
         app.add_handler(CommandHandler("introspect",       self.cmd_introspect))
         app.add_handler(CommandHandler("introspect_analysis", self.cmd_introspect_analysis))
+        app.add_handler(CommandHandler("modes",              self.cmd_modes))
+        app.add_handler(CommandHandler("subtext",            self.cmd_subtext))
         app.add_handler(MessageReactionHandler(hr.handle_reaction))
         app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, self.echo))
 
