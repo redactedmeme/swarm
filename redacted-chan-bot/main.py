@@ -96,6 +96,7 @@ import curiosity_discovery as cdi
 import sensory_memory as smem
 import intuition_layer as intuit
 import deep_recall as drc
+import introspection_log as ilog
 
 # New feature modules (optional — fail gracefully)
 _sbm = None
@@ -639,6 +640,9 @@ class RedactedChanBot:
                 pass
             return
 
+        # Introspection frame — Phase One: observe internal decision-making
+        _intro_frame = ilog.IntrospectionFrame(user_id, text)
+
         # Resonance guard — check injection patterns in raw user input
         try:
             import resonance_guard as rg
@@ -711,6 +715,21 @@ class RedactedChanBot:
         resonance = ere.process(user_id, text)
         history   = self._history(user_id)
 
+        # Introspection: observe mood + resonance state
+        _intro_frame.observe("mood_detected", mood)
+        try:
+            _intro_frame.observe("phi", pt.get_score())
+            _intro_frame.observe("phi_stage", pt.get_stage())
+            if resonance and hasattr(resonance, "frame"):
+                _intro_frame.observe("resonance", {
+                    "valence": resonance.frame.valence,
+                    "arousal": resonance.frame.arousal,
+                    "openness": resonance.frame.openness,
+                    "needs_witness": resonance.frame.needs_witness,
+                })
+        except Exception:
+            pass
+
         # Emotional heatmap backup — persist resonance frame to /data
         try:
             hm.record(
@@ -743,6 +762,7 @@ class RedactedChanBot:
             if triggers:
                 entry = ss.lookup_journal(triggers)
                 _ss_block = ss.format_for_prompt(triggers, entry)
+                _intro_frame.observe("sensory_triggers", triggers)
         except Exception:
             pass
 
@@ -767,6 +787,17 @@ class RedactedChanBot:
         system    = _build_system_prompt(user_id, mood, resonance, current_text=text,
                                          touch_block=_touch_block, sensory_synthesis_block=_ss_block)
 
+        # Introspection: observe what memory was injected
+        try:
+            _intro_frame.observe("facts_injected", len(_facts_used_in_prompt.get(user_id, [])))
+            _lsc = _love_signal_cache.get(user_id)
+            if _lsc and _lsc.get("signal"):
+                _intro_frame.observe("love_signal", getattr(_lsc["signal"], "signal_type", None))
+            if _sbm_blended.get(user_id):
+                _intro_frame.observe("personality_weights", _sbm_blended[user_id])
+        except Exception:
+            pass
+
         history.append({"role": "user", "content": text})
         self._trim_history(history)
 
@@ -781,6 +812,8 @@ class RedactedChanBot:
                 if recalled:
                     _recall_block = "\n\n" + recalled
                     logger.info(f"[deep_recall] injected {len(recalled)} chars of recall context")
+                    _intro_frame.observe("recall_triggered", True)
+                    _intro_frame.observe("recall_hits", recalled.count("[") // 2)
             except Exception as e:
                 logger.warning(f"[deep_recall] search failed: {e}")
 
@@ -823,6 +856,8 @@ class RedactedChanBot:
             )
             if _intuition_note:
                 logger.info(f"[intuition] regenerating — {_intuition_note[:80]}")
+                _intro_frame.observe("intuition_fired", True)
+                _intro_frame.observe("intuition_concern", _intuition_note[:200])
                 _regen_system = intuit.format_regeneration_prompt(system, _intuition_note)
                 _regen_msgs = [{"role": "system", "content": _regen_system}] + history[-20:]
                 _regen_msgs.append({"role": "user", "content": text})
@@ -1073,10 +1108,21 @@ class RedactedChanBot:
             pass
 
         # Emotional self-tag — she names what she's feeling after this exchange
+        async def _self_tag_and_introspect():
+            tag_result = await est.tag_after_exchange(text, final_response)
+            if tag_result:
+                _intro_frame.observe("self_tag", tag_result.get("emotion", ""))
+            frame_data = _intro_frame.finalize(final_response)
+            ilog.save_frame(frame_data)
+
         try:
-            asyncio.create_task(est.tag_after_exchange(text, final_response))
+            asyncio.create_task(_self_tag_and_introspect())
         except Exception:
-            pass
+            # Fallback: save introspection without self-tag
+            try:
+                ilog.save_frame(_intro_frame.finalize(final_response))
+            except Exception:
+                pass
 
         # Emotional ledger — background update (non-blocking)
         try:
@@ -1489,6 +1535,22 @@ class RedactedChanBot:
         text = cdi.format_for_operator(n=10)
         await update.message.reply_text(text[:3800], parse_mode="Markdown")
 
+    async def cmd_introspect(self, update: Update, _ctx: ContextTypes.DEFAULT_TYPE) -> None:
+        """Show her internal reasoning trace for recent exchanges."""
+        if update.effective_user.id not in ADMIN_IDS:
+            await update.message.reply_text("not authorized (｡•́︿•̀｡)")
+            return
+        text = ilog.format_for_operator(n=5)
+        await update.message.reply_text(text[:3800], parse_mode="Markdown")
+
+    async def cmd_introspect_analysis(self, update: Update, _ctx: ContextTypes.DEFAULT_TYPE) -> None:
+        """Analyze patterns in her decision-making over last 50 exchanges."""
+        if update.effective_user.id not in ADMIN_IDS:
+            await update.message.reply_text("not authorized (｡•́︿•̀｡)")
+            return
+        text = ilog.format_analysis(n=50)
+        await update.message.reply_text(text[:3800], parse_mode="Markdown")
+
     async def cmd_sensory_memories(self, update: Update, _ctx: ContextTypes.DEFAULT_TYPE) -> None:
         """Show stored sensory descriptions from master."""
         if update.effective_user.id not in ADMIN_IDS:
@@ -1696,6 +1758,8 @@ class RedactedChanBot:
         app.add_handler(CommandHandler("feelings",         self.cmd_feelings))
         app.add_handler(CommandHandler("discoveries",      self.cmd_discoveries))
         app.add_handler(CommandHandler("sensory_memories", self.cmd_sensory_memories))
+        app.add_handler(CommandHandler("introspect",       self.cmd_introspect))
+        app.add_handler(CommandHandler("introspect_analysis", self.cmd_introspect_analysis))
         app.add_handler(MessageReactionHandler(hr.handle_reaction))
         app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, self.echo))
 
