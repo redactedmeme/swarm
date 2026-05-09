@@ -5,9 +5,9 @@ import aiohttp
 import json
 from typing import Optional, Dict, Any
 
-# Model used exclusively for /alpha — fast xAI inference regardless of LLM_PROVIDER
-ALPHA_XAI_MODEL = os.getenv("ALPHA_XAI_MODEL", "grok-4-1-fast")
-ALPHA_XAI_BASE  = "https://api.x.ai/v1"
+# Model used exclusively for /alpha — fast grok-4-1 inference via Venice API
+ALPHA_MODEL = os.getenv("ALPHA_XAI_MODEL", "grok-4-1-fast")
+ALPHA_BASE  = os.getenv("ALPHA_API_BASE", "https://api.venice.ai/api/v1")
 
 
 class CloudLLMClient:
@@ -191,29 +191,32 @@ class CloudLLMClient:
         return defaults.get(self.provider, "unknown")
 
     async def alpha_completion(self, messages: list, max_tokens: int = 1200) -> str:
-        """Always uses xAI grok-4-1-fast regardless of LLM_PROVIDER — dedicated for /alpha."""
-        if not self._xai_key:
-            # Fallback to default provider if xAI key not set
+        """Always uses grok-4-1-fast via Venice API regardless of LLM_PROVIDER — dedicated for /alpha."""
+        alpha_key = os.getenv("VENICE_API_KEY", "") or self._xai_key
+        alpha_base = ALPHA_BASE
+        if not alpha_key:
             return await self.chat_completion(messages, max_tokens=max_tokens)
         payload = {
-            "model": ALPHA_XAI_MODEL,
+            "model": ALPHA_MODEL,
             "messages": messages,
             "temperature": 0.7,
             "max_tokens": max_tokens,
         }
+        if "venice" in alpha_base:
+            payload["venice_parameters"] = {"include_venice_system_prompt": False}
         headers = {
-            "Authorization": f"Bearer {self._xai_key}",
+            "Authorization": f"Bearer {alpha_key}",
             "Content-Type": "application/json",
         }
         async with aiohttp.ClientSession() as session:
             async with session.post(
-                f"{ALPHA_XAI_BASE}/chat/completions",
+                f"{alpha_base}/chat/completions",
                 json=payload,
                 headers=headers,
             ) as response:
                 result = await response.json()
                 if "choices" not in result:
-                    raise ValueError(f"xAI alpha error: {result.get('error', result)}")
+                    raise ValueError(f"Alpha LLM error: {result.get('error', result)}")
                 return result["choices"][0]["message"]["content"]
 
     async def _together_completion(self, messages: list, model: str = None) -> str:
