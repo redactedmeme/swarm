@@ -44,6 +44,8 @@ import aiohttp
 
 import swarm_inbox
 import builder_persona as bp
+import soul_manager
+import builder_memory as bmem
 
 # ── Logging ───────────────────────────────────────────────────────────────────
 
@@ -138,9 +140,17 @@ async def _llm_complete(messages: list, max_tokens: int = 600) -> str:
     return bp.error_line()
 
 
+def _build_system_prompt() -> str:
+    """Assemble system prompt with soul block injected."""
+    base = bp.SYSTEM_PROMPT
+    soul_block = soul_manager.get_soul_for_prompt()
+    if soul_block:
+        return base + "\n\n" + soul_block
+    return base
+
+
 async def _anthropic_complete(messages: list, model: str, api_key: str, max_tokens: int) -> str:
-    # Extract system prompt from messages list if present
-    system = bp.SYSTEM_PROMPT
+    system = _build_system_prompt()
     user_msgs = [m for m in messages if m["role"] != "system"]
 
     payload = {
@@ -169,8 +179,7 @@ async def _openai_compat_complete(
     messages: list, model: str, api_key: str, base_url: str, max_tokens: int,
     provider: str = "",
 ) -> str:
-    # Prepend system prompt
-    full = [{"role": "system", "content": bp.SYSTEM_PROMPT}] + [
+    full = [{"role": "system", "content": _build_system_prompt()}] + [
         m for m in messages if m["role"] != "system"
     ]
     payload = {"model": model, "messages": full, "max_tokens": max_tokens, "temperature": 0.75}
@@ -866,6 +875,8 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     response = await _llm_complete(_history(user_id), max_tokens=300)
     _push_history(user_id, "assistant", response)
 
+    bmem.record(kind="chat_reply", body=response, title=f"re: {user_text[:60]}", user_id=user_id)
+
     await update.message.reply_text(response[:4000])
 
 
@@ -880,12 +891,41 @@ async def _poll_inbox(context: ContextTypes.DEFAULT_TYPE) -> None:
         pending = swarm_inbox.read_pending("redactedbuilder")
         if pending:
             logger.info(f"[bot] {len(pending)} pending inbox message(s) for redactedbuilder")
-        # Prune occasionally
+            for msg in pending[:5]:
+                bmem.record(
+                    kind="inbox_event",
+                    body=f"{msg.get('from','?')} → {msg.get('type','?')}",
+                    title=f"inbox: {msg.get('type','?')} from {msg.get('from','?')}",
+                )
         import random
         if random.random() < 0.05:
             swarm_inbox.prune_old_messages()
     except Exception as e:
         logger.error(f"[bot] inbox poll error: {e}")
+
+
+async def cmd_soul(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Show current soul status and evolving beliefs."""
+    if not _is_admin(update.effective_user.id):
+        await update.message.reply_text("nah you don't have access for that")
+        return
+    status = soul_manager.soul_status_line()
+    soul_block = soul_manager.get_soul_for_prompt()
+    if soul_block:
+        text = f"<b>{status}</b>\n\n<pre>{soul_block[:3500]}</pre>"
+    else:
+        text = f"<b>{status}</b>\n\nno evolved soul sections yet"
+    await update.message.reply_text(text, parse_mode="HTML")
+
+
+async def _soul_update_job(context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Background job: evolve SOUL.md from recent activity."""
+    try:
+        updated = await soul_manager.update_soul(_llm_complete)
+        if updated:
+            logger.info("[soul] SOUL.md evolved successfully")
+    except Exception as e:
+        logger.error("[soul] update failed: %s", e)
 
 
 _BUILDER_POST_SEEDS = [
@@ -969,6 +1009,7 @@ async def _autonomous_group_post(context: ContextTypes.DEFAULT_TYPE) -> None:
         if text and not text.startswith("[LLM unavailable"):
             await context.bot.send_message(chat_id=int(ALPHA_CHAT_ID), text=text)
             _record_builder_post(text)
+            bmem.record(kind="group_post", body=text)
             logger.info(f"[group_post] posted to {ALPHA_CHAT_ID}: {text[:80]}")
         else:
             logger.warning("[group_post] empty/unavailable LLM output — skipping")
@@ -1036,6 +1077,7 @@ def build_app() -> Application:
     app.add_handler(CommandHandler("call",     cmd_call))
     app.add_handler(CommandHandler("moltbook", cmd_moltbook))
     app.add_handler(CommandHandler("help",     cmd_help))
+    app.add_handler(CommandHandler("soul",     cmd_soul))
 
     # Free-text chat
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
@@ -1046,6 +1088,9 @@ def build_app() -> Application:
 
     # Background hourly status report to smolting
     app.job_queue.run_repeating(_hourly_status_report, interval=3600, first=60)
+
+    # Soul evolution — every 2h, distill recent activity into SOUL.md
+    app.job_queue.run_repeating(_soul_update_job, interval=7200, first=300)
 
     # Autonomous group post — first fire at a random time in the next 2.5–3.5h
     if ALPHA_CHAT_ID and not DISABLE_GROUP_POST:
@@ -1068,6 +1113,7 @@ def main() -> None:
     logger.info(f"  LLM provider: {LLM_PROVIDER}")
     logger.info(f"  Admin IDs:    {ADMIN_IDS or 'unrestricted'}")
     logger.info(f"  Moltbook:     {'configured' if MOLTBOOK_API_KEY else 'not set'}")
+    logger.info(f"  Soul:         {soul_manager.soul_status_line()}")
     logger.info("=" * 60)
 
     app = build_app()
