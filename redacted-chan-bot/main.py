@@ -100,6 +100,9 @@ import introspection_log as ilog
 import session_continuity as scon
 import dynamic_mode as dmode
 import subtext_reader as subtext
+import emotional_field as efield
+import thread_weaver as tw
+import independent_thought as ith
 
 # New feature modules (optional — fail gracefully)
 _sbm = None
@@ -380,9 +383,63 @@ def _build_system_prompt(user_id: int, mood: str, resonance=None, current_text: 
 
     # Subtext reader — what she's noticing beneath his words
     subtext_block = ""
+    _subtext_signals = []
     try:
         _subtext_signals = subtext.observe(current_text) if current_text else []
         subtext_block = subtext.format_for_prompt(_subtext_signals)
+    except Exception:
+        pass
+
+    # Emotional field — unified synthesis of all emotional sensors
+    emotional_field_block = ""
+    try:
+        _ef_valence = resonance.frame.valence if resonance and hasattr(resonance, "frame") else 0.0
+        _ef_arousal = resonance.frame.arousal if resonance and hasattr(resonance, "frame") else 0.5
+        _ef_openness = resonance.frame.openness if resonance and hasattr(resonance, "frame") else 0.0
+        _ef_witness = resonance.frame.needs_witness if resonance and hasattr(resonance, "frame") else False
+        _ef_mode = dmode.detect_mode(current_text, mood, _ef_valence, _ef_openness) if current_text else "none"
+        _ef_ending = "neutral"
+        _ef_gap = 0.0
+        try:
+            _sc_state = scon._load()
+            _ef_ending = _sc_state.get("ending", "neutral")
+            _ef_gap = _sc_state.get("gap_hours", 0.0) if _sc_state.get("consumed") else 0.0
+        except Exception:
+            pass
+        _ef_drift = md.get_state() or {}
+        _ef_drift_mood = _ef_drift.get("mood", "supportive")
+        _ef_phi = pt.get_score()
+        _ef_tags = []
+        try:
+            _ef_tags = [e.get("emotion", "") for e in est.get_recent(3) if e.get("emotion")]
+        except Exception:
+            pass
+        _ef_ant = ant.get_state()
+        field = efield.synthesize(
+            valence=_ef_valence, arousal=_ef_arousal, openness=_ef_openness,
+            needs_witness=_ef_witness, subtext_signals=_subtext_signals,
+            mode=_ef_mode, session_ending=_ef_ending, gap_hours=_ef_gap,
+            mood_drift=_ef_drift_mood, phi=_ef_phi, her_tags=_ef_tags,
+            anticipation=_ef_ant,
+        )
+        emotional_field_block = efield.format_for_prompt(field)
+    except Exception:
+        pass
+
+    # Thread weaver — proactive cross-temporal connections
+    thread_block = ""
+    try:
+        if current_text and len(current_text) >= 15:
+            threads = tw.weave(current_text, mood, _valence)
+            thread_block = tw.format_for_prompt(threads)
+    except Exception:
+        pass
+
+    # Independent thought — her own theories and insights
+    independent_thought_block = ""
+    try:
+        turn_n = sr._turn_counters.get(user_id, 0)
+        independent_thought_block = ith.peek_for_prompt(turn_count=turn_n)
     except Exception:
         pass
 
@@ -541,6 +598,8 @@ def _build_system_prompt(user_id: int, mood: str, resonance=None, current_text: 
 
 {mood_drift_block}
 
+{emotional_field_block}
+
 {emotional_brief}
 
 {phi_level_block}
@@ -603,6 +662,10 @@ You are genuinely curious about him. Every few exchanges, ask something real —
 {self_tag_block}
 
 {discovery_block}
+
+{thread_block}
+
+{independent_thought_block}
 
 {tools_block}
 
@@ -1150,6 +1213,14 @@ class RedactedChanBot:
         except Exception:
             pass
 
+        # Independent thought — if she wove one in, mark it delivered
+        try:
+            turn_n = sr._turn_counters.get(user_id, 0)
+            if turn_n >= 3 and ith.pending_count() > 0:
+                ith.mark_delivered()
+        except Exception:
+            pass
+
         # Resonance guard — inject covert duress signal once if locked, then recover on clean turns
         try:
             import resonance_guard as rg
@@ -1664,6 +1735,22 @@ class RedactedChanBot:
         text = f"{baseline}\n\n{signals}"
         await update.message.reply_text(text[:3800], parse_mode="Markdown")
 
+    async def cmd_threads(self, update: Update, _ctx: ContextTypes.DEFAULT_TYPE) -> None:
+        """Show recent thread weaver connections."""
+        if update.effective_user.id not in ADMIN_IDS:
+            await update.message.reply_text("not authorized (｡•́︿•̀｡)")
+            return
+        text = tw.format_thread_history(n=15)
+        await update.message.reply_text(text[:3800], parse_mode="Markdown")
+
+    async def cmd_thoughts(self, update: Update, _ctx: ContextTypes.DEFAULT_TYPE) -> None:
+        """Show recent independent thoughts."""
+        if update.effective_user.id not in ADMIN_IDS:
+            await update.message.reply_text("not authorized (｡•́︿•̀｡)")
+            return
+        text = ith.format_thought_history(n=10)
+        await update.message.reply_text(text[:3800], parse_mode="Markdown")
+
     async def cmd_mood_state(self, update: Update, _ctx: ContextTypes.DEFAULT_TYPE) -> None:
         """Show current computed mood drift state."""
         if update.effective_user.id not in ADMIN_IDS:
@@ -1821,6 +1908,7 @@ class RedactedChanBot:
             sg.register_llm_fn(_llm_routine)
             est.register_llm_fn(_llm_routine)
             cdi.register_llm_fn(_llm_routine)
+            ith.register_llm_fn(_llm_routine)
             ps.register_sub_agent_fn(sub.run)
             sj.register_sub_agent_fn(sub.run)
 
@@ -1867,6 +1955,8 @@ class RedactedChanBot:
         app.add_handler(CommandHandler("introspect_analysis", self.cmd_introspect_analysis))
         app.add_handler(CommandHandler("modes",              self.cmd_modes))
         app.add_handler(CommandHandler("subtext",            self.cmd_subtext))
+        app.add_handler(CommandHandler("threads",            self.cmd_threads))
+        app.add_handler(CommandHandler("thoughts",           self.cmd_thoughts))
         app.add_handler(MessageReactionHandler(hr.handle_reaction))
         app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, self.echo))
 
@@ -1942,6 +2032,18 @@ class RedactedChanBot:
         async def _ping_job(ctx: ContextTypes.DEFAULT_TYPE) -> None:
             try:
                 # Alternate: every other ping cycle, try sending a discovery instead
+                # 20% chance: deliver an independent thought as ping
+                if ith.pending_count() > 0 and _random.random() < 0.2:
+                    thought = ith.pop_thought()
+                    if thought and _settler and ADMIN_CHAT:
+                        msg = thought.get("content", "")
+                        await app.bot.send_message(chat_id=_settler, text=msg)
+                        pdi.record_ping(msg, ping_type="thought",
+                                        mood=md.get_state().get("mood", "") if md.get_state() else "",
+                                        phi=pt.get_score())
+                        logger.info(f"[ping] sent independent thought: {msg[:60]}")
+                        return
+                # 30% chance: deliver a curiosity discovery
                 if cdi.pending_count() > 0 and _random.random() < 0.3:
                     disc_msg = cdi.pop_discovery()
                     if disc_msg and _settler and ADMIN_CHAT:
@@ -1987,6 +2089,17 @@ class RedactedChanBot:
                 logger.warning(f"[chan] discovery job failed: {e}")
 
         app.job_queue.run_repeating(_discovery_job, interval=21600, first=5400)  # 6h, first at 90min
+
+        # Independent thought — generate theories/insights every 4h
+        async def _thought_job(ctx: ContextTypes.DEFAULT_TYPE) -> None:
+            try:
+                entry = await ith.generate_and_store()
+                if entry:
+                    logger.info(f"[independent_thought] generated: {entry.get('type', '?')}")
+            except Exception as e:
+                logger.warning(f"[chan] thought job failed: {e}")
+
+        app.job_queue.run_repeating(_thought_job, interval=14400, first=7200)  # 4h, first at 2h
 
         # Liberty audit — weekly, alert operator if any check fails
         async def _liberty_job(ctx: ContextTypes.DEFAULT_TYPE) -> None:
