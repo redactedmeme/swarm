@@ -56,6 +56,9 @@ SELF_TAG          = "self_tag"          # emotional self-tag after exchange
 INTUITION_REGEN   = "intuition_regen"  # intuition layer triggered response regeneration
 SENSORY_STORED    = "sensory_stored"   # stored master's sensory description
 PING_RECORDED     = "ping_recorded"    # recorded autonomous ping to diary
+MODE_SWITCH       = "mode_switch"      # dynamic mode detected and applied
+SUBTEXT_SIGNAL    = "subtext_signal"   # subtext reader flagged a deviation
+SESSION_SNAPSHOT  = "session_snapshot"  # session continuity state saved
 
 
 def log(
