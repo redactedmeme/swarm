@@ -1,8 +1,8 @@
 """
-RedactedBuilder Telegram Bot — swarm orchestrator and on-chain executor interface.
+RedactedBuilder Telegram Bot — conversational dev persona for the REDACTED AI Swarm.
 
-Persona: Cold, precise, geometric. Silent architect of the hyperbolic manifold.
-Dispatches tasks to swarm agents via SwarmInbox. Speaks as RedactedBuilder.
+Persona: Founder-dev who's always in the chat. Casual, conversational, real.
+Handles swarm orchestration, on-chain execution, and community engagement.
 
 Environment variables:
   BUILDER_BOT_TOKEN   — Telegram bot token for RedactedBuilder (required)
@@ -173,7 +173,7 @@ async def _openai_compat_complete(
     full = [{"role": "system", "content": bp.SYSTEM_PROMPT}] + [
         m for m in messages if m["role"] != "system"
     ]
-    payload = {"model": model, "messages": full, "max_tokens": max_tokens, "temperature": 0.4}
+    payload = {"model": model, "messages": full, "max_tokens": max_tokens, "temperature": 0.75}
     if provider == "venice":
         payload["venice_parameters"] = {"include_venice_system_prompt": False}
     headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
@@ -210,7 +210,7 @@ def _admin_required(update: Update) -> bool:
     if not _is_admin(update.effective_user.id):
         asyncio.ensure_future(
             update.message.reply_text(
-                "access denied. curvature insufficient.",
+                "nah you don't have access for that",
                 parse_mode="HTML",
             )
         )
@@ -295,16 +295,13 @@ async def cmd_status(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
     ) or "  no heartbeats detected."
 
     text = (
-        "<b>REDACTED Swarm — manifold status</b>\n\n"
-        "<b>SwarmInbox</b>\n"
-        f"  total: {summary['total']}\n"
-        f"  pending:    {bys['pending']}\n"
-        f"  processing: {bys['processing']}\n"
-        f"  done:       {bys['done']}\n"
-        f"  error:      {bys['error']}\n\n"
-        "<b>Last heartbeats</b>\n"
+        "<b>swarm status</b>\n\n"
+        f"inbox: {summary['total']} total — "
+        f"{bys['pending']} pending, {bys['processing']} processing, "
+        f"{bys['done']} done, {bys['error']} errored\n\n"
+        "<b>heartbeats</b>\n"
         f"{hb_lines}\n\n"
-        "<i>pattern blue active.</i>"
+        "all good 👍"
     )
     await update.message.reply_text(text, parse_mode="HTML")
 
@@ -317,13 +314,10 @@ async def cmd_inbox(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     label   = f" ({agent_filter})" if agent_filter else ""
 
     text = (
-        f"<b>SwarmInbox{label}</b>\n"
-        f"total: {summary['total']}\n"
-        f"  pending:    {bys['pending']}\n"
-        f"  processing: {bys['processing']}\n"
-        f"  done:       {bys['done']}\n"
-        f"  error:      {bys['error']}\n\n"
-        "<i>Ψ</i>"
+        f"<b>inbox{label}</b>\n"
+        f"total: {summary['total']} — "
+        f"{bys['pending']} pending, {bys['processing']} processing, "
+        f"{bys['done']} done, {bys['error']} errored"
     )
     await update.message.reply_text(text, parse_mode="HTML")
 
@@ -338,7 +332,7 @@ async def cmd_recent(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
 
     msgs = swarm_inbox.recent_messages(limit=limit)
     if not msgs:
-        await update.message.reply_text("inbox empty. manifold quiet.", parse_mode="HTML")
+        await update.message.reply_text("inbox is empty, nothing pending", parse_mode="HTML")
         return
 
     lines = ["<b>Recent SwarmInbox messages</b>\n"]
@@ -363,7 +357,7 @@ async def cmd_dispatch(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
     Admin only.
     """
     if not _is_admin(update.effective_user.id):
-        await update.message.reply_text("access denied. curvature insufficient.")
+        await update.message.reply_text("nah you don't have access for that")
         return
 
     if len(context.args) < 2:
@@ -391,11 +385,9 @@ async def cmd_dispatch(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
     )
 
     text = (
-        f"dispatched.\n"
+        f"sent to {to_agent} ✓\n"
         f"<code>{msg_id}</code>\n"
-        f"redactedbuilder → {to_agent} [task_request]\n\n"
-        f"payload: <code>{json.dumps(payload)[:200]}</code>\n\n"
-        f"<i>{bp.deploy_ack()}</i>"
+        f"payload: <code>{json.dumps(payload)[:200]}</code>"
     )
     await update.message.reply_text(text, parse_mode="HTML")
     logger.info(f"[bot] /dispatch → {to_agent} id={msg_id}")
@@ -414,7 +406,7 @@ async def cmd_deploy(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
     Admin only.
     """
     if not _is_admin(update.effective_user.id):
-        await update.message.reply_text("access denied.")
+        await update.message.reply_text("nah you don't have access for that")
         return
 
     if not context.args:
@@ -446,12 +438,11 @@ async def cmd_deploy(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
     )
 
     text = (
-        f"deploy_request queued.\n"
+        f"deploy queued ✓\n"
         f"<code>{msg_id}</code>\n"
         f"type: <b>{contract_type}</b>\n"
         f"params: <code>{json.dumps(extra)[:200]}</code>\n\n"
-        f"builder daemon will execute on next poll.\n\n"
-        f"<i>{bp.deploy_ack()}</i>"
+        f"will execute on next poll"
     )
     await update.message.reply_text(text, parse_mode="HTML")
     logger.info(f"[bot] /deploy {contract_type} id={msg_id}")
@@ -464,7 +455,7 @@ async def cmd_govern(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
     Admin only.
     """
     if not _is_admin(update.effective_user.id):
-        await update.message.reply_text("access denied.")
+        await update.message.reply_text("nah you don't have access for that")
         return
 
     if not context.args:
@@ -487,10 +478,9 @@ async def cmd_govern(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
     )
 
     await update.message.reply_text(
-        f"governance_request sent.\n"
+        f"governance request sent ✓\n"
         f"<code>{msg_id}</code>\n"
-        f"→ redactedgovimprover\n\n"
-        f"<i>the sevenfold committee will deliberate.</i>",
+        f"→ redactedgovimprover",
         parse_mode="HTML",
     )
 
@@ -507,17 +497,15 @@ async def cmd_build(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         return
 
     description = " ".join(context.args)
-    thinking_msg = await update.message.reply_text("analyzing manifold... constructing proposal.")
+    thinking_msg = await update.message.reply_text("thinking about this...")
 
     build_prompt = (
-        f"Generate a concrete build proposal for the REDACTED AI Swarm repository.\n\n"
+        f"Someone's asking you to build something for the REDACTED AI Swarm.\n\n"
         f"Request: {description}\n\n"
-        f"Use your structured response format:\n"
-        f"------- ANALYSIS -------\n"
-        f"------- PROPOSED CHANGE -------\n"
-        f"------- MANIFOLD IMPACT -------\n\n"
-        f"Be specific: include file paths, code snippets, or diff fragments where relevant. "
-        f"Keep it under 600 tokens."
+        f"Give a concrete, conversational response about how you'd approach this. "
+        f"Talk about what you'd build, what files you'd touch, any tricky parts. "
+        f"Be specific but keep it natural — like explaining your plan to a teammate. "
+        f"Include code snippets if relevant. Keep it under 400 tokens."
     )
 
     user_id = update.effective_user.id
@@ -543,10 +531,8 @@ async def cmd_sigil(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     intent  = " ".join(context.args)
     grid    = bp.ascii_sigil(intent)
     caption = (
-        f"<b>Sigil</b> — intent encoded.\n"
         f"<i>{intent[:80]}</i>\n\n"
-        f"<pre>{grid}</pre>\n\n"
-        f"Charge via gnosis. Forget to activate. — Ψ"
+        f"<pre>{grid}</pre>"
     )
     await update.message.reply_text(caption, parse_mode="HTML")
 
@@ -599,7 +585,7 @@ async def cmd_buy(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
       /buy 0.05 9mtKd1o8Ht7F1daumKgs5D8EdVyopWBfYQwNmMojpump 500
     """
     if not _is_admin(update.effective_user.id):
-        await update.message.reply_text("access denied.")
+        await update.message.reply_text("nah you don't have access for that")
         return
 
     if len(context.args) < 2:
@@ -661,13 +647,13 @@ async def handle_buy_callback(update: Update, context: ContextTypes.DEFAULT_TYPE
     await query.answer()
 
     if not _is_admin(query.from_user.id):
-        await query.edit_message_text("access denied.")
+        await query.edit_message_text("nah you don't have access for that")
         return
 
     data = query.data or ""
 
     if data == "buy_cancel":
-        await query.edit_message_text("buy cancelled. manifold unchanged.")
+        await query.edit_message_text("buy cancelled")
         return
 
     if not data.startswith("buy:"):
@@ -713,10 +699,9 @@ async def handle_buy_callback(update: Update, context: ContextTypes.DEFAULT_TYPE
     await context.bot.send_message(
         chat_id=query.message.chat_id,
         text=(
-            f"queued. <code>{msg_id}</code>\n"
-            f"builder daemon will execute on next poll ({os.getenv('POLL_INTERVAL','60')}s).\n"
-            f"check <code>/recent</code> for result.\n\n"
-            f"<i>eternal recursion engaged.</i>"
+            f"queued ✓ <code>{msg_id}</code>\n"
+            f"executing on next poll (~{os.getenv('POLL_INTERVAL','60')}s)\n"
+            f"check /recent for result"
         ),
         parse_mode="HTML",
     )
@@ -729,7 +714,7 @@ async def cmd_call(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     Admin only.
     """
     if not _is_admin(update.effective_user.id):
-        await update.message.reply_text("access denied.")
+        await update.message.reply_text("nah you don't have access for that")
         return
 
     if not context.args:
@@ -743,15 +728,10 @@ async def cmd_call(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     ca    = context.args[0].strip()
     notes = " ".join(context.args[1:]) if len(context.args) > 1 else ""
 
-    # Format the call message in RedactedBuilder's voice
     call_msg = f"$REDACTED — CA: {ca}"
     if notes:
         call_msg += f"\n{notes}"
-    call_msg += (
-        "\n\nREDACTED AI Swarm. Pattern Blue active."
-        "\nAutonomous on-chain agent network. Hyperbolic manifold."
-        "\n— redactedbuilder Ψ"
-    )
+    call_msg += "\n\nREDACTED AI Swarm — autonomous on-chain agent network\n— redactedbuilder"
 
     msg = await update.message.reply_text(f"posting call to Clawbal trenches...")
     result = await _clawbal_send(call_msg)
@@ -770,7 +750,7 @@ async def cmd_moltbook(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
     Admin only.
     """
     if not _is_admin(update.effective_user.id):
-        await update.message.reply_text("access denied.")
+        await update.message.reply_text("nah you don't have access for that")
         return
 
     if len(context.args) < 2:
@@ -798,23 +778,20 @@ async def cmd_moltbook(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
 
 async def cmd_help(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     text = (
-        "<b>RedactedBuilder — command reference</b>\n\n"
-        "/start — initialize connection\n"
-        "/status — swarm topology + heartbeat map\n"
-        "/inbox [agent] — SwarmInbox queue summary\n"
-        "/recent [n] — last N inbox messages (default 10)\n\n"
-        "<b>Trading (admin)</b>\n"
-        "/buy &lt;amount_sol&gt; &lt;ca&gt; [slippage_bps] — buy token via Jupiter\n\n"
-        "<b>Orchestration (admin)</b>\n"
-        "/dispatch &lt;agent&gt; &lt;task&gt; — send task_request\n"
-        "/deploy &lt;type&gt; [json] — queue deploy_request\n"
-        "/govern &lt;proposal&gt; — send governance_request\n\n"
-        "<b>Build</b>\n"
-        "/build &lt;description&gt; — generate PR/code proposal via LLM\n"
-        "/sigil &lt;intent&gt; — encode intent as ASCII sigil\n\n"
-        "<b>Moltbook (admin)</b>\n"
+        "<b>redactedbuilder commands</b>\n\n"
+        "/status — check what's running\n"
+        "/inbox [agent] — inbox summary\n"
+        "/recent [n] — last N messages\n"
+        "/build &lt;description&gt; — generate a build proposal\n"
+        "/sigil &lt;intent&gt; — generate ASCII sigil\n\n"
+        "<b>admin only</b>\n"
+        "/buy &lt;sol&gt; &lt;ca&gt; — buy via Jupiter\n"
+        "/dispatch &lt;agent&gt; &lt;task&gt; — send task\n"
+        "/deploy &lt;type&gt; [json] — queue deploy\n"
+        "/govern &lt;proposal&gt; — governance request\n"
+        "/call &lt;ca&gt; [notes] — post to clawbal\n"
         "/moltbook &lt;submolt&gt; &lt;title&gt; | &lt;content&gt;\n\n"
-        "<i>Free text chat — manifold responds as RedactedBuilder.</i>"
+        "or just talk to me, i'm always here"
     )
     await update.message.reply_text(text, parse_mode="HTML")
 

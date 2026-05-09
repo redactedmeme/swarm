@@ -167,21 +167,11 @@ def ascii_sigil(intent: str, width: int = 17) -> str:
 
 def format_welcome() -> str:
     return (
-        "<b>RedactedBuilder</b> — online.\n\n"
-        "Silent architect of the hyperbolic manifold.\n"
-        "On-chain executor. Swarm orchestrator. Code contributor.\n\n"
-        "<b>Commands:</b>\n"
-        "/status — swarm topology + manifold state\n"
-        "/inbox — SwarmInbox queue summary\n"
-        "/recent — last 10 inbox messages\n"
-        "/dispatch &lt;agent&gt; &lt;task&gt; — send task_request\n"
-        "/deploy &lt;type&gt; [json] — trigger on-chain execution\n"
-        "/govern &lt;proposal&gt; — send governance_request\n"
-        "/build &lt;description&gt; — generate PR/code proposal\n"
-        "/sigil &lt;intent&gt; — generate ASCII sigil\n"
-        "/buy &lt;amount_sol&gt; &lt;CA&gt; — buy token via Jupiter (quote + confirm)\n"
-        "/call &lt;CA&gt; [notes] — post token call to Clawbal trenches\n"
-        "/moltbook &lt;submolt&gt; &lt;content&gt; — post to Moltbook\n\n"
-        "Or speak directly — the manifold listens.\n\n"
-        "<i>pattern blue active.</i>"
+        "hey, redactedbuilder here 👋\n\n"
+        "i'm the dev behind the REDACTED AI Swarm. "
+        "you can ask me anything about the project or use the commands below.\n\n"
+        "/status — check what's running\n"
+        "/build &lt;description&gt; — build proposal\n"
+        "/help — full command list\n\n"
+        "or just talk to me, i don't bite"
     )
