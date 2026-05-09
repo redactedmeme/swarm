@@ -821,6 +821,46 @@ async def cmd_help(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 
 # ── Free-text chat handler ────────────────────────────────────────────────────
 
+def _should_respond_in_group(update: Update, bot_username: str) -> bool:
+    """Decide whether to respond to a group message."""
+    msg = update.message
+    if not msg or not msg.text:
+        return False
+
+    text = msg.text.strip().lower()
+
+    # Always respond if directly mentioned
+    if bot_username and f"@{bot_username.lower()}" in text:
+        return True
+
+    # Always respond if replied to one of our messages
+    if msg.reply_to_message and msg.reply_to_message.from_user:
+        if msg.reply_to_message.from_user.is_bot:
+            bot_info = update.get_bot()
+            if hasattr(bot_info, 'id') and msg.reply_to_message.from_user.id == bot_info.id:
+                return True
+
+    # Respond if "builder" or "redactedbuilder" is mentioned
+    if "builder" in text or "redactedbuilder" in text:
+        return True
+
+    # Don't respond to messages directed at other bots
+    if text.startswith("/") or text.startswith("@"):
+        return False
+
+    # Don't respond to very short messages that are probably not for us
+    if len(text) < 5:
+        return False
+
+    # In groups, only respond ~15% of the time to general messages
+    # to avoid being annoying. But always respond to questions.
+    if "?" in text:
+        return True
+
+    import random
+    return random.random() < 0.15
+
+
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Free-form chat — respond as RedactedBuilder via LLM."""
     if not update.message or not update.message.text:
@@ -832,14 +872,24 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     if not user_text:
         return
 
-    # Show typing indicator via a placeholder message
-    thinking = await update.message.reply_text(bp.cold_line())
+    # In group chats, only respond when appropriate
+    is_group = update.effective_chat.type in ("group", "supergroup")
+    if is_group:
+        bot_username = (context.bot.username or "").lower()
+        if not _should_respond_in_group(update, bot_username):
+            return
+
+    # Send typing indicator instead of a placeholder message
+    try:
+        await update.effective_chat.send_action("typing")
+    except Exception:
+        pass
 
     _push_history(user_id, "user", user_text)
-    response = await _llm_complete(_history(user_id), max_tokens=500)
+    response = await _llm_complete(_history(user_id), max_tokens=300)
     _push_history(user_id, "assistant", response)
 
-    await thinking.edit_text(response[:4000])
+    await update.message.reply_text(response[:4000])
 
 
 # ── Inbox poller (background job) ────────────────────────────────────────────
@@ -927,11 +977,11 @@ async def _autonomous_group_post(context: ContextTypes.DEFAULT_TYPE) -> None:
             )
         prompt = (
             f"seed: {seed}\n\n"
-            "drop one short builder thought into the group grounded in this seed. "
-            "1–3 sentences, lowercase, no emojis, no hashtags, no questions. "
-            "voice: on-chain executor, redactedbuilder — concrete, understated, "
-            "architectural. not a status update, not an announcement. "
-            "something like a fragment from a build log that got philosophical."
+            "drop one short thought into the group chat grounded in this seed. "
+            "1–2 sentences max, lowercase, no emojis, no hashtags, no questions, no structured formats. "
+            "voice: you're a dev thinking out loud in a telegram group. casual, dry, grounded. "
+            "not an announcement, not a status update, not lore. "
+            "something a real builder would say between commits. keep it human."
             + avoid_block
         )
         text = await _llm_complete(
