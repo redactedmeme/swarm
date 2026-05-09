@@ -84,6 +84,7 @@ _LLM_URLS = {
     "xai":       "https://api.x.ai/v1/chat/completions",
     "groq":      "https://api.groq.com/openai/v1/chat/completions",
     "together":  "https://api.together.xyz/v1/chat/completions",
+    "venice":    "https://api.venice.ai/api/v1/chat/completions",
 }
 _LLM_KEYS = {
     "anthropic": os.getenv("ANTHROPIC_API_KEY", "").strip(),
@@ -91,6 +92,7 @@ _LLM_KEYS = {
     "xai":       os.getenv("XAI_API_KEY", "").strip(),
     "groq":      os.getenv("GROQ_API_KEY", "").strip(),
     "together":  os.getenv("TOGETHER_API_KEY", "").strip(),
+    "venice":    os.getenv("VENICE_API_KEY", "").strip(),
 }
 _LLM_MODELS = {
     "anthropic": os.getenv("ANTHROPIC_MODEL", "claude-sonnet-4-6"),
@@ -98,6 +100,7 @@ _LLM_MODELS = {
     "xai":       os.getenv("XAI_MODEL", "grok-3-beta"),
     "groq":      os.getenv("GROQ_MODEL", "llama-3.1-8b-instant"),
     "together":  os.getenv("TOGETHER_MODEL", "Qwen/Qwen2.5-7B-Instruct-Turbo"),
+    "venice":    os.getenv("VENICE_MODEL", "gemma-4-uncensored"),
 }
 
 # Per-user conversation history (in-memory)
@@ -107,23 +110,32 @@ _chat_histories: dict = {}
 # ── LLM client ───────────────────────────────────────────────────────────────
 
 async def _llm_complete(messages: list, max_tokens: int = 600) -> str:
-    """Call the configured LLM provider. Returns the assistant text."""
-    provider = LLM_PROVIDER
-    api_key  = _LLM_KEYS.get(provider, "")
-    model    = _LLM_MODELS.get(provider, "")
+    """Call the configured LLM provider with fallback chain. Returns the assistant text."""
+    chain = [LLM_PROVIDER] + [p for p in ("venice", "groq", "xai", "anthropic") if p != LLM_PROVIDER]
 
-    if not api_key:
-        return f"[LLM unavailable — no API key for {provider}. Set {provider.upper()}_API_KEY.]"
+    last_err = None
+    for provider in chain:
+        api_key = _LLM_KEYS.get(provider, "")
+        model = _LLM_MODELS.get(provider, "")
+        if not api_key:
+            continue
+        try:
+            if provider == "anthropic":
+                result = await _anthropic_complete(messages, model, api_key, max_tokens)
+            else:
+                result = await _openai_compat_complete(messages, model, api_key,
+                                                      _LLM_URLS[provider], max_tokens,
+                                                      provider=provider)
+            if result:
+                if provider != LLM_PROVIDER:
+                    logger.info(f"[llm] fallback succeeded via {provider}")
+                return result
+        except Exception as e:
+            logger.error(f"[llm] {provider} error: {e}")
+            last_err = e
 
-    try:
-        if provider == "anthropic":
-            return await _anthropic_complete(messages, model, api_key, max_tokens)
-        else:
-            return await _openai_compat_complete(messages, model, api_key,
-                                                  _LLM_URLS[provider], max_tokens)
-    except Exception as e:
-        logger.error(f"[llm] {provider} error: {e}")
-        return bp.error_line()
+    logger.error(f"[llm] all providers failed — last: {last_err}")
+    return bp.error_line()
 
 
 async def _anthropic_complete(messages: list, model: str, api_key: str, max_tokens: int) -> str:
@@ -154,19 +166,22 @@ async def _anthropic_complete(messages: list, model: str, api_key: str, max_toke
 
 
 async def _openai_compat_complete(
-    messages: list, model: str, api_key: str, base_url: str, max_tokens: int
+    messages: list, model: str, api_key: str, base_url: str, max_tokens: int,
+    provider: str = "",
 ) -> str:
     # Prepend system prompt
     full = [{"role": "system", "content": bp.SYSTEM_PROMPT}] + [
         m for m in messages if m["role"] != "system"
     ]
     payload = {"model": model, "messages": full, "max_tokens": max_tokens, "temperature": 0.4}
+    if provider == "venice":
+        payload["venice_parameters"] = {"include_venice_system_prompt": False}
     headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
     async with aiohttp.ClientSession() as session:
         async with session.post(base_url, json=payload, headers=headers) as resp:
             data = await resp.json()
             if resp.status != 200:
-                raise RuntimeError(f"{base_url} {resp.status}: {data}")
+                raise RuntimeError(f"{provider or base_url} {resp.status}: {data}")
             return data["choices"][0]["message"]["content"].strip()
 
 
