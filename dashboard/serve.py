@@ -2,6 +2,8 @@
 import os
 import json
 import time
+import base64
+import struct
 import threading
 import urllib.request
 from http.server import HTTPServer, SimpleHTTPRequestHandler
@@ -9,10 +11,12 @@ from http.server import HTTPServer, SimpleHTTPRequestHandler
 TOKEN         = '9a21gb7fWGm9dD2UFdZAzgFn5K1NwfmYkjyLbpAcKgnM'
 HELIUS_KEY    = os.environ.get('HELIUS_API_KEY', '')
 DEXSCREENER   = f'https://api.dexscreener.com/latest/dex/tokens/{TOKEN}'
+HELIUS_RPC    = 'https://mainnet.helius-rpc.com/?api-key={key}'
 HELIUS_TXN    = 'https://api-mainnet.helius-rpc.com/v0/addresses/{addr}/transactions/?api-key={key}&type=SWAP&limit=30'
 
 SNAPSHOT_INTERVAL = 1800   # 30 min
 TRADES_INTERVAL   = 30     # seconds
+TOKEN_INFO_INTERVAL = 1800  # 30 min
 MAX_SNAPSHOTS     = 336    # 7 days of 30-min snapshots
 MAX_TRADES        = 100
 TOP_POOLS_COUNT   = 5      # query top N pools for live trades
@@ -28,7 +32,98 @@ trades_lock    = threading.Lock()
 top_pools      = []   # [{addr, label, dex}] — updated from DexScreener
 top_pools_lock = threading.Lock()
 
+token_info     = {}   # holder count, top holders, supply, authorities
+token_info_lock = threading.Lock()
+
 last_sigs      = {}   # pool_addr → newest sig seen (for incremental fetches)
+
+# ── Helius RPC helper ─────────────────────────────────────────────────────────
+
+def helius_rpc(method, params):
+    if not HELIUS_KEY:
+        return {}
+    url  = HELIUS_RPC.format(key=HELIUS_KEY)
+    body = json.dumps({'jsonrpc': '2.0', 'id': 1, 'method': method, 'params': params}).encode()
+    req  = urllib.request.Request(url, data=body,
+                                  headers={'Content-Type': 'application/json', 'User-Agent': 'Mozilla/5.0'})
+    try:
+        with urllib.request.urlopen(req, timeout=15) as r:
+            return json.loads(r.read())
+    except Exception as e:
+        print(f'[helius rpc] {method}: {e}')
+        return {}
+
+# ── Helius token info ─────────────────────────────────────────────────────────
+
+def _parse_mint_authorities(b64_data):
+    """Parse SPL Token mint account layout to extract mint/freeze authority status."""
+    try:
+        raw = base64.b64decode(b64_data)
+        # Layout: 4B coption + 32B mint_auth + 8B supply + 1B decimals + 1B init + 4B coption + 32B freeze_auth
+        mint_revoked   = struct.unpack_from('<I', raw, 0)[0] == 0
+        freeze_revoked = len(raw) >= 50 and struct.unpack_from('<I', raw, 46)[0] == 0
+        return mint_revoked, freeze_revoked
+    except Exception:
+        return None, None
+
+def fetch_token_info():
+    if not HELIUS_KEY:
+        return
+
+    info = {}
+
+    # 1. Supply
+    resp = helius_rpc('getTokenSupply', [TOKEN])
+    val  = (resp.get('result') or {}).get('value') or {}
+    info['supply']   = int(val.get('amount', 0))
+    info['decimals'] = int(val.get('decimals', 6))
+    info['supply_ui'] = float(val.get('uiAmount') or 0)
+
+    # 2. Mint account — authorities
+    resp = helius_rpc('getAccountInfo', [TOKEN, {'encoding': 'base64'}])
+    acct = ((resp.get('result') or {}).get('value') or {})
+    acct_data = (acct.get('data') or [None])[0]
+    mint_rev, freeze_rev = _parse_mint_authorities(acct_data) if acct_data else (None, None)
+    info['mint_authority_revoked']   = mint_rev
+    info['freeze_authority_revoked'] = freeze_rev
+
+    # 3. Largest accounts — top holder concentration
+    resp     = helius_rpc('getTokenLargestAccounts', [TOKEN])
+    accounts = (resp.get('result') or {}).get('value') or []
+    supply_ui = info['supply_ui'] or 1
+    top10_amt = sum(float(a.get('uiAmount') or 0) for a in accounts[:10])
+    info['top10_pct']     = round(top10_amt / supply_ui * 100, 2) if supply_ui else None
+    info['top_holders']   = [
+        {'address': a.get('address',''), 'pct': round(float(a.get('uiAmount') or 0) / supply_ui * 100, 4)}
+        for a in accounts[:10]
+    ]
+
+    # 4. Holder count via getTokenAccounts (paginated, cap at 10 pages)
+    holder_count = 0
+    page = 1
+    while page <= 10:
+        resp = helius_rpc('getTokenAccounts', {'mint': TOKEN, 'limit': 1000, 'page': page})
+        result   = (resp.get('result') or {})
+        accounts_page = result.get('token_accounts') or []
+        holder_count += len(accounts_page)
+        if len(accounts_page) < 1000:
+            break
+        page += 1
+    info['holder_count'] = holder_count
+    info['holder_count_capped'] = page > 10  # True if we stopped early
+
+    with token_info_lock:
+        token_info.clear()
+        token_info.update(info)
+
+    print(f'[token info] holders={holder_count} top10={info.get("top10_pct")}% '
+          f'mint_rev={mint_rev} freeze_rev={freeze_rev}')
+
+def token_info_loop():
+    fetch_token_info()
+    while True:
+        time.sleep(TOKEN_INFO_INTERVAL)
+        fetch_token_info()
 
 # ── DexScreener snapshot ──────────────────────────────────────────────────────
 
@@ -226,6 +321,12 @@ class Handler(SimpleHTTPRequestHandler):
             self._json(body)
             return
 
+        if self.path == '/api/token':
+            with token_info_lock:
+                body = json.dumps(token_info).encode()
+            self._json(body)
+            return
+
         if self.path in ('/', ''):
             self.path = '/index.html'
         super().do_GET()
@@ -244,7 +345,7 @@ class Handler(SimpleHTTPRequestHandler):
         super().end_headers()
 
     def log_message(self, fmt, *args):
-        if args and str(args[0]).startswith(('GET /api/snapshots', 'GET /api/trades')):
+        if args and str(args[0]).startswith(('GET /api/snapshots', 'GET /api/trades', 'GET /api/token')):
             return
         super().log_message(fmt, *args)
 
@@ -252,8 +353,9 @@ class Handler(SimpleHTTPRequestHandler):
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 3001))
 
-    threading.Thread(target=snapshot_loop, daemon=True).start()
-    threading.Thread(target=trades_loop,   daemon=True).start()
+    threading.Thread(target=snapshot_loop,    daemon=True).start()
+    threading.Thread(target=trades_loop,      daemon=True).start()
+    threading.Thread(target=token_info_loop,  daemon=True).start()
 
     print(f'Dashboard on port {port} | snapshots every {SNAPSHOT_INTERVAL//60}m | '
           f'trades every {TRADES_INTERVAL}s | helius={"✓" if HELIUS_KEY else "✗ (set HELIUS_API_KEY)"}')
