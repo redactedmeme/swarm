@@ -346,6 +346,74 @@
             margin-top: 2px;
         }
 
+        /* === TOKEN SECURITY === */
+        .token-security {
+            margin-top: 14px;
+            padding-top: 14px;
+            border-top: 1px solid var(--border);
+        }
+
+        .token-security-title {
+            font-size: 9px;
+            text-transform: uppercase;
+            letter-spacing: 0.8px;
+            color: var(--text-muted);
+            margin-bottom: 10px;
+        }
+
+        .security-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 8px;
+        }
+
+        .security-item {
+            display: flex;
+            flex-direction: column;
+            gap: 2px;
+        }
+
+        .security-label {
+            font-size: 9px;
+            color: var(--text-muted);
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .security-value {
+            font-size: 12px;
+            font-weight: 600;
+        }
+
+        .security-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 4px;
+            font-size: 11px;
+            font-weight: 600;
+            padding: 2px 6px;
+            border-radius: 4px;
+        }
+
+        .badge-safe   { color: var(--green); background: var(--green-dim); }
+        .badge-warn   { color: var(--amber); background: rgba(245,158,11,0.1); }
+        .badge-danger { color: var(--red);   background: var(--red-dim); }
+        .badge-na     { color: var(--text-muted); background: transparent; }
+
+        .top-holders-bar {
+            margin-top: 8px;
+            height: 4px;
+            background: var(--border);
+            border-radius: 2px;
+            overflow: hidden;
+        }
+
+        .top-holders-fill {
+            height: 100%;
+            border-radius: 2px;
+            transition: width 0.6s ease;
+        }
+
         /* === HISTORY CHART === */
         .history-tabs {
             display: flex;
@@ -1164,6 +1232,7 @@ let activityFeed = [];     // capped at 40 events (h1-diff fallback)
 let feedPollCount = 0;
 let tradesCache = [];      // real Helius swap events from /api/trades
 let helisAvailable = null; // null=unknown, true/false after first fetch
+let tokenData = {};        // Helius token enrichment from /api/token
 
 document.getElementById('tokenAddr').addEventListener('click', () => {
     navigator.clipboard.writeText(TOKEN);
@@ -1514,6 +1583,15 @@ async function fetchTrades() {
     }
 }
 
+async function fetchTokenData() {
+    try {
+        const res = await fetch('/api/token');
+        if (!res.ok) return;
+        const data = await res.json();
+        if (data && Object.keys(data).length > 0) tokenData = data;
+    } catch (_) {}
+}
+
 // ── Main fetch ────────────────────────────────────────────────────────────────
 
 async function fetchData() {
@@ -1530,7 +1608,7 @@ async function fetchData() {
         buildActivityEvents();
         savePrevPoolMap();
         pushClientSnapshot();
-        await Promise.all([fetchServerSnapshots(), fetchTrades()]);
+        await Promise.all([fetchServerSnapshots(), fetchTrades(), fetchTokenData()]);
         render();
         document.getElementById('lastUpdated').textContent = 'Updated ' + new Date().toLocaleTimeString();
     } catch (err) {
@@ -1644,7 +1722,64 @@ function renderHero() {
                 <div class="hero-change-value ${pctClass(priceChange24)}">${fmtPct(priceChange24)}</div>
             </div>
         </div>
+        ${renderTokenSecurity()}
     `;
+}
+
+function renderTokenSecurity() {
+    const td = tokenData;
+    if (!td || Object.keys(td).length === 0) return '';
+
+    const holders = td.holder_count != null
+        ? (td.holder_count_capped ? '10,000+' : td.holder_count.toLocaleString())
+        : '–';
+
+    const supplyUi = td.supply_ui != null
+        ? fmtNum(td.supply_ui)
+        : '–';
+
+    const top10Pct = td.top10_pct != null ? td.top10_pct : null;
+    const top10Color = top10Pct == null ? 'var(--text-muted)'
+        : top10Pct > 60 ? 'var(--red)'
+        : top10Pct > 40 ? 'var(--amber)'
+        : 'var(--green)';
+
+    const authBadge = (revoked, label) => {
+        if (revoked == null) return `<span class="security-badge badge-na">– ${label}</span>`;
+        return revoked
+            ? `<span class="security-badge badge-safe">✓ ${label} Revoked</span>`
+            : `<span class="security-badge badge-danger">✗ ${label} Active</span>`;
+    };
+
+    return `
+    <div class="token-security">
+        <div class="token-security-title">Token Security</div>
+        <div class="security-grid">
+            <div class="security-item">
+                <div class="security-label">Holders</div>
+                <div class="security-value">${holders}</div>
+            </div>
+            <div class="security-item">
+                <div class="security-label">Supply</div>
+                <div class="security-value">${supplyUi}</div>
+            </div>
+            <div class="security-item">
+                <div class="security-label">Top 10 Concentration</div>
+                <div class="security-value" style="color:${top10Color}">${top10Pct != null ? top10Pct.toFixed(1) + '%' : '–'}</div>
+                ${top10Pct != null ? `
+                <div class="top-holders-bar">
+                    <div class="top-holders-fill" style="width:${Math.min(top10Pct,100)}%;background:${top10Color}"></div>
+                </div>` : ''}
+            </div>
+            <div class="security-item">
+                <div class="security-label">Authorities</div>
+                <div style="display:flex;flex-direction:column;gap:3px;margin-top:2px;">
+                    ${authBadge(td.mint_authority_revoked, 'Mint')}
+                    ${authBadge(td.freeze_authority_revoked, 'Freeze')}
+                </div>
+            </div>
+        </div>
+    </div>`;
 }
 
 function renderStats() {
