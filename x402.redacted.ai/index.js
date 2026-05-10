@@ -114,6 +114,10 @@ app.use(helmet({
         "https://api.mainnet-beta.solana.com",
         "https://api.devnet.solana.com",
         "https://api.testnet.solana.com",
+        "https://api.dexscreener.com",
+        "https://api-v3.raydium.io",
+        "https://api.mainnet.orca.so",
+        "https://amm-v2.meteora.ag",
         "https://unpkg.com",
         "https://cdn.jsdelivr.net"
       ],
@@ -425,6 +429,11 @@ app.get('/health', (req, res) => {
     agents: getAllAgents().length,
     endpoints: getAllEndpoints().length
   });
+});
+
+// Token volume dashboard
+app.get('/dashboard', (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'dashboard', 'index.html'));
 });
 
 // Root endpoint - Gateway homepage
