@@ -9,17 +9,24 @@ import urllib.request
 from http.server import HTTPServer, SimpleHTTPRequestHandler
 
 TOKEN         = '9a21gb7fWGm9dD2UFdZAzgFn5K1NwfmYkjyLbpAcKgnM'
+V2_TOKEN      = '9mtKd1o8Ht7F1daumKgs5D8EdVyopWBfYQwNmMojpump'
 HELIUS_KEY    = os.environ.get('HELIUS_API_KEY', '')
 DEXSCREENER   = f'https://api.dexscreener.com/latest/dex/tokens/{TOKEN}'
+DEXSCREENER_V2 = f'https://api.dexscreener.com/latest/dex/tokens/{V2_TOKEN}'
 HELIUS_RPC    = 'https://mainnet.helius-rpc.com/?api-key={key}'
 HELIUS_TXN    = 'https://api-mainnet.helius-rpc.com/v0/addresses/{addr}/transactions/?api-key={key}&type=SWAP&limit=30'
 
-SNAPSHOT_INTERVAL = 1800   # 30 min
-TRADES_INTERVAL   = 30     # seconds
-TOKEN_INFO_INTERVAL = 1800  # 30 min
-MAX_SNAPSHOTS     = 336    # 7 days of 30-min snapshots
-MAX_TRADES        = 100
-TOP_POOLS_COUNT   = 5      # query top N pools for live trades
+# Pools that are always included regardless of DexScreener ranking
+PINNED_POOLS  = [
+    {'addr': '8Jd4KxLXhSqJx3wx7WRujfLZ7hmddVQkoM4qJqg4cPHo', 'label': 'REDACTED/? (v1)', 'dex': 'raydium'},
+]
+
+SNAPSHOT_INTERVAL   = 1800   # 30 min
+TRADES_INTERVAL     = 30     # seconds
+TOKEN_INFO_INTERVAL = 1800   # 30 min
+MAX_SNAPSHOTS       = 336    # 7 days of 30-min snapshots
+MAX_TRADES          = 100
+TOP_POOLS_COUNT     = 5      # query top N pools for live trades
 
 # ── Shared state ──────────────────────────────────────────────────────────────
 
@@ -34,6 +41,9 @@ top_pools_lock = threading.Lock()
 
 token_info     = {}   # holder count, top holders, supply, authorities
 token_info_lock = threading.Lock()
+
+v2_snapshot    = {}   # latest v2 token market data
+v2_lock        = threading.Lock()
 
 last_sigs      = {}   # pool_addr → newest sig seen (for incremental fetches)
 
@@ -158,14 +168,19 @@ def take_snapshot():
             if len(snapshots) > MAX_SNAPSHOTS:
                 snapshots.pop(0)
 
-        # Update top pool list for trade fetching
+        # Update top pool list for trade fetching (DexScreener top N + pinned)
+        known_addrs = {p['addr'] for p in PINNED_POOLS}
         with top_pools_lock:
             top_pools.clear()
+            top_pools.extend(PINNED_POOLS)
             for p in pairs[:TOP_POOLS_COUNT]:
+                addr  = p.get('pairAddress', '')
+                if addr in known_addrs:
+                    continue  # already pinned
                 base  = (p.get('baseToken')  or {}).get('symbol', '?')
                 quote = (p.get('quoteToken') or {}).get('symbol', '?')
                 top_pools.append({
-                    'addr':  p.get('pairAddress', ''),
+                    'addr':  addr,
                     'label': f'{base}/{quote}',
                     'dex':   p.get('dexId', 'unknown'),
                 })
@@ -181,6 +196,52 @@ def snapshot_loop():
     while True:
         time.sleep(SNAPSHOT_INTERVAL)
         take_snapshot()
+
+# ── v2 token snapshot ─────────────────────────────────────────────────────────
+
+def fetch_v2_data():
+    try:
+        req = urllib.request.Request(DEXSCREENER_V2, headers={'User-Agent': 'Mozilla/5.0'})
+        with urllib.request.urlopen(req, timeout=15) as resp:
+            data = json.loads(resp.read())
+
+        pairs = data.get('pairs') or []
+        pairs.sort(key=lambda p: (p.get('volume') or {}).get('h24', 0) or 0, reverse=True)
+        if not pairs:
+            return
+
+        def v(p, k): return (p.get('volume') or {}).get(k, 0) or 0
+        def liq(p):  return (p.get('liquidity') or {}).get('usd', 0) or 0
+
+        entry = {
+            'ts':          int(time.time()),
+            'price':       float(pairs[0].get('priceUsd') or 0),
+            'mcap':        float(pairs[0].get('marketCap') or pairs[0].get('fdv') or 0),
+            'vol24h':      sum(v(p, 'h24') for p in pairs),
+            'vol6h':       sum(v(p, 'h6')  for p in pairs),
+            'vol1h':       sum(v(p, 'h1')  for p in pairs),
+            'liq':         sum(liq(p)      for p in pairs),
+            'pools':       len(pairs),
+            'priceChange': {
+                'h1':  pairs[0].get('priceChange', {}).get('h1'),
+                'h6':  pairs[0].get('priceChange', {}).get('h6'),
+                'h24': pairs[0].get('priceChange', {}).get('h24'),
+            },
+        }
+
+        with v2_lock:
+            v2_snapshot.clear()
+            v2_snapshot.update(entry)
+
+        print(f'[v2] price=${entry["price"]:.8f} mcap=${entry["mcap"]:.0f} vol24h=${entry["vol24h"]:.0f}')
+    except Exception as e:
+        print(f'[v2 error] {e}')
+
+def v2_loop():
+    fetch_v2_data()
+    while True:
+        time.sleep(SNAPSHOT_INTERVAL)
+        fetch_v2_data()
 
 # ── Helius trade fetch ────────────────────────────────────────────────────────
 
@@ -327,6 +388,12 @@ class Handler(SimpleHTTPRequestHandler):
             self._json(body)
             return
 
+        if self.path == '/api/v2':
+            with v2_lock:
+                body = json.dumps(v2_snapshot).encode()
+            self._json(body)
+            return
+
         if self.path in ('/', ''):
             self.path = '/index.html'
         super().do_GET()
@@ -345,7 +412,7 @@ class Handler(SimpleHTTPRequestHandler):
         super().end_headers()
 
     def log_message(self, fmt, *args):
-        if args and str(args[0]).startswith(('GET /api/snapshots', 'GET /api/trades', 'GET /api/token')):
+        if args and str(args[0]).startswith(('GET /api/snapshots', 'GET /api/trades', 'GET /api/token', 'GET /api/v2')):
             return
         super().log_message(fmt, *args)
 
@@ -356,6 +423,7 @@ if __name__ == '__main__':
     threading.Thread(target=snapshot_loop,    daemon=True).start()
     threading.Thread(target=trades_loop,      daemon=True).start()
     threading.Thread(target=token_info_loop,  daemon=True).start()
+    threading.Thread(target=v2_loop,          daemon=True).start()
 
     print(f'Dashboard on port {port} | snapshots every {SNAPSHOT_INTERVAL//60}m | '
           f'trades every {TRADES_INTERVAL}s | helius={"✓" if HELIUS_KEY else "✗ (set HELIUS_API_KEY)"}')
