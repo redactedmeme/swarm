@@ -346,6 +346,67 @@
             margin-top: 2px;
         }
 
+        /* === HISTORY CHART === */
+        .history-tabs {
+            display: flex;
+            gap: 4px;
+        }
+
+        .history-tab {
+            background: transparent;
+            border: 1px solid var(--border);
+            color: var(--text-muted);
+            padding: 3px 12px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-family: inherit;
+            font-size: 10px;
+            transition: all 0.2s;
+        }
+
+        .history-tab.active {
+            background: var(--accent);
+            border-color: var(--accent);
+            color: #fff;
+        }
+
+        .history-tab:hover:not(.active) {
+            border-color: var(--text-muted);
+            color: var(--text-secondary);
+        }
+
+        .history-source {
+            font-size: 9px;
+            color: var(--text-muted);
+            margin-left: auto;
+        }
+
+        .history-legend {
+            display: flex;
+            gap: 14px;
+            font-size: 9px;
+            color: var(--text-secondary);
+        }
+
+        .history-legend-dot {
+            display: inline-block;
+            width: 8px; height: 8px;
+            border-radius: 50%;
+            margin-right: 4px;
+            vertical-align: middle;
+        }
+
+        .no-history {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            height: 180px;
+            color: var(--text-muted);
+            font-size: 11px;
+            gap: 6px;
+        }
+
         /* === CENTER — CHARTS === */
         .chart-section {
             background: var(--bg-card);
@@ -857,6 +918,29 @@
             </div>
         </div>
 
+        <!-- History Chart -->
+        <div class="chart-section" id="historySection">
+            <div class="chart-header">
+                <span class="chart-title">Volume Over Time</span>
+                <div class="history-tabs">
+                    <button class="history-tab active" onclick="switchHistory('24h', this)">24H</button>
+                    <button class="history-tab" onclick="switchHistory('1w', this)">1W</button>
+                    <button class="history-tab" onclick="switchHistory('all', this)">All</button>
+                </div>
+            </div>
+            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;">
+                <div class="history-legend">
+                    <span><span class="history-legend-dot" style="background:#7c5cfc"></span>24h Vol</span>
+                    <span><span class="history-legend-dot" style="background:#22c55e"></span>Liquidity</span>
+                    <span><span class="history-legend-dot" style="background:#06b6d4"></span>Est. Fees×10</span>
+                </div>
+                <span class="history-source" id="historySource">accumulating...</span>
+            </div>
+            <div class="chart-container" style="height:200px;">
+                <canvas id="historyChart"></canvas>
+            </div>
+        </div>
+
         <!-- Volume Chart -->
         <div class="chart-section">
             <div class="chart-header">
@@ -916,8 +1000,12 @@ const API_URL = `https://api.dexscreener.com/latest/dex/tokens/${TOKEN}`;
 let poolsData = [];
 let volumeChart = null;
 let pieChart = null;
+let historyChart = null;
 let autoRefreshInterval = null;
 let currentMetric = 'volume24h';
+let currentHistoryRange = '24h';
+let clientSnapshots = [];  // accumulates locally every 30s
+let serverSnapshots = [];  // loaded from /api/snapshots
 
 document.getElementById('tokenAddr').addEventListener('click', () => {
     navigator.clipboard.writeText(TOKEN);
@@ -1085,6 +1173,177 @@ function getFlameLevel(p) {
     return 0;
 }
 
+// ── Snapshot helpers ─────────────────────────────────────────────────────────
+
+function pushClientSnapshot() {
+    if (poolsData.length === 0) return;
+    const knownP = poolsData.filter(p => getFeeRate(p) != null);
+    clientSnapshots.push({
+        ts:     Math.floor(Date.now() / 1000),
+        vol24h: poolsData.reduce((s, p) => s + getVolume(p, 'volume24h'), 0),
+        vol6h:  poolsData.reduce((s, p) => s + getVolume(p, 'volume6h'),  0),
+        vol1h:  poolsData.reduce((s, p) => s + getVolume(p, 'volume1h'),  0),
+        liq:    poolsData.reduce((s, p) => s + getLiquidity(p), 0),
+        fees24h: knownP.reduce((s, p) => s + (getEstimatedFees(p, 'volume24h') || 0), 0),
+        price:  poolsData[0]?.priceUsd ? parseFloat(poolsData[0].priceUsd) : 0,
+        pools:  poolsData.length,
+    });
+    // keep max 336 points client-side too
+    if (clientSnapshots.length > 336) clientSnapshots.shift();
+}
+
+async function fetchServerSnapshots() {
+    try {
+        const r = await fetch('/api/snapshots', { cache: 'no-store' });
+        if (!r.ok) return;
+        const data = await r.json();
+        if (Array.isArray(data) && data.length > 0) {
+            serverSnapshots = data;
+        }
+    } catch (e) { /* static server or local dev — ignore */ }
+}
+
+function getActiveSnapshots() {
+    // Prefer server snapshots if available (survive page reloads)
+    const src = serverSnapshots.length >= 2 ? serverSnapshots : clientSnapshots;
+    const now = Date.now() / 1000;
+    if (currentHistoryRange === '24h') return src.filter(s => s.ts >= now - 86400);
+    if (currentHistoryRange === '1w')  return src.filter(s => s.ts >= now - 604800);
+    return src;
+}
+
+function fmtTime(ts) {
+    const d = new Date(ts * 1000);
+    const pts = getActiveSnapshots().length;
+    if (pts <= 48) return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    return d.toLocaleDateString([], { month: 'short', day: 'numeric' }) + ' ' +
+           d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+}
+
+function switchHistory(range, btn) {
+    currentHistoryRange = range;
+    document.querySelectorAll('.history-tab').forEach(t => t.classList.remove('active'));
+    btn.classList.add('active');
+    renderHistoryChart();
+}
+
+function renderHistoryChart() {
+    const pts = getActiveSnapshots();
+    const usingServer = serverSnapshots.length >= 2;
+    const sourceEl = document.getElementById('historySource');
+
+    if (pts.length < 2) {
+        if (historyChart) { historyChart.destroy(); historyChart = null; }
+        document.getElementById('historyChart').closest('.chart-container').innerHTML =
+            `<div class="no-history">
+                <span>📈</span>
+                <span>${usingServer ? 'Waiting for more snapshots…' : 'Accumulating data — check back after a few refreshes'}</span>
+                <span style="font-size:9px;color:var(--text-muted)">${usingServer ? 'Server snapshots every 30m' : 'Local snapshots every 30s'}</span>
+             </div>`;
+        if (sourceEl) sourceEl.textContent = usingServer ? 'server data' : 'session data';
+        return;
+    }
+
+    // Restore canvas if it was replaced
+    const container = document.getElementById('historyChart')?.closest('.chart-container') ||
+                      document.querySelector('#historySection .chart-container');
+    if (!document.getElementById('historyChart')) {
+        container.innerHTML = '<canvas id="historyChart"></canvas>';
+    }
+
+    const labels   = pts.map(s => fmtTime(s.ts));
+    const volData  = pts.map(s => s.vol24h || 0);
+    const liqData  = pts.map(s => s.liq    || 0);
+    // Scale fees ×10 so it's visible on the same axis as volume
+    const feesData = pts.map(s => (s.fees24h || 0) * 10);
+
+    if (historyChart) historyChart.destroy();
+
+    const ctx = document.getElementById('historyChart').getContext('2d');
+    historyChart = new Chart(ctx, {
+        type: 'line',
+        data: {
+            labels,
+            datasets: [
+                {
+                    label: '24h Volume',
+                    data: volData,
+                    borderColor: '#7c5cfc',
+                    backgroundColor: 'rgba(124,92,252,0.08)',
+                    borderWidth: 2,
+                    pointRadius: pts.length > 50 ? 0 : 3,
+                    fill: true,
+                    tension: 0.3,
+                },
+                {
+                    label: 'Liquidity',
+                    data: liqData,
+                    borderColor: '#22c55e',
+                    backgroundColor: 'rgba(34,197,94,0.05)',
+                    borderWidth: 2,
+                    pointRadius: pts.length > 50 ? 0 : 3,
+                    fill: false,
+                    tension: 0.3,
+                },
+                {
+                    label: 'Est. Fees ×10',
+                    data: feesData,
+                    borderColor: '#06b6d4',
+                    backgroundColor: 'rgba(6,182,212,0.05)',
+                    borderWidth: 1.5,
+                    borderDash: [4, 3],
+                    pointRadius: 0,
+                    fill: false,
+                    tension: 0.3,
+                },
+            ],
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            interaction: { mode: 'index', intersect: false },
+            plugins: {
+                legend: { display: false },
+                tooltip: {
+                    callbacks: {
+                        label: (ctx) => {
+                            const v = ctx.raw;
+                            if (ctx.datasetIndex === 2) return `Est. Fees: ${fmt(v / 10)}`;
+                            return `${ctx.dataset.label}: ${fmt(v)}`;
+                        }
+                    }
+                }
+            },
+            scales: {
+                x: {
+                    grid: { display: false },
+                    ticks: {
+                        color: '#55556a',
+                        font: { family: 'SF Mono, monospace', size: 9 },
+                        maxTicksLimit: 8,
+                        maxRotation: 0,
+                    }
+                },
+                y: {
+                    beginAtZero: false,
+                    grid: { color: 'rgba(255,255,255,0.03)' },
+                    ticks: {
+                        color: '#55556a',
+                        font: { family: 'SF Mono, monospace', size: 9 },
+                        callback: (v) => fmtCompact(v),
+                    }
+                }
+            }
+        }
+    });
+
+    const spanLabel = pts.length === 1 ? 'just started' :
+        usingServer ? `${pts.length} server snapshots` : `${pts.length} session snapshots`;
+    if (sourceEl) sourceEl.textContent = spanLabel;
+}
+
+// ── Main fetch ────────────────────────────────────────────────────────────────
+
 async function fetchData() {
     const btn = document.getElementById('refreshBtn');
     btn.classList.add('loading');
@@ -1096,6 +1355,8 @@ async function fetchData() {
         const data = await res.json();
         poolsData = (data.pairs || []).sort((a, b) => getVolume(b, 'volume24h') - getVolume(a, 'volume24h'));
         await fetchFeeRates();
+        pushClientSnapshot();
+        await fetchServerSnapshots();
         render();
         document.getElementById('lastUpdated').textContent = 'Updated ' + new Date().toLocaleTimeString();
     } catch (err) {
@@ -1114,6 +1375,7 @@ function render() {
     renderHero();
     renderStats();
     renderHotPools();
+    renderHistoryChart();
     renderChart();
     renderPieChart();
     renderPools();
