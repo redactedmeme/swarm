@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>REDACTED Token Dashboard</title>
+    <title>REDACTED SWARM Volume Tracker</title>
     <link rel="icon" type="image/svg+xml" href="/favicon.ico">
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
     <style>
@@ -12,13 +12,17 @@
             --bg-card: #12121a;
             --bg-card-hover: #1a1a26;
             --border: #1e1e2e;
+            --border-glow: rgba(124, 92, 252, 0.3);
             --text-primary: #e0e0e8;
             --text-secondary: #8888a0;
             --text-muted: #55556a;
             --accent: #7c5cfc;
             --accent-glow: rgba(124, 92, 252, 0.15);
+            --accent-bright: #9d84fd;
             --green: #22c55e;
             --red: #ef4444;
+            --cyan: #06b6d4;
+            --amber: #f59e0b;
             --green-dim: rgba(34, 197, 94, 0.12);
             --red-dim: rgba(239, 68, 68, 0.12);
         }
@@ -35,12 +39,12 @@
 
         .header {
             border-bottom: 1px solid var(--border);
-            padding: 20px 32px;
+            padding: 16px 24px;
             display: flex;
             align-items: center;
             justify-content: space-between;
             flex-wrap: wrap;
-            gap: 16px;
+            gap: 12px;
         }
 
         .header-left {
@@ -50,20 +54,18 @@
         }
 
         .header h1 {
-            font-size: 18px;
+            font-size: 16px;
             font-weight: 600;
             letter-spacing: 0.5px;
         }
 
-        .header h1 span {
-            color: var(--accent);
-        }
+        .header h1 span { color: var(--accent); }
 
         .token-addr {
-            font-size: 11px;
+            font-size: 10px;
             color: var(--text-muted);
             background: var(--bg-card);
-            padding: 4px 10px;
+            padding: 3px 8px;
             border-radius: 4px;
             border: 1px solid var(--border);
             cursor: pointer;
@@ -75,127 +77,304 @@
         .header-right {
             display: flex;
             align-items: center;
-            gap: 12px;
+            gap: 10px;
         }
 
         .refresh-btn {
             background: var(--bg-card);
             border: 1px solid var(--border);
             color: var(--text-secondary);
-            padding: 6px 14px;
+            padding: 5px 12px;
             border-radius: 6px;
             cursor: pointer;
             font-family: inherit;
-            font-size: 12px;
+            font-size: 11px;
             transition: all 0.2s;
         }
 
-        .refresh-btn:hover {
-            border-color: var(--accent);
-            color: var(--text-primary);
-        }
+        .refresh-btn:hover { border-color: var(--accent); color: var(--text-primary); }
+        .refresh-btn.loading { opacity: 0.5; pointer-events: none; }
 
-        .refresh-btn.loading {
-            opacity: 0.5;
-            pointer-events: none;
-        }
-
-        .last-updated {
-            font-size: 11px;
-            color: var(--text-muted);
-        }
+        .last-updated { font-size: 10px; color: var(--text-muted); }
 
         .auto-refresh {
             display: flex;
             align-items: center;
-            gap: 6px;
-            font-size: 11px;
+            gap: 5px;
+            font-size: 10px;
             color: var(--text-muted);
         }
 
-        .auto-refresh input[type="checkbox"] {
-            accent-color: var(--accent);
-        }
+        .auto-refresh input[type="checkbox"] { accent-color: var(--accent); }
 
-        .container {
-            max-width: 1400px;
-            margin: 0 auto;
-            padding: 24px 32px;
-        }
-
-        .stats-row {
+        /* === 3-COLUMN LAYOUT === */
+        .layout {
             display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-            gap: 16px;
-            margin-bottom: 24px;
+            grid-template-columns: 280px 1fr 300px;
+            gap: 0;
+            min-height: calc(100vh - 53px);
         }
 
+        .col-left, .col-right {
+            border-right: 1px solid var(--border);
+            padding: 20px;
+            overflow-y: auto;
+            max-height: calc(100vh - 53px);
+        }
+
+        .col-right {
+            border-right: none;
+            border-left: 1px solid var(--border);
+        }
+
+        .col-center {
+            padding: 20px 24px;
+            overflow-y: auto;
+            max-height: calc(100vh - 53px);
+        }
+
+        /* === LEFT COLUMN — STATS === */
         .stat-card {
             background: var(--bg-card);
             border: 1px solid var(--border);
             border-radius: 8px;
-            padding: 16px 20px;
+            padding: 14px 16px;
+            margin-bottom: 10px;
             transition: border-color 0.2s;
         }
 
-        .stat-card:hover { border-color: var(--accent); }
+        .stat-card:hover { border-color: rgba(124, 92, 252, 0.2); }
 
         .stat-label {
-            font-size: 11px;
+            font-size: 10px;
+            color: var(--text-muted);
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            margin-bottom: 4px;
+        }
+
+        .stat-value {
+            font-size: 20px;
+            font-weight: 600;
+        }
+
+        .stat-sub {
+            font-size: 10px;
+            color: var(--text-secondary);
+            margin-top: 3px;
+        }
+
+        .positive { color: var(--green); }
+        .negative { color: var(--red); }
+        .stat-value.accent { color: var(--accent); }
+
+        .fees-summary {
+            background: linear-gradient(135deg, rgba(124,92,252,0.08), rgba(124,92,252,0.02));
+            border-color: rgba(124,92,252,0.25);
+        }
+
+        .stat-divider {
+            border: none;
+            border-top: 1px solid var(--border);
+            margin: 14px 0;
+        }
+
+        /* === CENTER — HERO CARD === */
+        .hero-card {
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            padding: 28px 32px;
+            margin-bottom: 20px;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .hero-card::before {
+            content: '';
+            position: absolute;
+            top: 0; left: 0; right: 0;
+            height: 2px;
+            background: linear-gradient(90deg, var(--accent), var(--cyan), var(--accent));
+        }
+
+        .hero-top {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            margin-bottom: 20px;
+        }
+
+        .hero-icon {
+            width: 40px;
+            height: 40px;
+            border-radius: 50%;
+            background: linear-gradient(135deg, var(--accent), var(--cyan));
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 18px;
+            font-weight: 700;
+            color: #fff;
+        }
+
+        .hero-token-name {
+            font-size: 18px;
+            font-weight: 600;
+        }
+
+        .hero-updated {
+            font-size: 10px;
+            color: var(--text-muted);
+            margin-left: auto;
+        }
+
+        .hero-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 16px;
+            margin-bottom: 20px;
+        }
+
+        .hero-stat {
+            background: rgba(255,255,255,0.02);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 16px;
+            text-align: center;
+        }
+
+        .hero-stat-label {
+            font-size: 10px;
             color: var(--text-muted);
             text-transform: uppercase;
             letter-spacing: 1px;
             margin-bottom: 6px;
         }
 
-        .stat-value {
-            font-size: 22px;
-            font-weight: 600;
+        .hero-stat-value {
+            font-size: 28px;
+            font-weight: 700;
         }
 
-        .stat-sub {
-            font-size: 11px;
+        .hero-stat-value.price-val { color: var(--text-primary); }
+        .hero-stat-value.mcap-val { color: var(--green); }
+
+        .hero-stat-sub {
+            font-size: 10px;
             color: var(--text-secondary);
             margin-top: 4px;
         }
 
-        .positive { color: var(--green); }
-        .negative { color: var(--red); }
+        .hero-supply-bar {
+            margin-bottom: 16px;
+        }
 
+        .hero-supply-bar-label {
+            display: flex;
+            justify-content: space-between;
+            font-size: 10px;
+            color: var(--text-muted);
+            margin-bottom: 6px;
+        }
+
+        .hero-supply-track {
+            height: 8px;
+            background: var(--bg-primary);
+            border-radius: 4px;
+            overflow: hidden;
+        }
+
+        .hero-supply-fill {
+            height: 100%;
+            background: linear-gradient(90deg, var(--accent), var(--cyan));
+            border-radius: 4px;
+            transition: width 0.6s ease;
+        }
+
+        .hero-row {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 12px;
+            margin-bottom: 16px;
+        }
+
+        .hero-mini {
+            text-align: center;
+            padding: 10px 0;
+        }
+
+        .hero-mini-label {
+            font-size: 10px;
+            color: var(--text-muted);
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .hero-mini-value {
+            font-size: 16px;
+            font-weight: 600;
+            margin-top: 4px;
+        }
+
+        .hero-mini-sub {
+            font-size: 9px;
+            color: var(--text-secondary);
+            margin-top: 2px;
+        }
+
+        .hero-changes {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 12px;
+            padding-top: 16px;
+            border-top: 1px solid var(--border);
+        }
+
+        .hero-change {
+            text-align: center;
+        }
+
+        .hero-change-label {
+            font-size: 10px;
+            color: var(--text-muted);
+        }
+
+        .hero-change-value {
+            font-size: 14px;
+            font-weight: 600;
+            margin-top: 2px;
+        }
+
+        /* === CENTER — CHARTS === */
         .chart-section {
             background: var(--bg-card);
             border: 1px solid var(--border);
             border-radius: 8px;
-            padding: 20px;
-            margin-bottom: 24px;
+            padding: 16px;
+            margin-bottom: 20px;
         }
 
         .chart-header {
             display: flex;
             align-items: center;
             justify-content: space-between;
-            margin-bottom: 16px;
+            margin-bottom: 12px;
         }
 
-        .chart-title {
-            font-size: 14px;
-            font-weight: 600;
-        }
+        .chart-title { font-size: 13px; font-weight: 600; }
 
-        .chart-tabs {
-            display: flex;
-            gap: 4px;
-        }
+        .chart-tabs { display: flex; gap: 4px; }
 
         .chart-tab {
             background: transparent;
             border: 1px solid var(--border);
             color: var(--text-muted);
-            padding: 4px 12px;
+            padding: 3px 10px;
             border-radius: 4px;
             cursor: pointer;
             font-family: inherit;
-            font-size: 11px;
+            font-size: 10px;
             transition: all 0.2s;
         }
 
@@ -212,17 +391,16 @@
 
         .chart-container {
             position: relative;
-            height: 300px;
+            height: 260px;
         }
 
-        .pools-section {
-            margin-bottom: 24px;
-        }
+        /* === CENTER — POOL CARDS === */
+        .pools-section { margin-bottom: 20px; }
 
         .section-title {
-            font-size: 14px;
+            font-size: 13px;
             font-weight: 600;
-            margin-bottom: 16px;
+            margin-bottom: 12px;
             display: flex;
             align-items: center;
             gap: 8px;
@@ -231,22 +409,22 @@
         .pool-count {
             background: var(--accent);
             color: #fff;
-            font-size: 10px;
-            padding: 2px 8px;
+            font-size: 9px;
+            padding: 2px 7px;
             border-radius: 10px;
         }
 
         .pools-grid {
             display: grid;
-            grid-template-columns: repeat(auto-fill, minmax(420px, 1fr));
-            gap: 12px;
+            grid-template-columns: repeat(auto-fill, minmax(380px, 1fr));
+            gap: 10px;
         }
 
         .pool-card {
             background: var(--bg-card);
             border: 1px solid var(--border);
             border-radius: 8px;
-            padding: 16px 20px;
+            padding: 14px 16px;
             transition: all 0.2s;
             cursor: default;
         }
@@ -260,16 +438,13 @@
             display: flex;
             align-items: center;
             justify-content: space-between;
-            margin-bottom: 12px;
+            margin-bottom: 10px;
         }
 
-        .pool-pair {
-            font-size: 14px;
-            font-weight: 600;
-        }
+        .pool-pair { font-size: 13px; font-weight: 600; }
 
         .pool-dex {
-            font-size: 11px;
+            font-size: 10px;
             color: var(--text-muted);
             background: var(--bg-primary);
             padding: 2px 8px;
@@ -279,38 +454,49 @@
         .pool-metrics {
             display: grid;
             grid-template-columns: repeat(3, 1fr);
-            gap: 12px;
+            gap: 10px;
         }
 
         .pool-metric-label {
-            font-size: 10px;
+            font-size: 9px;
             color: var(--text-muted);
             text-transform: uppercase;
             letter-spacing: 0.5px;
         }
 
         .pool-metric-value {
-            font-size: 14px;
+            font-size: 13px;
             font-weight: 500;
             margin-top: 2px;
         }
 
+        .pool-fees-row {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            margin-top: 8px;
+            padding-top: 8px;
+            border-top: 1px solid var(--border);
+        }
+
+        .pool-fee-item { flex: 1; }
+
         .pool-bar-container {
-            margin-top: 12px;
-            padding-top: 12px;
+            margin-top: 8px;
+            padding-top: 8px;
             border-top: 1px solid var(--border);
         }
 
         .pool-bar-label {
             display: flex;
             justify-content: space-between;
-            font-size: 10px;
+            font-size: 9px;
             color: var(--text-muted);
-            margin-bottom: 4px;
+            margin-bottom: 3px;
         }
 
         .pool-bar {
-            height: 4px;
+            height: 3px;
             background: var(--bg-primary);
             border-radius: 2px;
             overflow: hidden;
@@ -325,8 +511,8 @@
 
         .pool-link {
             display: inline-block;
-            margin-top: 10px;
-            font-size: 11px;
+            margin-top: 8px;
+            font-size: 10px;
             color: var(--accent);
             text-decoration: none;
             opacity: 0.7;
@@ -335,19 +521,183 @@
 
         .pool-link:hover { opacity: 1; }
 
+        .fee-badge {
+            display: inline-block;
+            font-size: 9px;
+            padding: 1px 5px;
+            border-radius: 3px;
+            font-weight: 500;
+        }
+
+        .fee-badge.low { background: rgba(34,197,94,0.15); color: var(--green); }
+        .fee-badge.mid { background: rgba(245,158,11,0.15); color: #f59e0b; }
+        .fee-badge.high { background: rgba(239,68,68,0.15); color: var(--red); }
+        .fee-badge.dynamic { background: rgba(124,92,252,0.15); color: var(--accent); }
+
+        /* === RIGHT COLUMN — HOT POOLS === */
+        .hot-section-title {
+            font-size: 12px;
+            font-weight: 600;
+            color: var(--amber);
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            margin-bottom: 4px;
+        }
+
+        .hot-section-sub {
+            font-size: 9px;
+            color: var(--text-muted);
+            margin-bottom: 12px;
+        }
+
+        .hot-pool-item {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 8px 0;
+            border-bottom: 1px solid rgba(255,255,255,0.03);
+            transition: background 0.15s;
+        }
+
+        .hot-pool-item:hover { background: rgba(255,255,255,0.02); }
+
+        .hot-flames {
+            display: flex;
+            gap: 1px;
+            width: 36px;
+            flex-shrink: 0;
+        }
+
+        .flame {
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+        }
+
+        .flame.on { background: var(--amber); box-shadow: 0 0 4px rgba(245, 158, 11, 0.5); }
+        .flame.off { background: var(--border); }
+
+        .hot-pool-name {
+            font-size: 11px;
+            font-weight: 600;
+            color: var(--cyan);
+            flex: 1;
+            min-width: 0;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        .hot-pool-meta {
+            text-align: right;
+            flex-shrink: 0;
+        }
+
+        .hot-pool-txns {
+            font-size: 11px;
+            font-weight: 600;
+            color: var(--text-primary);
+        }
+
+        .hot-pool-time {
+            font-size: 9px;
+            color: var(--text-muted);
+        }
+
+        .hot-pool-vol {
+            font-size: 9px;
+            color: var(--text-secondary);
+        }
+
+        .hot-divider {
+            border: none;
+            border-top: 1px solid var(--border);
+            margin: 16px 0;
+        }
+
+        /* Podium */
+        .podium {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 8px;
+            margin-top: 16px;
+        }
+
+        .podium-item {
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 12px 6px;
+            text-align: center;
+            transition: border-color 0.2s;
+        }
+
+        .podium-item:hover { border-color: rgba(124,92,252,0.3); }
+
+        .podium-medal {
+            font-size: 20px;
+            margin-bottom: 4px;
+        }
+
+        .podium-name {
+            font-size: 10px;
+            font-weight: 600;
+            color: var(--cyan);
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        .podium-stat {
+            font-size: 9px;
+            color: var(--text-secondary);
+            margin-top: 2px;
+        }
+
+        /* Fee breakdown */
+        .fee-breakdown {
+            margin-top: 16px;
+        }
+
+        .fee-break-item {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 6px 0;
+            border-bottom: 1px solid rgba(255,255,255,0.03);
+        }
+
+        .fee-break-dex {
+            font-size: 11px;
+            font-weight: 500;
+        }
+
+        .fee-break-val {
+            font-size: 11px;
+            font-weight: 600;
+            color: var(--accent);
+        }
+
+        .fee-break-pct {
+            font-size: 9px;
+            color: var(--text-muted);
+            margin-left: 6px;
+        }
+
+        /* === LOADING / ERROR === */
         .loading-state {
             display: flex;
             flex-direction: column;
             align-items: center;
             justify-content: center;
-            padding: 80px 20px;
+            padding: 60px 20px;
             color: var(--text-muted);
-            gap: 12px;
+            gap: 10px;
         }
 
         .spinner {
-            width: 32px;
-            height: 32px;
+            width: 28px;
+            height: 28px;
             border: 2px solid var(--border);
             border-top-color: var(--accent);
             border-radius: 50%;
@@ -358,26 +708,18 @@
 
         .error-state {
             text-align: center;
-            padding: 60px 20px;
+            padding: 40px 20px;
             color: var(--red);
         }
 
         .error-state .retry {
-            margin-top: 12px;
+            margin-top: 10px;
             color: var(--accent);
             cursor: pointer;
-            font-size: 12px;
+            font-size: 11px;
         }
 
         .error-state .retry:hover { text-decoration: underline; }
-
-        @media (max-width: 768px) {
-            .header { padding: 16px; }
-            .container { padding: 16px; }
-            .pools-grid { grid-template-columns: 1fr; }
-            .stats-row { grid-template-columns: repeat(2, 1fr); }
-            .pool-metrics { grid-template-columns: repeat(2, 1fr); }
-        }
 
         .toast {
             position: fixed;
@@ -386,9 +728,9 @@
             background: var(--bg-card);
             border: 1px solid var(--border);
             color: var(--text-primary);
-            padding: 10px 16px;
+            padding: 8px 14px;
             border-radius: 6px;
-            font-size: 12px;
+            font-size: 11px;
             opacity: 0;
             transform: translateY(10px);
             transition: all 0.3s;
@@ -396,42 +738,40 @@
             z-index: 100;
         }
 
-        .toast.show {
-            opacity: 1;
-            transform: translateY(0);
+        .toast.show { opacity: 1; transform: translateY(0); }
+
+        /* === RESPONSIVE === */
+        @media (max-width: 1200px) {
+            .layout {
+                grid-template-columns: 1fr 280px;
+            }
+            .col-left {
+                display: none;
+            }
+            .mobile-stats {
+                display: grid;
+                grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+                gap: 10px;
+                margin-bottom: 20px;
+            }
         }
 
-        .fee-badge {
-            display: inline-block;
-            font-size: 10px;
-            padding: 1px 6px;
-            border-radius: 3px;
-            font-weight: 500;
+        @media (max-width: 800px) {
+            .layout {
+                grid-template-columns: 1fr;
+            }
+            .col-right {
+                border-left: none;
+                border-top: 1px solid var(--border);
+                max-height: none;
+            }
+            .header { padding: 12px 16px; }
+            .pools-grid { grid-template-columns: 1fr; }
+            .hero-grid { grid-template-columns: 1fr; }
         }
 
-        .fee-badge.low { background: rgba(34,197,94,0.15); color: var(--green); }
-        .fee-badge.mid { background: rgba(245,158,11,0.15); color: #f59e0b; }
-        .fee-badge.high { background: rgba(239,68,68,0.15); color: var(--red); }
-        .fee-badge.dynamic { background: rgba(124,92,252,0.15); color: var(--accent); }
-
-        .pool-fees-row {
-            display: flex;
-            align-items: center;
-            gap: 8px;
-            margin-top: 10px;
-            padding-top: 10px;
-            border-top: 1px solid var(--border);
-        }
-
-        .pool-fee-item {
-            flex: 1;
-        }
-
-        .stat-value.accent { color: var(--accent); }
-
-        .fees-summary {
-            background: linear-gradient(135deg, rgba(124,92,252,0.08), rgba(124,92,252,0.02));
-            border-color: rgba(124,92,252,0.25);
+        @media (min-width: 1201px) {
+            .mobile-stats { display: none; }
         }
     </style>
 </head>
@@ -439,7 +779,7 @@
 
 <div class="header">
     <div class="header-left">
-        <h1><span>REDACTED</span> Volume Tracker</h1>
+        <h1><span>REDACTED</span> SWARM Volume Tracker</h1>
         <span class="token-addr" id="tokenAddr" title="Click to copy">9a21gb7f...KgnM</span>
     </div>
     <div class="header-right">
@@ -452,43 +792,71 @@
     </div>
 </div>
 
-<div class="container">
-    <div id="statsRow" class="stats-row"></div>
-
-    <div class="chart-section">
-        <div class="chart-header">
-            <span class="chart-title">Volume by Pool</span>
-            <div class="chart-tabs">
-                <button class="chart-tab active" data-metric="volume24h" onclick="switchChart('volume24h', this)">24h Vol</button>
-                <button class="chart-tab" data-metric="volume6h" onclick="switchChart('volume6h', this)">6h Vol</button>
-                <button class="chart-tab" data-metric="volume1h" onclick="switchChart('volume1h', this)">1h Vol</button>
-                <button class="chart-tab" data-metric="liquidity" onclick="switchChart('liquidity', this)">Liquidity</button>
-                <button class="chart-tab" data-metric="fees24h" onclick="switchChart('fees24h', this)">24h Fees</button>
-            </div>
-        </div>
-        <div class="chart-container">
-            <canvas id="volumeChart"></canvas>
-        </div>
+<div class="layout">
+    <!-- LEFT COLUMN -->
+    <div class="col-left" id="colLeft">
+        <div id="statsCol"></div>
     </div>
 
-    <div class="chart-section">
-        <div class="chart-header">
-            <span class="chart-title">Volume Distribution</span>
-        </div>
-        <div class="chart-container" style="height:260px;">
-            <canvas id="pieChart"></canvas>
-        </div>
-    </div>
+    <!-- CENTER COLUMN -->
+    <div class="col-center">
+        <!-- Mobile-only stats row (hidden on desktop) -->
+        <div class="mobile-stats" id="mobileStats"></div>
 
-    <div class="pools-section">
-        <div class="section-title">
-            Active Pools <span class="pool-count" id="poolCount">0</span>
-        </div>
-        <div class="pools-grid" id="poolsGrid">
+        <!-- Hero Card -->
+        <div class="hero-card" id="heroCard">
             <div class="loading-state">
                 <div class="spinner"></div>
-                <span>Fetching pool data...</span>
+                <span>Loading token data...</span>
             </div>
+        </div>
+
+        <!-- Volume Chart -->
+        <div class="chart-section">
+            <div class="chart-header">
+                <span class="chart-title">Volume by Pool</span>
+                <div class="chart-tabs">
+                    <button class="chart-tab active" data-metric="volume24h" onclick="switchChart('volume24h', this)">24h Vol</button>
+                    <button class="chart-tab" data-metric="volume6h" onclick="switchChart('volume6h', this)">6h Vol</button>
+                    <button class="chart-tab" data-metric="volume1h" onclick="switchChart('volume1h', this)">1h Vol</button>
+                    <button class="chart-tab" data-metric="liquidity" onclick="switchChart('liquidity', this)">Liquidity</button>
+                    <button class="chart-tab" data-metric="fees24h" onclick="switchChart('fees24h', this)">24h Fees</button>
+                </div>
+            </div>
+            <div class="chart-container">
+                <canvas id="volumeChart"></canvas>
+            </div>
+        </div>
+
+        <!-- Distribution Chart -->
+        <div class="chart-section">
+            <div class="chart-header">
+                <span class="chart-title">Volume Distribution</span>
+            </div>
+            <div class="chart-container" style="height:220px;">
+                <canvas id="pieChart"></canvas>
+            </div>
+        </div>
+
+        <!-- Pool Cards -->
+        <div class="pools-section">
+            <div class="section-title">
+                Active Pools <span class="pool-count" id="poolCount">0</span>
+            </div>
+            <div class="pools-grid" id="poolsGrid">
+                <div class="loading-state">
+                    <div class="spinner"></div>
+                    <span>Fetching pool data...</span>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- RIGHT COLUMN -->
+    <div class="col-right">
+        <div id="hotPoolsCol">
+            <div class="hot-section-title">HOT POOLS</div>
+            <div class="hot-section-sub">Loading...</div>
         </div>
     </div>
 </div>
@@ -554,18 +922,15 @@ function poolLabel(p) {
     return `${base}/${quote}`;
 }
 
-function dexLabel(p) {
-    return p.dexId || 'unknown';
-}
+function dexLabel(p) { return p.dexId || 'unknown'; }
 
 let feeRatesMap = {};
 
-// Pools not indexed by Meteora's amm-v2 API (DLMM/DYN2) — fees confirmed on-chain via app.meteora.ag
 const MANUAL_FEE_OVERRIDES = {
-    'BeMzNX5hMFQxc29odj4nAvaBw16zvxgSStFbFgG7SQhY': 0.01,  // REDACTED/GIGA DLMM — 1% base fee, bin step 80
-    '7YhtV5K7Cg1GTz2GAfzrwBpgX6haY6sHodsFrSpif1eh': 0.01,  // REDACTED/REDACTED DLMM
-    'HjfUNoFr2FY419vn2262qZ532dA2cSGMrD8skSak5J49': 0.01,  // REDACTED/LOCKIN DLMM
-    '6rxMikVZW4kjNDXcUZYM9ix8CtirdL21Mnhi5kNgmxMm': 0.01,  // REDACTED/Buttcoin DYN2
+    'BeMzNX5hMFQxc29odj4nAvaBw16zvxgSStFbFgG7SQhY': 0.01,
+    '7YhtV5K7Cg1GTz2GAfzrwBpgX6haY6sHodsFrSpif1eh': 0.01,
+    'HjfUNoFr2FY419vn2262qZ532dA2cSGMrD8skSak5J49': 0.01,
+    '6rxMikVZW4kjNDXcUZYM9ix8CtirdL21Mnhi5kNgmxMm': 0.01,
 };
 
 async function fetchFeeRates() {
@@ -627,9 +992,7 @@ async function fetchFeeRates() {
     await Promise.all(promises);
 }
 
-function getFeeRate(p) {
-    return feeRatesMap[p.pairAddress] ?? null;
-}
+function getFeeRate(p) { return feeRatesMap[p.pairAddress] ?? null; }
 
 function getEstimatedFees(p, period) {
     const rate = getFeeRate(p);
@@ -652,14 +1015,28 @@ function getVolume(p, key) {
     return p.volume[map[key]] || 0;
 }
 
-function getLiquidity(p) {
-    return p.liquidity?.usd || 0;
-}
+function getLiquidity(p) { return p.liquidity?.usd || 0; }
 
 function getMetricValue(p, metric) {
     if (metric === 'liquidity') return getLiquidity(p);
     if (metric === 'fees24h') return getEstimatedFees(p, 'volume24h') || 0;
     return getVolume(p, metric);
+}
+
+function flameHtml(level) {
+    let html = '';
+    for (let i = 0; i < 3; i++) {
+        html += `<div class="flame ${i < level ? 'on' : 'off'}"></div>`;
+    }
+    return html;
+}
+
+function getFlameLevel(p) {
+    const txns = (p.txns?.h24?.buys || 0) + (p.txns?.h24?.sells || 0);
+    if (txns >= 500) return 3;
+    if (txns >= 100) return 2;
+    if (txns >= 10) return 1;
+    return 0;
 }
 
 async function fetchData() {
@@ -688,10 +1065,74 @@ async function fetchData() {
 }
 
 function render() {
+    renderHero();
     renderStats();
+    renderHotPools();
     renderChart();
     renderPieChart();
     renderPools();
+}
+
+function renderHero() {
+    const total24h = poolsData.reduce((s, p) => s + getVolume(p, 'volume24h'), 0);
+    const total6h = poolsData.reduce((s, p) => s + getVolume(p, 'volume6h'), 0);
+    const total1h = poolsData.reduce((s, p) => s + getVolume(p, 'volume1h'), 0);
+    const totalLiq = poolsData.reduce((s, p) => s + getLiquidity(p), 0);
+    const totalTxns = poolsData.reduce((s, p) => s + (p.txns?.h24?.buys || 0) + (p.txns?.h24?.sells || 0), 0);
+    const price = poolsData[0]?.priceUsd ? parseFloat(poolsData[0].priceUsd) : null;
+    const priceChange24 = poolsData[0]?.priceChange?.h24;
+    const priceChange6 = poolsData[0]?.priceChange?.h6;
+    const priceChange1 = poolsData[0]?.priceChange?.h1;
+    const marketCap = poolsData[0]?.marketCap || poolsData[0]?.fdv || null;
+
+    const totalSupply = 1_929_000_000_000;
+    const circulatingPct = marketCap && price ? Math.min(100, (marketCap / (totalSupply * price)) * 100) : 100;
+
+    document.getElementById('heroCard').innerHTML = `
+        <div class="hero-top">
+            <div class="hero-icon">R</div>
+            <span class="hero-token-name">REDACTED Token</span>
+            <span class="hero-updated">Updated ${new Date().toLocaleTimeString()} UTC</span>
+        </div>
+        <div class="hero-grid">
+            <div class="hero-stat">
+                <div class="hero-stat-label">Market Cap</div>
+                <div class="hero-stat-value mcap-val">${fmt(marketCap)}</div>
+            </div>
+            <div class="hero-stat">
+                <div class="hero-stat-label">Price</div>
+                <div class="hero-stat-value price-val">${price != null ? '$' + price.toFixed(price < 0.01 ? 8 : price < 1 ? 4 : 2) : '--'}</div>
+            </div>
+        </div>
+        <div class="hero-row">
+            <div class="hero-mini">
+                <div class="hero-mini-label">24H Vol</div>
+                <div class="hero-mini-value">${fmt(total24h)}</div>
+            </div>
+            <div class="hero-mini">
+                <div class="hero-mini-label">Liquidity</div>
+                <div class="hero-mini-value">${fmt(totalLiq)}</div>
+            </div>
+            <div class="hero-mini">
+                <div class="hero-mini-label">AMM Pools</div>
+                <div class="hero-mini-value">${poolsData.length}</div>
+            </div>
+        </div>
+        <div class="hero-changes">
+            <div class="hero-change">
+                <div class="hero-change-label">1H</div>
+                <div class="hero-change-value ${pctClass(priceChange1)}">${fmtPct(priceChange1)}</div>
+            </div>
+            <div class="hero-change">
+                <div class="hero-change-label">6H</div>
+                <div class="hero-change-value ${pctClass(priceChange6)}">${fmtPct(priceChange6)}</div>
+            </div>
+            <div class="hero-change">
+                <div class="hero-change-label">24H</div>
+                <div class="hero-change-value ${pctClass(priceChange24)}">${fmtPct(priceChange24)}</div>
+            </div>
+        </div>
+    `;
 }
 
 function renderStats() {
@@ -699,52 +1140,37 @@ function renderStats() {
     const total6h = poolsData.reduce((s, p) => s + getVolume(p, 'volume6h'), 0);
     const total1h = poolsData.reduce((s, p) => s + getVolume(p, 'volume1h'), 0);
     const totalLiq = poolsData.reduce((s, p) => s + getLiquidity(p), 0);
-    const price = poolsData[0]?.priceUsd ? parseFloat(poolsData[0].priceUsd) : null;
-    const priceChange = poolsData[0]?.priceChange?.h24;
-    const marketCap = poolsData[0]?.marketCap || poolsData[0]?.fdv || null;
-
     const totalTxns24 = poolsData.reduce((s, p) => s + (p.txns?.h24?.buys || 0) + (p.txns?.h24?.sells || 0), 0);
     const totalBuys24 = poolsData.reduce((s, p) => s + (p.txns?.h24?.buys || 0), 0);
     const totalSells24 = poolsData.reduce((s, p) => s + (p.txns?.h24?.sells || 0), 0);
 
     const knownPools = poolsData.filter(p => getFeeRate(p) != null);
-    const unknownPools = poolsData.filter(p => getFeeRate(p) == null);
     const totalFees24h = knownPools.reduce((s, p) => s + (getEstimatedFees(p, 'volume24h') || 0), 0);
     const knownVol24h = knownPools.reduce((s, p) => s + getVolume(p, 'volume24h'), 0);
-    const unknownVol24h = unknownPools.reduce((s, p) => s + getVolume(p, 'volume24h'), 0);
     const avgFeeRate = knownVol24h > 0 ? (totalFees24h / knownVol24h * 100) : 0;
 
-    document.getElementById('statsRow').innerHTML = `
-        <div class="stat-card">
-            <div class="stat-label">Price</div>
-            <div class="stat-value">${price != null ? '$' + price.toFixed(price < 0.01 ? 8 : price < 1 ? 4 : 2) : '--'}</div>
-            <div class="stat-sub ${pctClass(priceChange)}">${fmtPct(priceChange)} (24h)</div>
-        </div>
-        <div class="stat-card">
-            <div class="stat-label">Market Cap</div>
-            <div class="stat-value">${fmt(marketCap)}</div>
-            <div class="stat-sub">FDV</div>
-        </div>
+    const statsHtml = `
         <div class="stat-card">
             <div class="stat-label">24h Volume</div>
             <div class="stat-value">${fmt(total24h)}</div>
             <div class="stat-sub">${poolsData.length} pools</div>
         </div>
         <div class="stat-card">
+            <div class="stat-label">6h / 1h Volume</div>
+            <div class="stat-value">${fmt(total6h)}</div>
+            <div class="stat-sub">1h: ${fmt(total1h)}</div>
+        </div>
+        <div class="stat-card">
             <div class="stat-label">Total Liquidity</div>
             <div class="stat-value">${fmt(totalLiq)}</div>
-            <div class="stat-sub">across all pools</div>
         </div>
+        <hr class="stat-divider">
         <div class="stat-card">
             <div class="stat-label">24h Transactions</div>
             <div class="stat-value">${fmtCompact(totalTxns24)}</div>
             <div class="stat-sub"><span class="positive">${fmtCompact(totalBuys24)} buys</span> / <span class="negative">${fmtCompact(totalSells24)} sells</span></div>
         </div>
-        <div class="stat-card">
-            <div class="stat-label">6h / 1h Volume</div>
-            <div class="stat-value">${fmt(total6h)}</div>
-            <div class="stat-sub">1h: ${fmt(total1h)}</div>
-        </div>
+        <hr class="stat-divider">
         <div class="stat-card fees-summary">
             <div class="stat-label">Est. 24h Fees</div>
             <div class="stat-value accent">${fmt(totalFees24h)}</div>
@@ -753,9 +1179,91 @@ function renderStats() {
         <div class="stat-card fees-summary">
             <div class="stat-label">Fee APR (est.)</div>
             <div class="stat-value accent">${totalLiq > 0 ? (totalFees24h / totalLiq * 365 * 100).toFixed(1) + '%' : '--'}</div>
-            <div class="stat-sub">${unknownPools.length ? unknownPools.length + ' pools missing fee data' : 'all pools tracked'}</div>
         </div>
     `;
+
+    document.getElementById('statsCol').innerHTML = statsHtml;
+    document.getElementById('mobileStats').innerHTML = statsHtml;
+}
+
+function renderHotPools() {
+    const sorted = [...poolsData].sort((a, b) => {
+        const txA = (a.txns?.h24?.buys || 0) + (a.txns?.h24?.sells || 0);
+        const txB = (b.txns?.h24?.buys || 0) + (b.txns?.h24?.sells || 0);
+        return txB - txA;
+    });
+
+    const top = sorted.slice(0, 12);
+    const top3 = sorted.slice(0, 3);
+
+    let html = `
+        <div class="hot-section-title">HOT POOLS</div>
+        <div class="hot-section-sub">${poolsData.length} pools &middot; by 24h txns</div>
+    `;
+
+    for (const p of top) {
+        const txns = (p.txns?.h24?.buys || 0) + (p.txns?.h24?.sells || 0);
+        const vol = getVolume(p, 'volume24h');
+        const flameLevel = getFlameLevel(p);
+        const changeDir = (p.priceChange?.h24 || 0) >= 0;
+
+        html += `
+        <div class="hot-pool-item">
+            <div class="hot-flames">${flameHtml(flameLevel)}</div>
+            <span class="hot-pool-name">${poolLabel(p)}</span>
+            <div class="hot-pool-meta">
+                <div class="hot-pool-txns">${fmtCompact(txns)} txns</div>
+                <div class="hot-pool-vol">${fmt(vol)}</div>
+            </div>
+        </div>`;
+    }
+
+    html += '<hr class="hot-divider">';
+    html += '<div class="hot-section-title" style="font-size:11px;">HOTTEST 24H</div>';
+    html += '<div class="podium">';
+
+    const medals = ['🥇', '🥈', '🥉'];
+    for (let i = 0; i < Math.min(3, top3.length); i++) {
+        const p = top3[i];
+        const txns = (p.txns?.h24?.buys || 0) + (p.txns?.h24?.sells || 0);
+        html += `
+        <div class="podium-item">
+            <div class="podium-medal">${medals[i]}</div>
+            <div class="podium-name">${poolLabel(p)}</div>
+            <div class="podium-stat">${fmtCompact(txns)} txns</div>
+        </div>`;
+    }
+
+    html += '</div>';
+
+    // Fee breakdown by DEX
+    const byDex = {};
+    for (const p of poolsData) {
+        const dex = dexLabel(p);
+        if (!byDex[dex]) byDex[dex] = { vol: 0, fees: 0 };
+        byDex[dex].vol += getVolume(p, 'volume24h');
+        byDex[dex].fees += getEstimatedFees(p, 'volume24h') || 0;
+    }
+
+    const totalFees = Object.values(byDex).reduce((s, d) => s + d.fees, 0);
+
+    html += '<hr class="hot-divider">';
+    html += '<div class="hot-section-title" style="font-size:11px;">FEES BY DEX</div>';
+    html += '<div class="fee-breakdown">';
+
+    const dexes = Object.entries(byDex).sort((a, b) => b[1].fees - a[1].fees);
+    for (const [dex, data] of dexes) {
+        const pct = totalFees > 0 ? (data.fees / totalFees * 100).toFixed(0) : 0;
+        html += `
+        <div class="fee-break-item">
+            <span class="fee-break-dex">${dex}</span>
+            <span><span class="fee-break-val">${fmt(data.fees)}</span><span class="fee-break-pct">${pct}%</span></span>
+        </div>`;
+    }
+
+    html += '</div>';
+
+    document.getElementById('hotPoolsCol').innerHTML = html;
 }
 
 const CHART_COLORS = [
@@ -773,11 +1281,8 @@ function renderChart() {
     if (volumeChart) volumeChart.destroy();
 
     const metricLabel = {
-        volume24h: '24h Volume',
-        volume6h: '6h Volume',
-        volume1h: '1h Volume',
-        liquidity: 'Liquidity (USD)',
-        fees24h: 'Est. 24h Fees (USD)'
+        volume24h: '24h Volume', volume6h: '6h Volume', volume1h: '1h Volume',
+        liquidity: 'Liquidity (USD)', fees24h: 'Est. 24h Fees (USD)'
     }[currentMetric];
 
     volumeChart = new Chart(ctx, {
@@ -798,29 +1303,17 @@ function renderChart() {
             maintainAspectRatio: false,
             plugins: {
                 legend: { display: false },
-                tooltip: {
-                    callbacks: {
-                        label: (ctx) => fmt(ctx.raw)
-                    }
-                }
+                tooltip: { callbacks: { label: (ctx) => fmt(ctx.raw) } }
             },
             scales: {
                 y: {
                     beginAtZero: true,
                     grid: { color: 'rgba(255,255,255,0.04)' },
-                    ticks: {
-                        color: '#55556a',
-                        font: { family: 'SF Mono, monospace', size: 10 },
-                        callback: (v) => fmtCompact(v)
-                    }
+                    ticks: { color: '#55556a', font: { family: 'SF Mono, monospace', size: 10 }, callback: (v) => fmtCompact(v) }
                 },
                 x: {
                     grid: { display: false },
-                    ticks: {
-                        color: '#55556a',
-                        font: { family: 'SF Mono, monospace', size: 10 },
-                        maxRotation: 45
-                    }
+                    ticks: { color: '#55556a', font: { family: 'SF Mono, monospace', size: 9 }, maxRotation: 45 }
                 }
             }
         }
@@ -861,13 +1354,7 @@ function renderPieChart() {
             plugins: {
                 legend: {
                     position: 'right',
-                    labels: {
-                        color: '#8888a0',
-                        font: { family: 'SF Mono, monospace', size: 11 },
-                        padding: 12,
-                        usePointStyle: true,
-                        pointStyleWidth: 8
-                    }
+                    labels: { color: '#8888a0', font: { family: 'SF Mono, monospace', size: 10 }, padding: 10, usePointStyle: true, pointStyleWidth: 8 }
                 },
                 tooltip: {
                     callbacks: {
@@ -982,17 +1469,10 @@ function renderPools() {
                     </div>
                 </div>
             </div>
-            <div class="pool-fees-row">
-                ${feesHtml}
-            </div>
+            <div class="pool-fees-row">${feesHtml}</div>
             <div class="pool-bar-container">
-                <div class="pool-bar-label">
-                    <span>Volume share</span>
-                    <span>${share.toFixed(1)}%</span>
-                </div>
-                <div class="pool-bar">
-                    <div class="pool-bar-fill" style="width:${Math.min(share, 100)}%"></div>
-                </div>
+                <div class="pool-bar-label"><span>Volume share</span><span>${share.toFixed(1)}%</span></div>
+                <div class="pool-bar"><div class="pool-bar-fill" style="width:${Math.min(share, 100)}%"></div></div>
             </div>
             <a class="pool-link" href="${pairUrl}" target="_blank" rel="noopener">View on DexScreener &rarr;</a>
         </div>`;
