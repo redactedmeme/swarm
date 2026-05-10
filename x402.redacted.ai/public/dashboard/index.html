@@ -791,6 +791,145 @@
             margin-left: 6px;
         }
 
+        /* === ACTIVITY FEED === */
+        .feed-section {
+            margin-bottom: 24px;
+        }
+
+        .feed-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 12px;
+        }
+
+        .feed-title {
+            font-size: 13px;
+            font-weight: 600;
+            color: var(--green);
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .feed-live-dot {
+            width: 7px;
+            height: 7px;
+            border-radius: 50%;
+            background: var(--green);
+            box-shadow: 0 0 6px var(--green);
+            animation: pulse 2s ease-in-out infinite;
+        }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 1; transform: scale(1); }
+            50%       { opacity: 0.5; transform: scale(0.85); }
+        }
+
+        .feed-sub {
+            font-size: 9px;
+            color: var(--text-muted);
+        }
+
+        .feed-empty {
+            text-align: center;
+            padding: 32px;
+            color: var(--text-muted);
+            font-size: 11px;
+            border: 1px dashed var(--border);
+            border-radius: 8px;
+        }
+
+        .feed-item {
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 12px 14px;
+            margin-bottom: 8px;
+            transition: border-color 0.2s;
+            animation: fadeSlideIn 0.3s ease;
+        }
+
+        @keyframes fadeSlideIn {
+            from { opacity: 0; transform: translateY(-6px); }
+            to   { opacity: 1; transform: translateY(0); }
+        }
+
+        .feed-item:hover { border-color: rgba(34,197,94,0.25); }
+
+        .feed-item.buy-dominant  { border-left: 2px solid var(--green); }
+        .feed-item.sell-dominant { border-left: 2px solid var(--red); }
+        .feed-item.neutral       { border-left: 2px solid var(--amber); }
+
+        .feed-item-top {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            margin-bottom: 8px;
+        }
+
+        .feed-time-badge {
+            font-size: 9px;
+            color: var(--text-muted);
+            background: var(--bg-primary);
+            padding: 2px 6px;
+            border-radius: 4px;
+            flex-shrink: 0;
+        }
+
+        .feed-pool-name {
+            font-size: 12px;
+            font-weight: 600;
+            color: var(--cyan);
+        }
+
+        .feed-vol-badge {
+            margin-left: auto;
+            font-size: 11px;
+            font-weight: 600;
+        }
+
+        .feed-flow {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            margin-bottom: 8px;
+            flex-wrap: wrap;
+        }
+
+        .feed-token-box {
+            background: var(--bg-primary);
+            border: 1px solid var(--border);
+            border-radius: 5px;
+            padding: 4px 8px;
+            font-size: 10px;
+            font-weight: 600;
+            text-align: center;
+            min-width: 52px;
+        }
+
+        .feed-token-box.buy-side  { border-color: rgba(34,197,94,0.3);  color: var(--green); }
+        .feed-token-box.sell-side { border-color: rgba(239,68,68,0.3);   color: var(--red); }
+        .feed-token-box.neutral-side { border-color: rgba(245,158,11,0.3); color: var(--amber); }
+
+        .feed-arrow {
+            color: var(--text-muted);
+            font-size: 11px;
+        }
+
+        .feed-item-stats {
+            display: flex;
+            gap: 14px;
+            font-size: 10px;
+        }
+
+        .feed-stat-label { color: var(--text-muted); }
+        .feed-stat-val   { color: var(--text-primary); font-weight: 500; }
+
+        .feed-buy-bar-wrap {
+            margin-top: 6px;
+        }
+
         /* === LOADING / ERROR === */
         .loading-state {
             display: flex;
@@ -980,6 +1119,20 @@
                 </div>
             </div>
         </div>
+
+        <!-- Activity Feed -->
+        <div class="feed-section">
+            <div class="feed-header">
+                <div class="feed-title">
+                    <div class="feed-live-dot"></div>
+                    ACTIVITY FEED
+                </div>
+                <span class="feed-sub" id="feedSub">waiting for first diff...</span>
+            </div>
+            <div id="activityFeed">
+                <div class="feed-empty">Activity appears here after the second data refresh (30s)</div>
+            </div>
+        </div>
     </div>
 
     <!-- RIGHT COLUMN -->
@@ -1006,6 +1159,9 @@ let currentMetric = 'volume24h';
 let currentHistoryRange = '24h';
 let clientSnapshots = [];  // accumulates locally every 30s
 let serverSnapshots = [];  // loaded from /api/snapshots
+let prevPoolMap = {};      // pairAddress → {buys, sells, vol24h} from previous poll
+let activityFeed = [];     // capped at 40 events
+let feedPollCount = 0;
 
 document.getElementById('tokenAddr').addEventListener('click', () => {
     navigator.clipboard.writeText(TOKEN);
@@ -1355,6 +1511,8 @@ async function fetchData() {
         const data = await res.json();
         poolsData = (data.pairs || []).sort((a, b) => getVolume(b, 'volume24h') - getVolume(a, 'volume24h'));
         await fetchFeeRates();
+        buildActivityEvents();
+        savePrevPoolMap();
         pushClientSnapshot();
         await fetchServerSnapshots();
         render();
@@ -1379,6 +1537,7 @@ function render() {
     renderChart();
     renderPieChart();
     renderPools();
+    renderActivityFeed();
 }
 
 function renderHero() {
@@ -1864,6 +2023,144 @@ function renderPools() {
                 <div class="buy-pressure-label"><span style="color:${poolBuyColor}">${poolBuyPct.toFixed(0)}% buy</span><span style="color:var(--text-muted)">mcap ${fmt(mcap)}</span></div>
             </div>
             <a class="pool-link" href="${pairUrl}" target="_blank" rel="noopener">View on DexScreener &rarr;</a>
+        </div>`;
+    }).join('');
+}
+
+// ── Activity feed ─────────────────────────────────────────────────────────────
+
+function timeAgo(ts) {
+    const s = Math.floor(Date.now() / 1000) - ts;
+    if (s < 60)  return `${s}s ago`;
+    if (s < 3600) return `${Math.floor(s / 60)}m ago`;
+    return `${Math.floor(s / 3600)}h ago`;
+}
+
+function buildActivityEvents() {
+    feedPollCount++;
+    if (feedPollCount < 2 || Object.keys(prevPoolMap).length === 0) return;
+
+    const now = Math.floor(Date.now() / 1000);
+
+    for (const p of poolsData) {
+        const addr = p.pairAddress;
+        const prev = prevPoolMap[addr];
+        if (!prev) continue;
+
+        const curBuys  = p.txns?.h1?.buys  || 0;
+        const curSells = p.txns?.h1?.sells || 0;
+        const curVol   = getVolume(p, 'volume1h');
+
+        const dBuys  = Math.max(0, curBuys  - prev.buys);
+        const dSells = Math.max(0, curSells - prev.sells);
+        const dTxns  = dBuys + dSells;
+        const dVol   = Math.max(0, curVol - prev.vol1h);
+
+        // Only emit an event if meaningful activity detected
+        if (dTxns < 1 && dVol < 0.5) continue;
+
+        const feeRate = getFeeRate(p);
+        const estFees = feeRate ? dVol * feeRate : null;
+        const avgTrade = dTxns > 0 ? dVol / dTxns : 0;
+        const buyPct   = dTxns > 0 ? (dBuys / dTxns) * 100 : 50;
+        const dominance = buyPct >= 60 ? 'buy-dominant' : buyPct <= 40 ? 'sell-dominant' : 'neutral';
+
+        activityFeed.unshift({
+            ts: now,
+            pool: poolLabel(p),
+            dex: dexLabel(p),
+            pairUrl: p.url || `https://dexscreener.com/solana/${addr}`,
+            dBuys, dSells, dTxns, dVol, estFees, avgTrade, buyPct, dominance,
+            priceChange1h: p.priceChange?.h1 || 0,
+        });
+    }
+
+    if (activityFeed.length > 40) activityFeed.length = 40;
+}
+
+function savePrevPoolMap() {
+    prevPoolMap = {};
+    for (const p of poolsData) {
+        prevPoolMap[p.pairAddress] = {
+            buys:   p.txns?.h1?.buys  || 0,
+            sells:  p.txns?.h1?.sells || 0,
+            vol1h:  getVolume(p, 'volume1h'),
+        };
+    }
+}
+
+function renderActivityFeed() {
+    const container = document.getElementById('activityFeed');
+    const subEl = document.getElementById('feedSub');
+
+    if (feedPollCount < 2) {
+        container.innerHTML = '<div class="feed-empty">Activity appears here after the second data refresh (~30s)</div>';
+        if (subEl) subEl.textContent = 'waiting for first diff...';
+        return;
+    }
+
+    if (activityFeed.length === 0) {
+        container.innerHTML = '<div class="feed-empty">No significant activity detected yet — pools are quiet</div>';
+        if (subEl) subEl.textContent = `${feedPollCount} polls · no events`;
+        return;
+    }
+
+    if (subEl) subEl.textContent = `${activityFeed.length} events · updated every 30s`;
+
+    container.innerHTML = activityFeed.slice(0, 20).map(ev => {
+        const dotCls = ['raydium','orca','meteora'].includes(ev.dex) ? ev.dex : 'unknown';
+        const buyCol  = ev.buyPct >= 60 ? 'var(--green)' : ev.buyPct <= 40 ? 'var(--red)' : 'var(--amber)';
+        const volCol  = ev.dVol > 100 ? 'var(--green)' : ev.dVol > 20 ? 'var(--text-primary)' : 'var(--text-secondary)';
+
+        // Build flow boxes: QUOTE → REDACTED (buy) or REDACTED → QUOTE (sell)
+        const parts = ev.pool.split('/');
+        const base  = parts[0] || 'REDACTED';
+        const quote = parts[1] || 'SOL';
+        const isBuyDom = ev.buyPct >= 55;
+        const isSellDom = ev.buyPct <= 45;
+
+        let flowHtml;
+        if (isBuyDom) {
+            flowHtml = `
+                <div class="feed-token-box buy-side">${quote}<div style="font-size:8px;color:var(--text-muted)">in</div></div>
+                <div class="feed-arrow">→</div>
+                <div class="feed-token-box buy-side">${base}<div style="font-size:8px;color:var(--green)">+${ev.dBuys} buys</div></div>`;
+        } else if (isSellDom) {
+            flowHtml = `
+                <div class="feed-token-box sell-side">${base}<div style="font-size:8px;color:var(--text-muted)">in</div></div>
+                <div class="feed-arrow">→</div>
+                <div class="feed-token-box sell-side">${quote}<div style="font-size:8px;color:var(--red)">+${ev.dSells} sells</div></div>`;
+        } else {
+            flowHtml = `
+                <div class="feed-token-box neutral-side">${base}<div style="font-size:8px;color:var(--amber)">${ev.dBuys}B/${ev.dSells}S</div></div>
+                <div class="feed-arrow">⇄</div>
+                <div class="feed-token-box neutral-side">${quote}<div style="font-size:8px;color:var(--text-muted)">mixed</div></div>`;
+        }
+
+        const pctTrend = ev.priceChange1h >= 0
+            ? `<span class="positive">▲ ${Math.abs(ev.priceChange1h).toFixed(2)}%</span>`
+            : `<span class="negative">▼ ${Math.abs(ev.priceChange1h).toFixed(2)}%</span>`;
+
+        return `
+        <div class="feed-item ${ev.dominance}">
+            <div class="feed-item-top">
+                <span class="feed-time-badge">${timeAgo(ev.ts)}</span>
+                <span class="dex-dot ${dotCls}"></span>
+                <span class="feed-pool-name">${ev.pool}</span>
+                <span style="font-size:9px;color:var(--text-muted)">${ev.dex}</span>
+                <span class="feed-vol-badge" style="color:${volCol}">${fmt(ev.dVol)}</span>
+            </div>
+            <div class="feed-flow">${flowHtml}</div>
+            <div class="feed-item-stats">
+                <span><span class="feed-stat-label">txns </span><span class="feed-stat-val">${ev.dTxns}</span></span>
+                <span><span class="feed-stat-label">avg </span><span class="feed-stat-val">${fmt(ev.avgTrade)}</span></span>
+                ${ev.estFees != null ? `<span><span class="feed-stat-label">fees </span><span class="feed-stat-val" style="color:var(--accent)">${fmt(ev.estFees)}</span></span>` : ''}
+                <span>${pctTrend} 1h</span>
+            </div>
+            <div class="feed-buy-bar-wrap">
+                <div class="buy-pressure"><div class="buy-pressure-fill" style="width:${ev.buyPct.toFixed(0)}%;background:${buyCol}"></div></div>
+                <div class="buy-pressure-label"><span style="color:${buyCol}">${ev.buyPct.toFixed(0)}% buy</span></div>
+            </div>
         </div>`;
     }).join('');
 }
