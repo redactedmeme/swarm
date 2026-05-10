@@ -534,6 +534,52 @@
         .fee-badge.high { background: rgba(239,68,68,0.15); color: var(--red); }
         .fee-badge.dynamic { background: rgba(124,92,252,0.15); color: var(--accent); }
 
+        /* DEX color dots */
+        .dex-dot {
+            display: inline-block;
+            width: 6px; height: 6px;
+            border-radius: 50%;
+            margin-right: 4px;
+            vertical-align: middle;
+        }
+        .dex-dot.raydium { background: #9945ff; }
+        .dex-dot.orca    { background: #00adef; }
+        .dex-dot.meteora { background: #3ecf8e; }
+        .dex-dot.unknown { background: var(--text-muted); }
+
+        /* Buy pressure bar */
+        .buy-pressure {
+            height: 3px;
+            border-radius: 2px;
+            background: var(--bg-primary);
+            margin-top: 6px;
+            overflow: hidden;
+        }
+        .buy-pressure-fill {
+            height: 100%;
+            border-radius: 2px;
+            transition: width 0.6s ease;
+        }
+        .buy-pressure-label {
+            display: flex;
+            justify-content: space-between;
+            font-size: 9px;
+            color: var(--text-muted);
+            margin-top: 2px;
+        }
+
+        /* Trend arrow */
+        .trend-up   { color: var(--green); font-size: 10px; }
+        .trend-down { color: var(--red);   font-size: 10px; }
+        .trend-flat { color: var(--text-muted); font-size: 10px; }
+
+        /* Weekly fees highlight */
+        .weekly-fees-card {
+            background: linear-gradient(135deg, rgba(6,182,212,0.08), rgba(6,182,212,0.02));
+            border-color: rgba(6,182,212,0.25);
+        }
+        .stat-value.cyan { color: var(--cyan); }
+
         /* === RIGHT COLUMN — HOT POOLS === */
         .hot-section-title {
             font-size: 12px;
@@ -1088,11 +1134,20 @@ function renderHero() {
     const totalSupply = 1_929_000_000_000;
     const circulatingPct = marketCap && price ? Math.min(100, (marketCap / (totalSupply * price)) * 100) : 100;
 
+    const knownPoolsH = poolsData.filter(p => getFeeRate(p) != null);
+    const totalFees24hH = knownPoolsH.reduce((s, p) => s + (getEstimatedFees(p, 'volume24h') || 0), 0);
+    const fees7dH = totalFees24hH * 7;
+    const totalTxnsH = poolsData.reduce((s, p) => s + (p.txns?.h24?.buys || 0) + (p.txns?.h24?.sells || 0), 0);
+    const totalBuysH = poolsData.reduce((s, p) => s + (p.txns?.h24?.buys || 0), 0);
+    const buyPctH = totalTxnsH > 0 ? (totalBuysH / totalTxnsH * 100) : 50;
+    const buyColorH = buyPctH >= 55 ? 'var(--green)' : buyPctH <= 45 ? 'var(--red)' : 'var(--amber)';
+    const priceStr = price != null ? '$' + price.toFixed(price < 0.01 ? 8 : price < 1 ? 4 : 2) : '--';
+
     document.getElementById('heroCard').innerHTML = `
         <div class="hero-top">
             <div class="hero-icon">R</div>
             <span class="hero-token-name">REDACTED Token</span>
-            <span class="hero-updated">Updated ${new Date().toLocaleTimeString()} UTC</span>
+            <span class="hero-updated">Updated ${new Date().toLocaleTimeString()}</span>
         </div>
         <div class="hero-grid">
             <div class="hero-stat">
@@ -1101,7 +1156,8 @@ function renderHero() {
             </div>
             <div class="hero-stat">
                 <div class="hero-stat-label">Price</div>
-                <div class="hero-stat-value price-val">${price != null ? '$' + price.toFixed(price < 0.01 ? 8 : price < 1 ? 4 : 2) : '--'}</div>
+                <div class="hero-stat-value price-val">${priceStr}</div>
+                <div class="hero-stat-sub ${pctClass(priceChange24)}">${fmtPct(priceChange24)} (24h)</div>
             </div>
         </div>
         <div class="hero-row">
@@ -1118,7 +1174,26 @@ function renderHero() {
                 <div class="hero-mini-value">${poolsData.length}</div>
             </div>
         </div>
-        <div class="hero-changes">
+        <div class="hero-row" style="border-top:1px solid var(--border);padding-top:12px;margin-top:4px;">
+            <div class="hero-mini">
+                <div class="hero-mini-label">Est. 24h Fees</div>
+                <div class="hero-mini-value" style="color:var(--accent)">${fmt(totalFees24hH)}</div>
+            </div>
+            <div class="hero-mini">
+                <div class="hero-mini-label">Est. 7d Fees</div>
+                <div class="hero-mini-value" style="color:var(--cyan)">${fmt(fees7dH)}</div>
+            </div>
+            <div class="hero-mini">
+                <div class="hero-mini-label">24h Txns</div>
+                <div class="hero-mini-value">${fmtCompact(totalTxnsH)}</div>
+                <div class="hero-mini-sub"><span style="color:var(--green)">${fmtCompact(totalBuysH)}B</span> / <span style="color:var(--red)">${fmtCompact(totalTxnsH - totalBuysH)}S</span></div>
+            </div>
+        </div>
+        <div style="margin-top:10px;">
+            <div class="buy-pressure"><div class="buy-pressure-fill" style="width:${buyPctH}%;background:${buyColorH}"></div></div>
+            <div class="buy-pressure-label"><span style="color:${buyColorH}">${buyPctH.toFixed(0)}% buy pressure</span><span>${fmtPct(priceChange1)} 1h · ${fmtPct(priceChange6)} 6h</span></div>
+        </div>
+        <div class="hero-changes" style="margin-top:12px;padding-top:12px;border-top:1px solid var(--border);">
             <div class="hero-change">
                 <div class="hero-change-label">1H</div>
                 <div class="hero-change-value ${pctClass(priceChange1)}">${fmtPct(priceChange1)}</div>
@@ -1149,11 +1224,16 @@ function renderStats() {
     const knownVol24h = knownPools.reduce((s, p) => s + getVolume(p, 'volume24h'), 0);
     const avgFeeRate = knownVol24h > 0 ? (totalFees24h / knownVol24h * 100) : 0;
 
+    const fees7d = totalFees24h * 7;
+    const feeApr = totalLiq > 0 ? (totalFees24h / totalLiq * 365 * 100) : 0;
+    const buyPct = totalTxns24 > 0 ? (totalBuys24 / totalTxns24 * 100) : 50;
+    const buyColor = buyPct >= 55 ? 'var(--green)' : buyPct <= 45 ? 'var(--red)' : 'var(--amber)';
+
     const statsHtml = `
         <div class="stat-card">
             <div class="stat-label">24h Volume</div>
             <div class="stat-value">${fmt(total24h)}</div>
-            <div class="stat-sub">${poolsData.length} pools</div>
+            <div class="stat-sub">${poolsData.length} pools active</div>
         </div>
         <div class="stat-card">
             <div class="stat-label">6h / 1h Volume</div>
@@ -1169,16 +1249,24 @@ function renderStats() {
             <div class="stat-label">24h Transactions</div>
             <div class="stat-value">${fmtCompact(totalTxns24)}</div>
             <div class="stat-sub"><span class="positive">${fmtCompact(totalBuys24)} buys</span> / <span class="negative">${fmtCompact(totalSells24)} sells</span></div>
+            <div class="buy-pressure"><div class="buy-pressure-fill" style="width:${buyPct}%;background:${buyColor}"></div></div>
+            <div class="buy-pressure-label"><span>${buyPct.toFixed(0)}% buy pressure</span></div>
         </div>
         <hr class="stat-divider">
         <div class="stat-card fees-summary">
             <div class="stat-label">Est. 24h Fees</div>
             <div class="stat-value accent">${fmt(totalFees24h)}</div>
-            <div class="stat-sub">avg ${avgFeeRate.toFixed(2)}% across ${knownPools.length} pools</div>
+            <div class="stat-sub">avg ${avgFeeRate.toFixed(2)}% · ${knownPools.length} pools</div>
+        </div>
+        <div class="stat-card weekly-fees-card">
+            <div class="stat-label">Est. 7d Fees</div>
+            <div class="stat-value cyan">${fmt(fees7d)}</div>
+            <div class="stat-sub">projected from 24h rate</div>
         </div>
         <div class="stat-card fees-summary">
             <div class="stat-label">Fee APR (est.)</div>
-            <div class="stat-value accent">${totalLiq > 0 ? (totalFees24h / totalLiq * 365 * 100).toFixed(1) + '%' : '--'}</div>
+            <div class="stat-value accent">${feeApr > 0 ? feeApr.toFixed(1) + '%' : '--'}</div>
+            <div class="stat-sub">${feeApr > 0 ? fmt(totalFees24h * 365) + ' annualised' : ''}</div>
         </div>
     `;
 
@@ -1196,23 +1284,45 @@ function renderHotPools() {
     const top = sorted.slice(0, 12);
     const top3 = sorted.slice(0, 3);
 
+    function dexDot(dex) {
+        const cls = ['raydium','orca','meteora'].includes(dex) ? dex : 'unknown';
+        return `<span class="dex-dot ${cls}"></span>`;
+    }
+
+    function trendArrow(change) {
+        if (change == null) return '';
+        if (change > 2) return '<span class="trend-up">▲</span>';
+        if (change < -2) return '<span class="trend-down">▼</span>';
+        return '<span class="trend-flat">→</span>';
+    }
+
     let html = `
-        <div class="hot-section-title">HOT POOLS</div>
-        <div class="hot-section-sub">${poolsData.length} pools &middot; by 24h txns</div>
+        <div class="hot-section-title">🔥 HOT POOLS</div>
+        <div class="hot-section-sub">${poolsData.length} pools &middot; ranked by 24h txns</div>
     `;
 
     for (const p of top) {
         const txns = (p.txns?.h24?.buys || 0) + (p.txns?.h24?.sells || 0);
+        const buys = p.txns?.h24?.buys || 0;
         const vol = getVolume(p, 'volume24h');
         const flameLevel = getFlameLevel(p);
-        const changeDir = (p.priceChange?.h24 || 0) >= 0;
+        const change24 = p.priceChange?.h24;
+        const buyPct = txns > 0 ? (buys / txns * 100) : 50;
+        const buyCol = buyPct >= 55 ? 'var(--green)' : buyPct <= 45 ? 'var(--red)' : 'var(--amber)';
 
         html += `
         <div class="hot-pool-item">
             <div class="hot-flames">${flameHtml(flameLevel)}</div>
-            <span class="hot-pool-name">${poolLabel(p)}</span>
+            <div style="flex:1;min-width:0;">
+                <div style="display:flex;align-items:center;gap:4px;">
+                    ${dexDot(dexLabel(p))}
+                    <span class="hot-pool-name">${poolLabel(p)}</span>
+                    ${trendArrow(change24)}
+                </div>
+                <div class="buy-pressure" style="margin-top:3px;"><div class="buy-pressure-fill" style="width:${buyPct}%;background:${buyCol}"></div></div>
+            </div>
             <div class="hot-pool-meta">
-                <div class="hot-pool-txns">${fmtCompact(txns)} txns</div>
+                <div class="hot-pool-txns">${fmtCompact(txns)}</div>
                 <div class="hot-pool-vol">${fmt(vol)}</div>
             </div>
         </div>`;
@@ -1249,15 +1359,21 @@ function renderHotPools() {
 
     html += '<hr class="hot-divider">';
     html += '<div class="hot-section-title" style="font-size:11px;">FEES BY DEX</div>';
+    html += `<div class="hot-section-sub" style="margin-bottom:8px;">24h · 7d projection</div>`;
     html += '<div class="fee-breakdown">';
 
     const dexes = Object.entries(byDex).sort((a, b) => b[1].fees - a[1].fees);
     for (const [dex, data] of dexes) {
         const pct = totalFees > 0 ? (data.fees / totalFees * 100).toFixed(0) : 0;
+        const fees7d = data.fees * 7;
+        const dotCls = ['raydium','orca','meteora'].includes(dex) ? dex : 'unknown';
         html += `
         <div class="fee-break-item">
-            <span class="fee-break-dex">${dex}</span>
-            <span><span class="fee-break-val">${fmt(data.fees)}</span><span class="fee-break-pct">${pct}%</span></span>
+            <span class="fee-break-dex"><span class="dex-dot ${dotCls}"></span>${dex}</span>
+            <div style="text-align:right;">
+                <div><span class="fee-break-val">${fmt(data.fees)}</span><span class="fee-break-pct">${pct}%</span></div>
+                <div style="font-size:9px;color:var(--cyan);">7d: ${fmt(fees7d)}</div>
+            </div>
         </div>`;
     }
 
@@ -1402,22 +1518,29 @@ function renderPools() {
         const mcap = p.marketCap || p.fdv || null;
         const poolType = (p.labels || [])[0] || '--';
 
+        const dex = dexLabel(p);
+        const dotCls = ['raydium','orca','meteora'].includes(dex) ? dex : 'unknown';
+        const poolBuys = p.txns?.h24?.buys || 0;
+        const poolBuyPct = txns24 > 0 ? (poolBuys / txns24 * 100) : 50;
+        const poolBuyColor = poolBuys / (txns24 || 1) >= 0.55 ? 'var(--green)' : poolBuys / (txns24 || 1) <= 0.45 ? 'var(--red)' : 'var(--amber)';
+
         let feesHtml;
         if (feeRate != null) {
             const fees24 = v24 * feeRate;
+            const fees7d = fees24 * 7;
             const poolApr = liq > 0 ? (fees24 / liq * 365 * 100) : 0;
             feesHtml = `
                 <div class="pool-fee-item">
-                    <div class="pool-metric-label">Est. 24h Fees</div>
+                    <div class="pool-metric-label">24h Fees</div>
                     <div class="pool-metric-value accent">${fmt(fees24)}</div>
+                </div>
+                <div class="pool-fee-item">
+                    <div class="pool-metric-label">7d Fees</div>
+                    <div class="pool-metric-value" style="color:var(--cyan)">${fmt(fees7d)}</div>
                 </div>
                 <div class="pool-fee-item">
                     <div class="pool-metric-label">Fee APR</div>
                     <div class="pool-metric-value ${poolApr > 100 ? 'positive' : ''}">${poolApr.toFixed(1)}%</div>
-                </div>
-                <div class="pool-fee-item">
-                    <div class="pool-metric-label">Market Cap</div>
-                    <div class="pool-metric-value">${fmt(mcap)}</div>
                 </div>`;
         } else {
             feesHtml = `
@@ -1427,7 +1550,7 @@ function renderPools() {
                 </div>
                 <div class="pool-fee-item">
                     <div class="pool-metric-label">Fee Data</div>
-                    <div class="pool-metric-value" style="color:var(--text-muted)">unavailable</div>
+                    <div class="pool-metric-value" style="color:var(--text-muted)">N/A</div>
                 </div>
                 <div class="pool-fee-item">
                     <div class="pool-metric-label">Market Cap</div>
@@ -1439,7 +1562,7 @@ function renderPools() {
         <div class="pool-card">
             <div class="pool-top">
                 <span class="pool-pair">${poolLabel(p)}</span>
-                <span class="pool-dex">${dexLabel(p)} ${feeBadgeHtml(p)}</span>
+                <span class="pool-dex"><span class="dex-dot ${dotCls}"></span>${dex} ${feeBadgeHtml(p)}</span>
             </div>
             <div class="pool-metrics">
                 <div>
@@ -1473,6 +1596,10 @@ function renderPools() {
             <div class="pool-bar-container">
                 <div class="pool-bar-label"><span>Volume share</span><span>${share.toFixed(1)}%</span></div>
                 <div class="pool-bar"><div class="pool-bar-fill" style="width:${Math.min(share, 100)}%"></div></div>
+            </div>
+            <div style="margin-top:6px;">
+                <div class="buy-pressure"><div class="buy-pressure-fill" style="width:${poolBuyPct.toFixed(0)}%;background:${poolBuyColor}"></div></div>
+                <div class="buy-pressure-label"><span style="color:${poolBuyColor}">${poolBuyPct.toFixed(0)}% buy</span><span style="color:var(--text-muted)">mcap ${fmt(mcap)}</span></div>
             </div>
             <a class="pool-link" href="${pairUrl}" target="_blank" rel="noopener">View on DexScreener &rarr;</a>
         </div>`;
