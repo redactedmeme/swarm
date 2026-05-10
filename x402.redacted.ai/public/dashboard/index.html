@@ -346,6 +346,179 @@
             margin-top: 2px;
         }
 
+        /* === FLYWHEEL CARD === */
+        .flywheel-card {
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            padding: 18px 20px;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .flywheel-card::before {
+            content: '';
+            position: absolute;
+            inset: 0;
+            background: linear-gradient(135deg, rgba(124,92,252,0.04) 0%, rgba(6,182,212,0.04) 100%);
+            pointer-events: none;
+        }
+
+        .flywheel-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 16px;
+        }
+
+        .flywheel-title {
+            font-size: 10px;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            color: var(--text-muted);
+        }
+
+        .flywheel-pulse {
+            width: 6px;
+            height: 6px;
+            border-radius: 50%;
+            background: var(--accent);
+            animation: pulse 2s infinite;
+        }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 1; transform: scale(1); }
+            50%       { opacity: 0.4; transform: scale(0.8); }
+        }
+
+        .flywheel-body {
+            display: grid;
+            grid-template-columns: 1fr auto 1fr;
+            gap: 12px;
+            align-items: center;
+        }
+
+        .flywheel-token {
+            background: rgba(255,255,255,0.02);
+            border: 1px solid var(--border);
+            border-radius: 10px;
+            padding: 14px;
+        }
+
+        .flywheel-token-header {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            margin-bottom: 12px;
+        }
+
+        .flywheel-token-icon {
+            width: 28px;
+            height: 28px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 12px;
+            font-weight: 700;
+        }
+
+        .flywheel-token-icon.v1 { background: rgba(124,92,252,0.2); color: var(--accent); }
+        .flywheel-token-icon.v2 { background: rgba(6,182,212,0.2);  color: var(--cyan); }
+
+        .flywheel-token-name {
+            font-size: 11px;
+            font-weight: 600;
+        }
+
+        .flywheel-token-tag {
+            font-size: 9px;
+            color: var(--text-muted);
+            background: var(--bg-primary);
+            padding: 1px 5px;
+            border-radius: 3px;
+            border: 1px solid var(--border);
+        }
+
+        .flywheel-stat {
+            display: flex;
+            justify-content: space-between;
+            align-items: baseline;
+            margin-bottom: 5px;
+        }
+
+        .flywheel-stat-label { font-size: 9px; color: var(--text-muted); }
+        .flywheel-stat-value { font-size: 11px; font-weight: 600; }
+
+        .flywheel-flow {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .flywheel-flow-label {
+            font-size: 8px;
+            color: var(--text-muted);
+            text-align: center;
+            letter-spacing: 0.5px;
+        }
+
+        .flywheel-arrow {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 2px;
+        }
+
+        .flywheel-arrow-line {
+            width: 2px;
+            height: 20px;
+            background: linear-gradient(to bottom, var(--accent), var(--cyan));
+            border-radius: 1px;
+        }
+
+        .flywheel-arrow-head {
+            width: 0;
+            height: 0;
+            border-left: 5px solid transparent;
+            border-right: 5px solid transparent;
+            border-top: 7px solid var(--cyan);
+        }
+
+        .flywheel-fee-badge {
+            background: rgba(124,92,252,0.12);
+            border: 1px solid rgba(124,92,252,0.25);
+            border-radius: 6px;
+            padding: 5px 8px;
+            text-align: center;
+        }
+
+        .flywheel-fee-amount {
+            font-size: 13px;
+            font-weight: 700;
+            color: var(--accent);
+        }
+
+        .flywheel-fee-sub {
+            font-size: 8px;
+            color: var(--text-muted);
+            margin-top: 2px;
+        }
+
+        .flywheel-footer {
+            margin-top: 14px;
+            padding-top: 12px;
+            border-top: 1px solid var(--border);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .flywheel-footer-stat { text-align: center; }
+        .flywheel-footer-label { font-size: 9px; color: var(--text-muted); }
+        .flywheel-footer-value { font-size: 12px; font-weight: 600; margin-top: 2px; }
+
         /* === TOKEN SECURITY === */
         .token-security {
             margin-top: 14px;
@@ -1125,6 +1298,9 @@
             </div>
         </div>
 
+        <!-- Flywheel Card -->
+        <div class="flywheel-card" id="flywheelCard" style="display:none"></div>
+
         <!-- History Chart -->
         <div class="chart-section" id="historySection">
             <div class="chart-header">
@@ -1233,6 +1409,7 @@ let feedPollCount = 0;
 let tradesCache = [];      // real Helius swap events from /api/trades
 let helisAvailable = null; // null=unknown, true/false after first fetch
 let tokenData = {};        // Helius token enrichment from /api/token
+let v2Data = {};           // v2 token market data from /api/v2
 
 document.getElementById('tokenAddr').addEventListener('click', () => {
     navigator.clipboard.writeText(TOKEN);
@@ -1592,6 +1769,15 @@ async function fetchTokenData() {
     } catch (_) {}
 }
 
+async function fetchV2Data() {
+    try {
+        const res = await fetch('/api/v2');
+        if (!res.ok) return;
+        const data = await res.json();
+        if (data && Object.keys(data).length > 0) v2Data = data;
+    } catch (_) {}
+}
+
 // ── Main fetch ────────────────────────────────────────────────────────────────
 
 async function fetchData() {
@@ -1608,7 +1794,7 @@ async function fetchData() {
         buildActivityEvents();
         savePrevPoolMap();
         pushClientSnapshot();
-        await Promise.all([fetchServerSnapshots(), fetchTrades(), fetchTokenData()]);
+        await Promise.all([fetchServerSnapshots(), fetchTrades(), fetchTokenData(), fetchV2Data()]);
         render();
         document.getElementById('lastUpdated').textContent = 'Updated ' + new Date().toLocaleTimeString();
     } catch (err) {
@@ -1625,6 +1811,7 @@ async function fetchData() {
 
 function render() {
     renderHero();
+    renderFlywheel();
     renderStats();
     renderHotPools();
     renderHistoryChart();
@@ -1723,6 +1910,133 @@ function renderHero() {
             </div>
         </div>
         ${renderTokenSecurity()}
+    `;
+}
+
+function renderFlywheel() {
+    const card = document.getElementById('flywheelCard');
+    if (!card) return;
+
+    if (!v2Data || !v2Data.price) {
+        card.style.display = 'none';
+        return;
+    }
+    card.style.display = 'block';
+
+    // v1 stats from poolsData
+    const v1Vol24h  = poolsData.reduce((s, p) => s + getVolume(p, 'volume24h'), 0);
+    const v1Liq     = poolsData.reduce((s, p) => s + getLiquidity(p), 0);
+    const v1Price   = poolsData[0]?.priceUsd ? parseFloat(poolsData[0].priceUsd) : 0;
+    const v1Mcap    = poolsData[0]?.marketCap || poolsData[0]?.fdv || 0;
+    const knownPools = poolsData.filter(p => getFeeRate(p) != null);
+    const fees24h   = knownPools.reduce((s, p) => s + (getEstimatedFees(p, 'volume24h') || 0), 0);
+    const fees7d    = fees24h * 7;
+
+    // v2 stats
+    const v2Price  = v2Data.price   || 0;
+    const v2Mcap   = v2Data.mcap    || 0;
+    const v2Vol24h = v2Data.vol24h  || 0;
+    const v2Liq    = v2Data.liq     || 0;
+    const v2Ch24   = v2Data.priceChange?.h24;
+    const v2Ch1    = v2Data.priceChange?.h1;
+
+    const v1PriceStr = v1Price ? '$' + v1Price.toFixed(v1Price < 0.01 ? 8 : 4) : '--';
+    const v2PriceStr = v2Price ? '$' + v2Price.toFixed(v2Price < 0.01 ? 8 : 4) : '--';
+
+    // Ratio: how many v2 does 1 v1 buy
+    const ratio = v2Price > 0 && v1Price > 0 ? (v1Price / v2Price).toFixed(0) : null;
+
+    // At current fee rate, estimated daily v2 buy pressure
+    const v2BuyPresure = v2Price > 0 ? fees24h / v2Price : null;
+
+    card.innerHTML = `
+        <div class="flywheel-header">
+            <span class="flywheel-title">Flywheel</span>
+            <div class="flywheel-pulse"></div>
+        </div>
+        <div class="flywheel-body">
+            <!-- v1 -->
+            <div class="flywheel-token">
+                <div class="flywheel-token-header">
+                    <div class="flywheel-token-icon v1">R</div>
+                    <div>
+                        <div class="flywheel-token-name">REDACTED</div>
+                        <span class="flywheel-token-tag">liquidity</span>
+                    </div>
+                </div>
+                <div class="flywheel-stat">
+                    <span class="flywheel-stat-label">Price</span>
+                    <span class="flywheel-stat-value">${v1PriceStr}</span>
+                </div>
+                <div class="flywheel-stat">
+                    <span class="flywheel-stat-label">MCap</span>
+                    <span class="flywheel-stat-value">${fmt(v1Mcap)}</span>
+                </div>
+                <div class="flywheel-stat">
+                    <span class="flywheel-stat-label">Vol 24h</span>
+                    <span class="flywheel-stat-value">${fmt(v1Vol24h)}</span>
+                </div>
+                <div class="flywheel-stat">
+                    <span class="flywheel-stat-label">Liquidity</span>
+                    <span class="flywheel-stat-value">${fmt(v1Liq)}</span>
+                </div>
+            </div>
+
+            <!-- Flow -->
+            <div class="flywheel-flow">
+                <div class="flywheel-fee-badge">
+                    <div class="flywheel-fee-amount">${fmt(fees24h)}</div>
+                    <div class="flywheel-fee-sub">fees / day</div>
+                </div>
+                <div class="flywheel-arrow">
+                    <div class="flywheel-arrow-line"></div>
+                    <div class="flywheel-arrow-head"></div>
+                </div>
+                <div class="flywheel-flow-label">buys v2</div>
+                ${v2BuyPresure ? `<div style="font-size:9px;color:var(--cyan);text-align:center">${fmtNum(v2BuyPresure)}<br>v2/day</div>` : ''}
+            </div>
+
+            <!-- v2 -->
+            <div class="flywheel-token">
+                <div class="flywheel-token-header">
+                    <div class="flywheel-token-icon v2">V2</div>
+                    <div>
+                        <div class="flywheel-token-name">PUMP</div>
+                        <span class="flywheel-token-tag">fee capture</span>
+                    </div>
+                </div>
+                <div class="flywheel-stat">
+                    <span class="flywheel-stat-label">Price</span>
+                    <span class="flywheel-stat-value ${pctClass(v2Ch24)}">${v2PriceStr}</span>
+                </div>
+                <div class="flywheel-stat">
+                    <span class="flywheel-stat-label">MCap</span>
+                    <span class="flywheel-stat-value">${fmt(v2Mcap)}</span>
+                </div>
+                <div class="flywheel-stat">
+                    <span class="flywheel-stat-label">Vol 24h</span>
+                    <span class="flywheel-stat-value">${fmt(v2Vol24h)}</span>
+                </div>
+                <div class="flywheel-stat">
+                    <span class="flywheel-stat-label">24h</span>
+                    <span class="flywheel-stat-value ${pctClass(v2Ch24)}">${fmtPct(v2Ch24)}</span>
+                </div>
+            </div>
+        </div>
+        <div class="flywheel-footer">
+            <div class="flywheel-footer-stat">
+                <div class="flywheel-footer-label">7d Fee Flow</div>
+                <div class="flywheel-footer-value" style="color:var(--accent)">${fmt(fees7d)}</div>
+            </div>
+            <div class="flywheel-footer-stat">
+                <div class="flywheel-footer-label">v1 Ratio to v2</div>
+                <div class="flywheel-footer-value" style="color:var(--text-secondary)">1 v1 = ${ratio ? fmtNum(parseFloat(ratio)) + ' v2' : '--'}</div>
+            </div>
+            <div class="flywheel-footer-stat">
+                <div class="flywheel-footer-label">v2 1h Change</div>
+                <div class="flywheel-footer-value ${pctClass(v2Ch1)}">${fmtPct(v2Ch1)}</div>
+            </div>
+        </div>
     `;
 }
 
