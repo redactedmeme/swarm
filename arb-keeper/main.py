@@ -94,6 +94,33 @@ async def run():
             # ── Detect opportunity ───────────────────────────────────────────
             opp = find_opportunity(snapshot, sol_balance)
 
+            # ── DIRECT_DEX_TEST: SOL → REDACTED → SOL via Raydium CPMM directly ──
+            if config.EXECUTE_TRADES and trades_run == 0 and __import__('os').environ.get('DIRECT_DEX_TEST', '').lower() == 'true':
+                import os, httpx, base58
+                from dex.raydium_cpmm import fetch_pool, WSOL_MINT
+                from dex.swap_tx import build_sol_to_token_tx, build_token_to_sol_tx, get_associated_token_address
+                pool_addr = os.environ.get('TEST_POOL_ADDR', '14qc563Gd2V4nKhoK6Yoj8gYEgPa8JmadLfh45czFWJ1')
+                sol_in    = int(float(os.environ.get('TEST_SOL_AMOUNT', '0.0005')) * 1e9)
+                rpc_url   = config.HELIUS_RPC.format(key=os.environ.get('HELIUS_API_KEY', ''))
+
+                log.warning(f'DIRECT_DEX_TEST: pool={pool_addr} sol_in={sol_in}')
+                pool = await fetch_pool(rpc_url, pool_addr)
+                log.warning(f'pool token0={pool.token_0_mint[:8]} ({pool.vault_0_balance}) token1={pool.token_1_mint[:8]} ({pool.vault_1_balance}) fee={pool.trade_fee_rate}')
+
+                # Leg 1: SOL → REDACTED
+                tx, expected = await build_sol_to_token_tx(rpc_url, keypair, pool, sol_in, slippage_bps=500)
+                log.warning(f'Leg 1 expected out: {expected} REDACTED raw')
+                async with httpx.AsyncClient() as c:
+                    r = await c.post(rpc_url, json={
+                        'jsonrpc':'2.0','id':1,'method':'sendTransaction',
+                        'params':[base58.b58encode(tx).decode(),{'encoding':'base58','skipPreflight':False,'maxRetries':3}]
+                    }, timeout=15)
+                    log.warning(f'Leg 1 (SOL->REDACTED) result: {r.text[:400]}')
+
+                trades_run += 1
+                await asyncio.sleep(config.POLL_INTERVAL)
+                continue
+
             # ── RECOVER_USDC: convert any USDC in wallet back to SOL via Jupiter ──
             if config.EXECUTE_TRADES and trades_run == 0 and __import__('os').environ.get('RECOVER_USDC', '').lower() == 'true':
                 import os, httpx, base58
