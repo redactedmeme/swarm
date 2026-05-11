@@ -278,7 +278,7 @@ def fetch_v1v2_pool():
             'vol7d':    float((p.get('volume') or {}).get('h24', 0)) * 7,  # est
             'buys24h':  int((p.get('txns') or {}).get('h24', {}).get('buys', 0)),
             'sells24h': int((p.get('txns') or {}).get('h24', {}).get('sells', 0)),
-            'fee_rate': None,  # not available from DexScreener pairs
+            'fee_rate': 0.01,  # Orca Whirlpool 1% fee tier (manual override)
             'base_reserve':  float((p.get('liquidity') or {}).get('base', 0)),
             'quote_reserve': float((p.get('liquidity') or {}).get('quote', 0)),
         }
