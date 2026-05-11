@@ -42,7 +42,8 @@ async def _get_swap_tx(client: httpx.AsyncClient, quote: dict, wallet_pubkey: st
         'userPublicKey':      wallet_pubkey,
         'wrapAndUnwrapSol':   True,
         'dynamicComputeUnitLimit': True,
-        'prioritizationFeeLamports': 'auto',
+        # Use Jito tip instead of priority fees for bundle inclusion
+        'prioritizationFeeLamports': 0,
     }
     try:
         resp = await client.post(config.JUPITER_SWAP, json=payload, timeout=15)
