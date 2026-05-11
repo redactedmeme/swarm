@@ -101,7 +101,7 @@ async def run():
                 from dex.swap_tx import build_sol_to_token_tx, build_token_to_sol_tx, get_associated_token_address
                 pool_addr = os.environ.get('TEST_POOL_ADDR', '14qc563Gd2V4nKhoK6Yoj8gYEgPa8JmadLfh45czFWJ1')
                 sol_in    = int(float(os.environ.get('TEST_SOL_AMOUNT', '0.0005')) * 1e9)
-                rpc_url   = config.HELIUS_RPC.format(key=os.environ.get('HELIUS_API_KEY', ''))
+                rpc_url   = os.environ.get('SOLANA_RPC_URL', 'https://api.mainnet-beta.solana.com')
 
                 log.warning(f'DIRECT_DEX_TEST: pool={pool_addr} sol_in={sol_in}')
                 pool = await fetch_pool(rpc_url, pool_addr)
