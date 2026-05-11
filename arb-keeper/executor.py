@@ -10,6 +10,7 @@ Flow:
 """
 
 import base64
+import base58
 import json
 import logging
 import random
@@ -196,6 +197,37 @@ async def execute_arb(opportunity: ArbOpportunity, keypair) -> TradeResult:
             error=f'Transaction signing failed: {type(e).__name__}: {e}', opportunity=opportunity,
         )
 
+    # USE_RPC_FALLBACK: send via Solana RPC instead of Jito bundle
+    # (no MEV protection but reliable landing; good for non-arb test swaps)
+    import os
+    use_rpc = os.environ.get('USE_RPC_FALLBACK', '').lower() == 'true'
+    if use_rpc:
+        rpc_url = config.HELIUS_RPC.format(key=os.environ.get('HELIUS_API_KEY', ''))
+        async with httpx.AsyncClient() as client:
+            sigs = []
+            for label, tx in [('buy', signed_buy), ('sell', signed_sell)]:
+                r = await client.post(rpc_url, json={
+                    'jsonrpc': '2.0', 'id': 1, 'method': 'sendTransaction',
+                    'params': [base58.b58encode(tx).decode(),
+                               {'encoding': 'base58', 'skipPreflight': False,
+                                'maxRetries': 3, 'preflightCommitment': 'processed'}]
+                }, timeout=15)
+                data = r.json()
+                if 'error' in data:
+                    log.error(f'sendTransaction {label} failed: {data["error"]}')
+                    return TradeResult(
+                        success=False, bundle_id=None, actual_profit_sol=None,
+                        error=f'{label} send failed: {data["error"]}', opportunity=opportunity,
+                    )
+                sig = data.get('result')
+                log.info(f'{label} tx sent: {sig}')
+                sigs.append(sig)
+        return TradeResult(
+            success=True, bundle_id=','.join(sigs),
+            actual_profit_sol=opportunity.net_profit_sol,
+            error=None, opportunity=opportunity,
+        )
+
     bundle_id = await _submit_bundle([signed_buy, signed_sell, signed_tip])
     if not bundle_id:
         return TradeResult(
@@ -209,7 +241,7 @@ async def execute_arb(opportunity: ArbOpportunity, keypair) -> TradeResult:
         return TradeResult(
             success=True,
             bundle_id=bundle_id,
-            actual_profit_sol=opportunity.net_profit_sol,  # confirmed on-chain; actual verified separately
+            actual_profit_sol=opportunity.net_profit_sol,
             error=None,
             opportunity=opportunity,
         )
