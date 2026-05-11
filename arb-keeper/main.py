@@ -14,30 +14,60 @@ Env vars required:
 import asyncio
 import logging
 import socket
+import sys
 import time
+import urllib.request
+import json as _json
 
-# ── DNS bypass — patch socket.getaddrinfo before any network calls ────────────
-# Railway containers sometimes receive a broken /etc/resolv.conf; this routes
-# all hostname resolution directly to Google/Cloudflare DNS via dnspython.
-try:
-    import dns.resolver as _dns_resolver
-    _dns_res = _dns_resolver.Resolver(configure=False)
-    _dns_res.nameservers = ['8.8.8.8', '1.1.1.1']
-    _dns_res.lifetime = 5.0
-    _orig_getaddrinfo = socket.getaddrinfo
+# ── DNS bypass via DNS-over-HTTPS (DoH) ───────────────────────────────────────
+# Railway containers receive a broken /etc/resolv.conf AND may block outbound
+# UDP 53 to external resolvers. DoH uses HTTPS (TCP/443) to Cloudflare's
+# anycast IP 1.1.1.1 — no system resolver, no UDP, just TCP to a known IP.
+print('[dns-bootstrap] installing DoH socket.getaddrinfo patch', flush=True)
 
-    def _patched_getaddrinfo(host, port, family=0, type=0, proto=0, flags=0):
+_dns_cache: dict[str, tuple[str, float]] = {}
+_DNS_CACHE_TTL = 300  # seconds
+_orig_getaddrinfo = socket.getaddrinfo
+
+
+def _doh_resolve(hostname: str) -> str | None:
+    """Resolve hostname via Cloudflare DoH at 1.1.1.1 (HTTPS, no DNS needed)."""
+    now = time.monotonic()
+    cached = _dns_cache.get(hostname)
+    if cached and (now - cached[1] < _DNS_CACHE_TTL):
+        return cached[0]
+
+    for endpoint in ('https://1.1.1.1/dns-query', 'https://8.8.8.8/resolve'):
         try:
-            if host and not host[0].isdigit():
-                answers = _dns_res.resolve(host, 'A')
-                host = str(answers[0])
-        except Exception:
-            pass
-        return _orig_getaddrinfo(host, port, family, type, proto, flags)
+            url = f'{endpoint}?name={hostname}&type=A'
+            req = urllib.request.Request(url, headers={'Accept': 'application/dns-json'})
+            with urllib.request.urlopen(req, timeout=4) as resp:
+                data = _json.loads(resp.read().decode())
+            for ans in data.get('Answer', []):
+                if ans.get('type') == 1:  # A record
+                    ip = ans['data']
+                    _dns_cache[hostname] = (ip, now)
+                    print(f'[dns-bootstrap] {hostname} → {ip} (via {endpoint})', flush=True)
+                    return ip
+        except Exception as e:
+            print(f'[dns-bootstrap] {endpoint} failed for {hostname}: {e}', flush=True)
+    return None
 
-    socket.getaddrinfo = _patched_getaddrinfo
-except ImportError:
-    pass  # dnspython not installed — fall back to system resolver
+
+def _patched_getaddrinfo(host, port, family=0, type=0, proto=0, flags=0):
+    if host and isinstance(host, str) and not host.replace('.', '').replace(':', '').isdigit():
+        ip = _doh_resolve(host)
+        if ip:
+            return _orig_getaddrinfo(ip, port, family, type, proto, flags)
+    return _orig_getaddrinfo(host, port, family, type, proto, flags)
+
+
+socket.getaddrinfo = _patched_getaddrinfo
+
+# Sanity check at startup — try to resolve Jupiter immediately so we see the
+# result in logs before the main loop starts.
+_test = _doh_resolve('quote-api.jup.ag')
+print(f'[dns-bootstrap] startup resolve quote-api.jup.ag = {_test}', flush=True)
 
 import config
 import logger as swarm_log
