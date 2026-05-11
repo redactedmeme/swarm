@@ -107,15 +107,32 @@ async def run():
                 pool = await fetch_pool(rpc_url, pool_addr)
                 log.warning(f'pool token0={pool.token_0_mint[:8]} ({pool.vault_0_balance}) token1={pool.token_1_mint[:8]} ({pool.vault_1_balance}) fee={pool.trade_fee_rate}')
 
-                # Leg 1: SOL → REDACTED
-                tx, expected = await build_sol_to_token_tx(rpc_url, keypair, pool, sol_in, slippage_bps=500)
-                log.warning(f'Leg 1 expected out: {expected} REDACTED raw')
                 async with httpx.AsyncClient() as c:
-                    r = await c.post(rpc_url, json={
-                        'jsonrpc':'2.0','id':1,'method':'sendTransaction',
-                        'params':[base58.b58encode(tx).decode(),{'encoding':'base58','skipPreflight':False,'maxRetries':3}]
-                    }, timeout=15)
-                    log.warning(f'Leg 1 (SOL->REDACTED) result: {r.text[:400]}')
+                    # Check current REDACTED balance — if we already have some, sell it first
+                    r = await c.post(rpc_url, json={'jsonrpc':'2.0','id':1,'method':'getTokenAccountsByOwner','params':[pubkey,{'mint':pool.token_1_mint if pool.token_0_mint == WSOL_MINT else pool.token_0_mint},{'encoding':'jsonParsed'}]}, timeout=10)
+                    accs = r.json().get('result', {}).get('value', [])
+                    redacted_balance = int(accs[0]['account']['data']['parsed']['info']['tokenAmount']['amount']) if accs else 0
+                    log.warning(f'Current REDACTED balance: {redacted_balance}')
+
+                    if redacted_balance > 0:
+                        # Refresh pool state (rates may have changed)
+                        pool = await fetch_pool(rpc_url, pool_addr)
+                        tx, expected = await build_token_to_sol_tx(rpc_url, keypair, pool, redacted_balance, slippage_bps=500)
+                        log.warning(f'SELL: {redacted_balance} REDACTED -> expected {expected} lamports SOL')
+                        r = await c.post(rpc_url, json={
+                            'jsonrpc':'2.0','id':1,'method':'sendTransaction',
+                            'params':[base58.b58encode(tx).decode(),{'encoding':'base58','skipPreflight':False,'maxRetries':3}]
+                        }, timeout=15)
+                        log.warning(f'SELL result: {r.text[:400]}')
+                    else:
+                        # Buy: SOL → REDACTED
+                        tx, expected = await build_sol_to_token_tx(rpc_url, keypair, pool, sol_in, slippage_bps=500)
+                        log.warning(f'BUY: {sol_in} lamports SOL -> expected {expected} REDACTED')
+                        r = await c.post(rpc_url, json={
+                            'jsonrpc':'2.0','id':1,'method':'sendTransaction',
+                            'params':[base58.b58encode(tx).decode(),{'encoding':'base58','skipPreflight':False,'maxRetries':3}]
+                        }, timeout=15)
+                        log.warning(f'BUY result: {r.text[:400]}')
 
                 trades_run += 1
                 await asyncio.sleep(config.POLL_INTERVAL)
