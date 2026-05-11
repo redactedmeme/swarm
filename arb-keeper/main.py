@@ -56,21 +56,35 @@ async def _get_balance(pubkey: str) -> float:
         return 0.0
 
 
+async def _get_token_balance(pubkey: str) -> int:
+    if not pubkey:
+        return 0
+    from wallet import get_token_balance
+    try:
+        return await get_token_balance(pubkey, config.TOKEN_MINT)
+    except Exception as e:
+        log.warning(f'Token balance check failed: {e}')
+        return 0
+
+
 async def run():
     mode = 'EXECUTE' if config.EXECUTE_TRADES else 'DETECT-ONLY'
     log.info(f'arb-keeper starting — mode: {mode}')
-    log.info(f'MIN_PROFIT={config.MIN_PROFIT_SOL*1000:.2f} mSOL  '
-             f'MAX_TRADE={config.MAX_TRADE_SOL} SOL  '
-             f'POLL={config.POLL_INTERVAL}s  '
-             f'TIP={config.JITO_TIP_LAMPORTS} lamports')
+    log.info(
+        f'TARGET_RATIO={config.TARGET_RATIO*100:.0f}%  '
+        f'TOLERANCE={config.REBALANCE_TOLERANCE*100:.0f}%  '
+        f'MAX_TRADE={config.MAX_TRADE_SOL} SOL  '
+        f'POLL={config.POLL_INTERVAL}s  '
+        f'POOL={config.RAYDIUM_POOL_ID[:16]}...'
+    )
 
     keypair, pubkey = _load_wallet()
     cb = CircuitBreaker()
 
-    # Heartbeat counter — log circuit status every 60 polls
-    heartbeat = 0
+    heartbeat  = 0
     opps_seen  = 0
     trades_run = 0
+    token_balance_raw = 0  # updated each loop when wallet is loaded
 
     while True:
         loop_start = time.monotonic()
@@ -90,9 +104,10 @@ async def run():
 
             # ── Balance check ────────────────────────────────────────────────
             sol_balance = await _get_balance(pubkey)
+            token_balance_raw = await _get_token_balance(pubkey)
 
-            # ── Detect opportunity ───────────────────────────────────────────
-            opp = find_opportunity(snapshot, sol_balance)
+            # ── Detect rebalance opportunity ─────────────────────────────────
+            opp = find_opportunity(snapshot, sol_balance, token_balance_raw)
 
             # ── DIRECT_DEX_TEST: SOL → REDACTED → SOL via Raydium CPMM directly ──
             if config.EXECUTE_TRADES and trades_run == 0 and __import__('os').environ.get('DIRECT_DEX_TEST', '').lower() == 'true':
@@ -204,25 +219,27 @@ async def run():
                 await asyncio.sleep(config.POLL_INTERVAL)
                 continue
 
-            # ── FORCE_FIRST_SWAP override: synthesize an opportunity from the ──
-            # current snapshot, execute once, then disable. Used to validate the
-            # on-chain execution pipeline (Jupiter swap build → Jito bundle → land).
+            # ── FORCE_FIRST_SWAP override: synthesize a rebalance order to ──
+            # validate the on-chain execution pipeline (buy TOKEN with probe SOL).
             if not opp and config.FORCE_FIRST_SWAP and config.EXECUTE_TRADES and trades_run == 0:
-                from detector import ArbOpportunity, _route_summary
-                log.warning('FORCE_FIRST_SWAP active — synthesizing opportunity for pipeline test')
-                opp = ArbOpportunity(
-                    buy_sol_lamports=snapshot.probe_sol_lamports,
-                    expected_tokens=snapshot.probe_tokens,
-                    buy_quote=snapshot.buy_quote,
-                    sell_tokens=snapshot.probe_tokens,
-                    expected_sol_lamports=snapshot.sell_out_lamports,
-                    sell_quote=snapshot.sell_quote,
-                    gross_profit_lamports=snapshot.sell_out_lamports - snapshot.probe_sol_lamports,
-                    jito_tip_lamports=config.JITO_TIP_LAMPORTS,
-                    net_profit_sol=(snapshot.sell_out_lamports - snapshot.probe_sol_lamports - config.JITO_TIP_LAMPORTS) / config.SOL_LAMPORTS,
-                    buy_route_summary=_route_summary(snapshot.buy_quote),
-                    sell_route_summary=_route_summary(snapshot.sell_quote),
-                    snapshot_at=snapshot.captured_at,
+                from detector import RebalanceOrder
+                from dex.raydium_cpmm import WSOL_MINT, quote_swap_base_input
+                log.warning('FORCE_FIRST_SWAP active — synthesizing buy-token order for pipeline test')
+                sol_lam = snapshot.probe_sol_lamports
+                tok_out, _ = quote_swap_base_input(snapshot.pool, WSOL_MINT, sol_lam)
+                opp = RebalanceOrder(
+                    is_buy_token=True,
+                    sol_amount=sol_lam / config.SOL_LAMPORTS,
+                    sol_lamports=sol_lam,
+                    token_amount=tok_out,
+                    sol_balance=sol_balance,
+                    token_balance_raw=token_balance_raw,
+                    total_value_sol=sol_balance,
+                    current_ratio=0.0,
+                    target_ratio=config.TARGET_RATIO,
+                    deviation=config.TARGET_RATIO,
+                    price_sol_per_token=snapshot.mid_price_sol_per_token,
+                    pool=snapshot.pool,
                 )
 
             if opp:
@@ -240,7 +257,7 @@ async def run():
                         log.error(f'Trade FAILED: bundle_id={result.bundle_id} error={result.error}')
 
                     if result.success:
-                        cb.record_success(result.actual_profit_sol or opp.net_profit_sol)
+                        cb.record_success(result.actual_profit_sol or 0.0)
                     else:
                         # Only count as a loss if the bundle was submitted (not a build failure)
                         loss = 0.0
@@ -255,9 +272,10 @@ async def run():
             heartbeat += 1
             if heartbeat % 60 == 0:
                 bal_str = f'{sol_balance:.4f} SOL' if pubkey else 'n/a'
+                tok_str = f'{token_balance_raw / 10**config.TOKEN_DECIMALS:.2f} tok'
                 log.info(
-                    f'Heartbeat: {opps_seen} opps seen | {trades_run} trades run | '
-                    f'balance {bal_str} | spread {snapshot.spread_pct:.4f}%'
+                    f'Heartbeat: {opps_seen} rebalances detected | {trades_run} trades run | '
+                    f'balance {bal_str} + {tok_str} | mid={snapshot.mid_price_sol_per_token:.8f} SOL/tok'
                 )
                 swarm_log.log_circuit_status({**cb.status(), 'opps_seen': opps_seen, 'trades_run': trades_run})
 
