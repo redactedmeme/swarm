@@ -19,19 +19,27 @@ import time
 import urllib.request
 import json as _json
 
+# Logging set up FIRST so dns-bootstrap diagnostics are captured
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s [%(levelname)s] %(name)s: %(message)s',
+    datefmt='%H:%M:%S',
+    stream=sys.stderr,
+)
+_dnslog = logging.getLogger('dns-bootstrap')
+_dnslog.warning('=== DNS BOOTSTRAP STARTING ===')
+
 # ── DNS bypass via DNS-over-HTTPS (DoH) ───────────────────────────────────────
 # Railway containers receive a broken /etc/resolv.conf AND may block outbound
 # UDP 53 to external resolvers. DoH uses HTTPS (TCP/443) to Cloudflare's
 # anycast IP 1.1.1.1 — no system resolver, no UDP, just TCP to a known IP.
-print('[dns-bootstrap] installing DoH socket.getaddrinfo patch', flush=True)
 
-_dns_cache: dict[str, tuple[str, float]] = {}
-_DNS_CACHE_TTL = 300  # seconds
+_dns_cache: dict = {}
+_DNS_CACHE_TTL = 300
 _orig_getaddrinfo = socket.getaddrinfo
 
 
-def _doh_resolve(hostname: str) -> str | None:
-    """Resolve hostname via Cloudflare DoH at 1.1.1.1 (HTTPS, no DNS needed)."""
+def _doh_resolve(hostname: str):
     now = time.monotonic()
     cached = _dns_cache.get(hostname)
     if cached and (now - cached[1] < _DNS_CACHE_TTL):
@@ -44,30 +52,40 @@ def _doh_resolve(hostname: str) -> str | None:
             with urllib.request.urlopen(req, timeout=4) as resp:
                 data = _json.loads(resp.read().decode())
             for ans in data.get('Answer', []):
-                if ans.get('type') == 1:  # A record
+                if ans.get('type') == 1:
                     ip = ans['data']
                     _dns_cache[hostname] = (ip, now)
-                    print(f'[dns-bootstrap] {hostname} → {ip} (via {endpoint})', flush=True)
+                    _dnslog.warning(f'{hostname} -> {ip} (via {endpoint})')
                     return ip
         except Exception as e:
-            print(f'[dns-bootstrap] {endpoint} failed for {hostname}: {e}', flush=True)
+            _dnslog.warning(f'{endpoint} failed for {hostname}: {type(e).__name__}: {e}')
     return None
 
 
 def _patched_getaddrinfo(host, port, family=0, type=0, proto=0, flags=0):
-    if host and isinstance(host, str) and not host.replace('.', '').replace(':', '').isdigit():
-        ip = _doh_resolve(host)
-        if ip:
-            return _orig_getaddrinfo(ip, port, family, type, proto, flags)
+    if host and isinstance(host, str):
+        # Skip IPs (numeric only)
+        clean = host.replace('.', '').replace(':', '')
+        if clean and not clean.isdigit():
+            ip = _doh_resolve(host)
+            if ip:
+                return _orig_getaddrinfo(ip, port, family, type, proto, flags)
     return _orig_getaddrinfo(host, port, family, type, proto, flags)
 
 
 socket.getaddrinfo = _patched_getaddrinfo
 
-# Sanity check at startup — try to resolve Jupiter immediately so we see the
-# result in logs before the main loop starts.
+# Probe outbound connectivity at startup so we know exactly what's broken
+_dnslog.warning('Testing outbound HTTPS to 1.1.1.1 ...')
+try:
+    with urllib.request.urlopen('https://1.1.1.1/', timeout=5) as r:
+        _dnslog.warning(f'1.1.1.1 reachable: HTTP {r.status}')
+except Exception as e:
+    _dnslog.error(f'1.1.1.1 UNREACHABLE: {type(e).__name__}: {e}')
+
 _test = _doh_resolve('quote-api.jup.ag')
-print(f'[dns-bootstrap] startup resolve quote-api.jup.ag = {_test}', flush=True)
+_dnslog.warning(f'startup resolve quote-api.jup.ag = {_test}')
+_dnslog.warning('=== DNS BOOTSTRAP DONE ===')
 
 import config
 import logger as swarm_log
@@ -75,11 +93,6 @@ from price_feed import get_price_snapshot
 from detector import find_opportunity
 from circuit_breaker import CircuitBreaker
 
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s [%(levelname)s] %(name)s: %(message)s',
-    datefmt='%H:%M:%S',
-)
 log = logging.getLogger('arb-keeper')
 
 # Suppress noisy httpx logs
