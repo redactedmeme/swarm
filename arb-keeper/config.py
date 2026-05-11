@@ -1,8 +1,16 @@
 import os
 
 # ── Token mints ────────────────────────────────────────────────────────────────
-TOKEN_MINT = '9a21gb7fWGm9dD2UFdZAzgFn5K1NwfmYkjyLbpAcKgnM'   # REDACTED liquidity
+# TOKEN_MINT can be overridden via env (e.g. TOKEN_MINT=USDC mint for pipeline tests)
+TOKEN_MINT = os.environ.get(
+    'TOKEN_MINT',
+    '9a21gb7fWGm9dD2UFdZAzgFn5K1NwfmYkjyLbpAcKgnM',  # default: REDACTED liquidity
+)
 SOL_MINT   = 'So11111111111111111111111111111111111111112'        # Wrapped SOL
+
+# When this is true the bot executes ONE swap on the first quote regardless
+# of profit (used to validate the end-to-end execution pipeline on-chain).
+FORCE_FIRST_SWAP = os.environ.get('FORCE_FIRST_SWAP', 'false').lower() == 'true'
 
 # ── API endpoints ──────────────────────────────────────────────────────────────
 JUPITER_QUOTE = 'https://api.jup.ag/swap/v1/quote'
