@@ -94,6 +94,27 @@ async def run():
             # ── Detect opportunity ───────────────────────────────────────────
             opp = find_opportunity(snapshot, sol_balance)
 
+            # ── FORCE_FIRST_SWAP override: synthesize an opportunity from the ──
+            # current snapshot, execute once, then disable. Used to validate the
+            # on-chain execution pipeline (Jupiter swap build → Jito bundle → land).
+            if not opp and config.FORCE_FIRST_SWAP and config.EXECUTE_TRADES and trades_run == 0:
+                from detector import ArbOpportunity, _route_summary
+                log.warning('FORCE_FIRST_SWAP active — synthesizing opportunity for pipeline test')
+                opp = ArbOpportunity(
+                    buy_sol_lamports=snapshot.probe_sol_lamports,
+                    expected_tokens=snapshot.probe_tokens,
+                    buy_quote=snapshot.buy_quote,
+                    sell_tokens=snapshot.probe_tokens,
+                    expected_sol_lamports=snapshot.sell_out_lamports,
+                    sell_quote=snapshot.sell_quote,
+                    gross_profit_lamports=snapshot.sell_out_lamports - snapshot.probe_sol_lamports,
+                    jito_tip_lamports=config.JITO_TIP_LAMPORTS,
+                    net_profit_sol=(snapshot.sell_out_lamports - snapshot.probe_sol_lamports - config.JITO_TIP_LAMPORTS) / config.SOL_LAMPORTS,
+                    buy_route_summary=_route_summary(snapshot.buy_quote),
+                    sell_route_summary=_route_summary(snapshot.sell_quote),
+                    snapshot_at=snapshot.captured_at,
+                )
+
             if opp:
                 opps_seen += 1
                 swarm_log.log_opportunity(opp)
