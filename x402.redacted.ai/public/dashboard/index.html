@@ -1860,7 +1860,7 @@ function renderHero() {
 
     document.getElementById('heroCard').innerHTML = `
         <div class="hero-top">
-            <div class="hero-icon">${tokenIcon(snapshots.at(-1)?.image_url || tokenData.image_url, 'R')}</div>
+            <div class="hero-icon">${tokenIcon(serverSnapshots.at(-1)?.image_url || tokenData.image_url, 'R')}</div>
             <span class="hero-token-name">REDACTED Token</span>
             <span class="hero-updated">Updated ${new Date().toLocaleTimeString()}</span>
         </div>
@@ -1977,7 +1977,7 @@ function renderFlywheel() {
             <!-- liquidity token -->
             <div class="flywheel-token">
                 <div class="flywheel-token-header">
-                    <div class="flywheel-token-icon v1">${tokenIcon(snapshots.at(-1)?.image_url || tokenData.image_url, 'R')}</div>
+                    <div class="flywheel-token-icon v1">${tokenIcon(serverSnapshots.at(-1)?.image_url || tokenData.image_url, 'R')}</div>
                     <div>
                         <div class="flywheel-token-name">REDACTED <span class="flywheel-token-tag">liquidity</span></div>
                         <div style="font-size:8px;color:var(--text-muted);margin-top:2px">9a21gb7f…KgnM</div>
