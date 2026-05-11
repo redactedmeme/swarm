@@ -1944,7 +1944,11 @@ function renderFlywheel() {
     const v2PriceStr = v2Price ? '$' + v2Price.toFixed(v2Price < 0.01 ? 8 : 4) : '--';
 
     // Ratio: how many v2 does 1 v1 buy
-    const ratio = v2Price > 0 && v1Price > 0 ? (v1Price / v2Price).toFixed(0) : null;
+    const rawRatio = v2Price > 0 && v1Price > 0 ? v1Price / v2Price : null;
+    const ratioStr = rawRatio == null ? '--'
+        : rawRatio >= 1000 ? fmtNum(rawRatio) + ' v2'
+        : rawRatio >= 1    ? rawRatio.toFixed(2) + ' v2'
+        : (1 / rawRatio).toFixed(2) + ' v1';
 
     // At current fee rate, estimated daily v2 buy pressure
     const v2BuyPresure = v2Price > 0 ? fees24h / v2Price : null;
@@ -2001,7 +2005,7 @@ function renderFlywheel() {
                 <div class="flywheel-token-header">
                     <div class="flywheel-token-icon v2">V2</div>
                     <div>
-                        <div class="flywheel-token-name">PUMP</div>
+                        <div class="flywheel-token-name">REDACTED</div>
                         <span class="flywheel-token-tag">fee capture</span>
                     </div>
                 </div>
@@ -2029,8 +2033,8 @@ function renderFlywheel() {
                 <div class="flywheel-footer-value" style="color:var(--accent)">${fmt(fees7d)}</div>
             </div>
             <div class="flywheel-footer-stat">
-                <div class="flywheel-footer-label">v1 Ratio to v2</div>
-                <div class="flywheel-footer-value" style="color:var(--text-secondary)">1 v1 = ${ratio ? fmtNum(parseFloat(ratio)) + ' v2' : '--'}</div>
+                <div class="flywheel-footer-label">Exchange Rate</div>
+                <div class="flywheel-footer-value" style="color:var(--text-secondary)">1 v1 = ${ratioStr}</div>
             </div>
             <div class="flywheel-footer-stat">
                 <div class="flywheel-footer-label">v2 1h Change</div>
