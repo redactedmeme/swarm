@@ -2412,7 +2412,70 @@ function renderPools() {
 
     const total24h = poolsData.reduce((s, p) => s + getVolume(p, 'volume24h'), 0);
 
-    grid.innerHTML = poolsData.map(p => {
+    // v1/v2 Orca pool synthetic card (pinned at top)
+    let v1v2Card = '';
+    if (v1v2PoolData && v1v2PoolData.tvl > 0) {
+        const pd = v1v2PoolData;
+        const feeRate = pd.fee_rate || 0.01;
+        const liq = pd.tvl || 0;
+        const v24 = pd.vol24h || 0;
+        const fees24 = v24 * feeRate;
+        const fees7d = fees24 * 7;
+        const poolApr = liq > 0 ? (fees24 / liq * 365 * 100) : 0;
+        const txns24 = (pd.buys24h || 0) + (pd.sells24h || 0);
+        const buyPct = txns24 > 0 ? (pd.buys24h / txns24 * 100) : 50;
+        const buyColor = buyPct >= 55 ? 'var(--green)' : buyPct <= 45 ? 'var(--red)' : 'var(--amber)';
+        const pairUrl = `https://dexscreener.com/solana/8Jd4KxLXhSqJx3wx7WRujfLZ7hmddVQkoM4qJqg4cPHo`;
+        const feePct = (feeRate * 100).toFixed(0) + '%';
+        v1v2Card = `
+        <div class="pool-card" style="border-color:rgba(124,92,252,0.35);background:rgba(124,92,252,0.05)">
+            <div class="pool-top">
+                <span class="pool-pair">REDACTED/REDACTED <span style="font-size:9px;color:var(--text-muted)">(liq/fees)</span></span>
+                <span class="pool-dex"><span class="dex-dot orca"></span>orca <span class="fee-badge dynamic">${feePct}</span></span>
+            </div>
+            <div class="pool-metrics">
+                <div>
+                    <div class="pool-metric-label">24h Vol</div>
+                    <div class="pool-metric-value">${fmt(v24)}</div>
+                </div>
+                <div>
+                    <div class="pool-metric-label">Liquidity</div>
+                    <div class="pool-metric-value">${fmt(liq)}</div>
+                </div>
+                <div>
+                    <div class="pool-metric-label">24h Txns</div>
+                    <div class="pool-metric-value">${fmtCompact(txns24)}</div>
+                </div>
+                <div>
+                    <div class="pool-metric-label">Buy / Sell</div>
+                    <div class="pool-metric-value">
+                        <span class="positive">${fmtCompact(pd.buys24h||0)}</span> / <span class="negative">${fmtCompact(pd.sells24h||0)}</span>
+                    </div>
+                </div>
+            </div>
+            <div class="pool-fees-row">
+                <div class="pool-fee-item">
+                    <div class="pool-metric-label">24h Fees</div>
+                    <div class="pool-metric-value accent">${fmt(fees24)}</div>
+                </div>
+                <div class="pool-fee-item">
+                    <div class="pool-metric-label">7d Fees</div>
+                    <div class="pool-metric-value" style="color:var(--cyan)">${fmt(fees7d)}</div>
+                </div>
+                <div class="pool-fee-item">
+                    <div class="pool-metric-label">Fee APR</div>
+                    <div class="pool-metric-value ${poolApr > 100 ? 'positive' : ''}">${poolApr.toFixed(1)}%</div>
+                </div>
+            </div>
+            <div style="margin-top:6px;">
+                <div class="buy-pressure"><div class="buy-pressure-fill" style="width:${buyPct.toFixed(0)}%;background:${buyColor}"></div></div>
+                <div class="buy-pressure-label"><span style="color:${buyColor}">${buyPct.toFixed(0)}% buy</span><span style="color:var(--text-muted)">Rate: ${pd.price ? pd.price.toFixed(4) + ' REDACTED' : '--'}</span></div>
+            </div>
+            <a class="pool-link" href="${pairUrl}" target="_blank" rel="noopener">View on DexScreener &rarr;</a>
+        </div>`;
+    }
+
+    grid.innerHTML = v1v2Card + poolsData.map(p => {
         const v24 = getVolume(p, 'volume24h');
         const v6 = getVolume(p, 'volume6h');
         const v1 = getVolume(p, 'volume1h');
