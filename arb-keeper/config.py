@@ -5,8 +5,8 @@ TOKEN_MINT = '9a21gb7fWGm9dD2UFdZAzgFn5K1NwfmYkjyLbpAcKgnM'   # REDACTED liquidi
 SOL_MINT   = 'So11111111111111111111111111111111111111112'        # Wrapped SOL
 
 # ── API endpoints ──────────────────────────────────────────────────────────────
-JUPITER_QUOTE = 'https://quote-api.jup.ag/v6/quote'
-JUPITER_SWAP  = 'https://quote-api.jup.ag/v6/swap'
+JUPITER_QUOTE = 'https://api.jup.ag/swap/v1/quote'
+JUPITER_SWAP  = 'https://api.jup.ag/swap/v1/swap'
 JITO_URL      = 'https://mainnet.block-engine.jito.wtf/api/v1/bundles'
 HELIUS_RPC    = 'https://mainnet.helius-rpc.com/?api-key={key}'
 
