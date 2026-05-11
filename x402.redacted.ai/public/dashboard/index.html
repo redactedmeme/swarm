@@ -1960,9 +1960,9 @@ function renderFlywheel() {
     const orcaPrice = v1v2PoolData?.price || null; // v1 per v2 (from Orca)
     const rawRatio  = orcaPrice ?? (v2Price > 0 && v1Price > 0 ? v1Price / v2Price : null);
     const ratioStr  = rawRatio == null ? '--'
-        : rawRatio >= 1000 ? fmtNum(rawRatio) + ' fees'
-        : rawRatio >= 1    ? rawRatio.toFixed(4) + ' fees'
-        : (1 / rawRatio).toFixed(4) + ' liq';
+        : rawRatio >= 1000 ? fmtNum(rawRatio) + ' REDACTED'
+        : rawRatio >= 1    ? rawRatio.toFixed(4) + ' REDACTED'
+        : (1 / rawRatio).toFixed(4) + ' REDACTED';
     const rateSource = orcaPrice ? 'DexScreener · live' : 'USD estimate';
 
     // At current fee rate, estimated daily v2 buy pressure
