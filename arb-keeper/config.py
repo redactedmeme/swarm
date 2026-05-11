@@ -13,8 +13,9 @@ SOL_MINT   = 'So11111111111111111111111111111111111111112'        # Wrapped SOL
 FORCE_FIRST_SWAP = os.environ.get('FORCE_FIRST_SWAP', 'false').lower() == 'true'
 
 # ── API endpoints ──────────────────────────────────────────────────────────────
-JUPITER_QUOTE = 'https://api.jup.ag/swap/v1/quote'
-JUPITER_SWAP  = 'https://api.jup.ag/swap/v1/swap'
+# lite-api is the free, public tier (rate-limited); api.jup.ag requires an API key.
+JUPITER_QUOTE = 'https://lite-api.jup.ag/swap/v1/quote'
+JUPITER_SWAP  = 'https://lite-api.jup.ag/swap/v1/swap'
 JITO_URL      = 'https://mainnet.block-engine.jito.wtf/api/v1/bundles'
 HELIUS_RPC    = 'https://mainnet.helius-rpc.com/?api-key={key}'
 
