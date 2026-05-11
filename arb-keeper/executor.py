@@ -46,11 +46,16 @@ async def _get_swap_tx(client: httpx.AsyncClient, quote: dict, wallet_pubkey: st
     }
     try:
         resp = await client.post(config.JUPITER_SWAP, json=payload, timeout=15)
-        resp.raise_for_status()
+        if resp.status_code != 200:
+            log.error(f'Jupiter /swap HTTP {resp.status_code}: {resp.text[:300]}')
+            return None
         data = resp.json()
-        return data.get('swapTransaction')
+        tx = data.get('swapTransaction')
+        if not tx:
+            log.error(f'Jupiter /swap returned no transaction: {data}')
+        return tx
     except Exception as e:
-        log.error(f'Jupiter /swap failed: {e}')
+        log.error(f'Jupiter /swap failed: {type(e).__name__}: {e}')
         return None
 
 

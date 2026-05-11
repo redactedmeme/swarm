@@ -126,6 +126,9 @@ async def run():
                     trades_run += 1
                     swarm_log.log_trade(result)
 
+                    if not result.success:
+                        log.error(f'Trade FAILED: bundle_id={result.bundle_id} error={result.error}')
+
                     if result.success:
                         cb.record_success(result.actual_profit_sol or opp.net_profit_sol)
                     else:
