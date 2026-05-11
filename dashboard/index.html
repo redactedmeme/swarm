@@ -390,6 +390,10 @@
             0%, 100% { opacity: 1; transform: scale(1); }
             50%       { opacity: 0.4; transform: scale(0.8); }
         }
+        @keyframes volPulse {
+            0%, 100% { opacity: 1; transform: scale(1); box-shadow: 0 0 0 0 currentColor; }
+            50%       { opacity: 0.6; transform: scale(1.4); box-shadow: 0 0 4px 2px currentColor; }
+        }
 
         .flywheel-body {
             display: grid;
@@ -1304,29 +1308,6 @@
         <!-- Flywheel Card -->
         <div class="flywheel-card" id="flywheelCard" style="display:none"></div>
 
-        <!-- History Chart -->
-        <div class="chart-section" id="historySection">
-            <div class="chart-header">
-                <span class="chart-title">Volume Over Time</span>
-                <div class="history-tabs">
-                    <button class="history-tab active" onclick="switchHistory('24h', this)">24H</button>
-                    <button class="history-tab" onclick="switchHistory('1w', this)">1W</button>
-                    <button class="history-tab" onclick="switchHistory('all', this)">All</button>
-                </div>
-            </div>
-            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;">
-                <div class="history-legend">
-                    <span><span class="history-legend-dot" style="background:#7c5cfc"></span>24h Vol</span>
-                    <span><span class="history-legend-dot" style="background:#22c55e"></span>Liquidity</span>
-                    <span><span class="history-legend-dot" style="background:#06b6d4"></span>Est. Fees×10</span>
-                </div>
-                <span class="history-source" id="historySource">accumulating...</span>
-            </div>
-            <div class="chart-container" style="height:200px;">
-                <canvas id="historyChart"></canvas>
-            </div>
-        </div>
-
         <!-- Volume Chart -->
         <div class="chart-section">
             <div class="chart-header">
@@ -1636,6 +1617,7 @@ function switchHistory(range, btn) {
 }
 
 function renderHistoryChart() {
+    if (!document.getElementById('historyChart')) return;
     const pts = getActiveSnapshots();
     const usingServer = serverSnapshots.length >= 2;
     const sourceEl = document.getElementById('historySource');
@@ -1861,7 +1843,7 @@ function renderHero() {
     document.getElementById('heroCard').innerHTML = `
         <div class="hero-top">
             <div class="hero-icon">${tokenIcon(serverSnapshots.at(-1)?.image_url || tokenData.image_url, 'R')}</div>
-            <span class="hero-token-name">REDACTED Token</span>
+            <span class="hero-token-name">REDACTED<br><span style="font-size:0.75em;font-weight:400;color:var(--text-muted)">Liquidity Token</span></span>
             <span class="hero-updated">Updated ${new Date().toLocaleTimeString()}</span>
         </div>
         <div class="hero-grid">
@@ -1968,6 +1950,16 @@ function renderFlywheel() {
     // At current fee rate, estimated daily v2 buy pressure
     const v2BuyPresure = v2Price > 0 ? fees24h / v2Price : null;
 
+    // Volume activity dots: color + speed based on 24h volume
+    function volDot(vol) {
+        let color, speed, title;
+        if (vol >= 100000)      { color = '#22c55e'; speed = '0.7s'; title = 'High volume'; }
+        else if (vol >= 10000)  { color = '#06b6d4'; speed = '1.2s'; title = 'Active'; }
+        else if (vol >= 1000)   { color = '#f59e0b'; speed = '2s';   title = 'Low volume'; }
+        else                    { color = '#6b7280'; speed = '4s';   title = 'Inactive'; }
+        return `<span title="${title}" style="display:inline-block;width:7px;height:7px;border-radius:50%;background:${color};margin-left:5px;animation:volPulse ${speed} ease-in-out infinite;vertical-align:middle"></span>`;
+    }
+
     card.innerHTML = `
         <div class="flywheel-header">
             <span class="flywheel-title">Flywheel</span>
@@ -1979,7 +1971,7 @@ function renderFlywheel() {
                 <div class="flywheel-token-header">
                     <div class="flywheel-token-icon v1">${tokenIcon(serverSnapshots.at(-1)?.image_url || tokenData.image_url, 'R')}</div>
                     <div>
-                        <div class="flywheel-token-name">REDACTED <span class="flywheel-token-tag">liquidity</span></div>
+                        <div class="flywheel-token-name">REDACTED <span class="flywheel-token-tag">liquidity</span>${volDot(v1Vol24h)}</div>
                         <div style="font-size:8px;color:var(--text-muted);margin-top:2px">9a21gb7f…KgnM</div>
                     </div>
                 </div>
@@ -2011,7 +2003,7 @@ function renderFlywheel() {
                     <div class="flywheel-arrow-line"></div>
                     <div class="flywheel-arrow-head"></div>
                 </div>
-                <div class="flywheel-flow-label">buys fees</div>
+                <div class="flywheel-flow-label">buys REDACTED</div>
                 ${v2BuyPresure ? `<div style="font-size:9px;color:var(--cyan);text-align:center">${fmtNum(v2BuyPresure)}<br>tokens/day</div>` : ''}
             </div>
 
@@ -2020,7 +2012,7 @@ function renderFlywheel() {
                 <div class="flywheel-token-header">
                     <div class="flywheel-token-icon v2">${tokenIcon(v2Data.image_url, 'R')}</div>
                     <div>
-                        <div class="flywheel-token-name">REDACTED <span class="flywheel-token-tag">fees</span></div>
+                        <div class="flywheel-token-name">REDACTED <span class="flywheel-token-tag">fees</span>${volDot(v2Vol24h)}</div>
                         <div style="font-size:8px;color:var(--text-muted);margin-top:2px">9mtKd1…pump</div>
                     </div>
                 </div>
@@ -2074,7 +2066,7 @@ function renderFlywheel() {
                 <div class="flywheel-footer-value" style="color:var(--accent)">${fmt(fees7d)}</div>
             </div>
             <div class="flywheel-footer-stat">
-                <div class="flywheel-footer-label">1 liq =</div>
+                <div class="flywheel-footer-label">1 Liquidity Token =</div>
                 <div class="flywheel-footer-value" style="color:var(--text-secondary)">${ratioStr}</div>
             </div>
             <div class="flywheel-footer-stat">
@@ -2121,21 +2113,6 @@ function renderTokenSecurity() {
             <div class="security-item">
                 <div class="security-label">Supply</div>
                 <div class="security-value">${supplyUi}</div>
-            </div>
-            <div class="security-item">
-                <div class="security-label">Top 10 Concentration</div>
-                <div class="security-value" style="color:${top10Color}">${top10Pct != null ? top10Pct.toFixed(1) + '%' : '–'}</div>
-                ${top10Pct != null ? `
-                <div class="top-holders-bar">
-                    <div class="top-holders-fill" style="width:${Math.min(top10Pct,100)}%;background:${top10Color}"></div>
-                </div>` : ''}
-            </div>
-            <div class="security-item">
-                <div class="security-label">Authorities</div>
-                <div style="display:flex;flex-direction:column;gap:3px;margin-top:2px;">
-                    ${authBadge(td.mint_authority_revoked, 'Mint')}
-                    ${authBadge(td.freeze_authority_revoked, 'Freeze')}
-                </div>
             </div>
         </div>
     </div>`;
