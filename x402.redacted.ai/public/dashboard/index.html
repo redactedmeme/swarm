@@ -1963,7 +1963,7 @@ function renderFlywheel() {
         : rawRatio >= 1000 ? fmtNum(rawRatio) + ' fees'
         : rawRatio >= 1    ? rawRatio.toFixed(4) + ' fees'
         : (1 / rawRatio).toFixed(4) + ' liq';
-    const rateSource = orcaPrice ? 'Orca pool · live' : 'USD estimate';
+    const rateSource = orcaPrice ? 'DexScreener · live' : 'USD estimate';
 
     // At current fee rate, estimated daily v2 buy pressure
     const v2BuyPresure = v2Price > 0 ? fees24h / v2Price : null;

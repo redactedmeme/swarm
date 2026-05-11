@@ -17,7 +17,7 @@ HELIUS_RPC    = 'https://mainnet.helius-rpc.com/?api-key={key}'
 HELIUS_TXN    = 'https://api-mainnet.helius-rpc.com/v0/addresses/{addr}/transactions/?api-key={key}&type=SWAP&limit=30'
 
 V1V2_POOL     = '8Jd4KxLXhSqJx3wx7WRujfLZ7hmddVQkoM4qJqg4cPHo'
-ORCA_POOL_API = f'https://api.mainnet.orca.so/v1/whirlpool/{V1V2_POOL}'
+DEXSCREENER_PAIR = f'https://api.dexscreener.com/latest/dex/pairs/solana/{V1V2_POOL}'
 
 # Pools that are always included regardless of DexScreener ranking
 PINNED_POOLS  = [
@@ -260,19 +260,27 @@ def v2_loop():
 
 def fetch_v1v2_pool():
     try:
-        req = urllib.request.Request(ORCA_POOL_API, headers={'User-Agent': 'Mozilla/5.0'})
+        req = urllib.request.Request(DEXSCREENER_PAIR, headers={'User-Agent': 'Mozilla/5.0'})
         with urllib.request.urlopen(req, timeout=15) as resp:
             data = json.loads(resp.read())
 
+        # DexScreener returns either {pair: {...}} or {pairs: [...]}
+        p = data.get('pair') or (data.get('pairs') or [None])[0]
+        if not p:
+            return
+
         entry = {
             'ts':       int(time.time()),
-            'price':    float(data.get('price', 0)),          # v1 per v2
-            'tvl':      float(data.get('tvlUsdc', 0)),
-            'vol24h':   float(data.get('volume', {}).get('day', 0)),
-            'vol7d':    float(data.get('volume', {}).get('week', 0)),
-            'fee_rate': float(data.get('lpFeeRate', 0)),
-            'tick_spacing': data.get('tickSpacing'),
-            'liq_usd':  float(data.get('tvlUsdc', 0)),
+            'price':    float(p.get('priceNative') or 0),   # fees per liquidity (native ratio)
+            'price_usd': float(p.get('priceUsd') or 0),
+            'tvl':      float((p.get('liquidity') or {}).get('usd', 0)),
+            'vol24h':   float((p.get('volume') or {}).get('h24', 0)),
+            'vol7d':    float((p.get('volume') or {}).get('h24', 0)) * 7,  # est
+            'buys24h':  int((p.get('txns') or {}).get('h24', {}).get('buys', 0)),
+            'sells24h': int((p.get('txns') or {}).get('h24', {}).get('sells', 0)),
+            'fee_rate': None,  # not available from DexScreener pairs
+            'base_reserve':  float((p.get('liquidity') or {}).get('base', 0)),
+            'quote_reserve': float((p.get('liquidity') or {}).get('quote', 0)),
         }
 
         with v1v2_lock:
