@@ -59,18 +59,13 @@ async def _get_swap_tx(client: httpx.AsyncClient, quote: dict, wallet_pubkey: st
         return None
 
 
-def _inject_jito_tip(tx_b64: str, keypair, tip_lamports: int) -> bytes:
-    """
-    Deserialize a versioned transaction, append a SOL transfer to a random
-    Jito tip account, then sign and return raw bytes.
-    """
+async def _build_tip_tx(keypair, tip_lamports: int, rpc_url: str) -> bytes:
+    """Build a standalone tip-only transaction (sent as leg 3 of the bundle)."""
     from solders.transaction import VersionedTransaction      # type: ignore
     from solders.system_program import transfer, TransferParams  # type: ignore
     from solders.pubkey import Pubkey                          # type: ignore
-    from solders.message import to_bytes_versioned            # type: ignore
-
-    raw = base64.b64decode(tx_b64)
-    tx = VersionedTransaction.from_bytes(raw)
+    from solders.message import MessageV0                      # type: ignore
+    from solders.hash import Hash                              # type: ignore
 
     tip_acct = Pubkey.from_string(random.choice(config.JITO_TIP_ACCOUNTS))
     tip_ix = transfer(TransferParams(
@@ -79,20 +74,21 @@ def _inject_jito_tip(tx_b64: str, keypair, tip_lamports: int) -> bytes:
         lamports=tip_lamports,
     ))
 
-    # Re-build message with tip instruction appended
-    msg = tx.message
-    new_instructions = list(msg.instructions) + [tip_ix]
+    # Fetch a recent blockhash
+    async with httpx.AsyncClient() as client:
+        resp = await client.post(rpc_url, json={
+            'jsonrpc': '2.0', 'id': 1, 'method': 'getLatestBlockhash', 'params': []
+        }, timeout=10)
+        resp.raise_for_status()
+        blockhash_str = resp.json()['result']['value']['blockhash']
 
-    # Build a new VersionedTransaction — Jupiter uses v0 (MessageV0)
-    from solders.message import MessageV0   # type: ignore
-    new_msg = MessageV0(
-        header=msg.header,
-        account_keys=msg.account_keys,
-        recent_blockhash=msg.recent_blockhash,
-        instructions=new_instructions,
-        address_table_lookups=msg.address_table_lookups,
+    msg = MessageV0.try_compile(
+        payer=keypair.pubkey(),
+        instructions=[tip_ix],
+        address_lookup_table_accounts=[],
+        recent_blockhash=Hash.from_string(blockhash_str),
     )
-    signed = VersionedTransaction(new_msg, [keypair])
+    signed = VersionedTransaction(msg, [keypair])
     return bytes(signed)
 
 
@@ -181,17 +177,19 @@ async def execute_arb(opportunity: ArbOpportunity, keypair) -> TradeResult:
         )
 
     try:
-        # Tx1: buy with Jito tip injected
-        signed_buy  = _inject_jito_tip(buy_tx_b64,  keypair, opportunity.jito_tip_lamports)
-        # Tx2: sell (no tip needed — tip in Tx1 covers the bundle)
+        signed_buy  = _sign_tx(buy_tx_b64,  keypair)
         signed_sell = _sign_tx(sell_tx_b64, keypair)
+        # Standalone tip tx as 3rd leg in the Jito bundle
+        import os
+        rpc_url = config.HELIUS_RPC.format(key=os.environ.get('HELIUS_API_KEY', ''))
+        signed_tip  = await _build_tip_tx(keypair, opportunity.jito_tip_lamports, rpc_url)
     except Exception as e:
         return TradeResult(
             success=False, bundle_id=None, actual_profit_sol=None,
-            error=f'Transaction signing failed: {e}', opportunity=opportunity,
+            error=f'Transaction signing failed: {type(e).__name__}: {e}', opportunity=opportunity,
         )
 
-    bundle_id = await _submit_bundle([signed_buy, signed_sell])
+    bundle_id = await _submit_bundle([signed_buy, signed_sell, signed_tip])
     if not bundle_id:
         return TradeResult(
             success=False, bundle_id=None, actual_profit_sol=None,
