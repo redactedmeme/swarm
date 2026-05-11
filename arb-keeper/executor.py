@@ -1,70 +1,59 @@
 """
-executor.py — Jupiter swap transaction builder + Jito bundle submitter.
+executor.py — Raydium CPMM single-leg swap executor + Jito bundle submitter.
+
+Executes a RebalanceOrder as a single Raydium CPMM transaction submitted via
+Jito (MEV-protected) or regular RPC (USE_RPC_FALLBACK=true).
 
 Flow:
-1. POST to Jupiter /v6/swap to get a serialized versioned transaction for each leg
-2. Inject a Jito tip transfer instruction into the buy transaction
-3. Sign both transactions with the keeper keypair
-4. Submit as a 2-tx Jito bundle
-5. Poll for bundle confirmation
+1. Build signed VersionedTransaction for the single swap leg (SOL→TOKEN or TOKEN→SOL)
+2. Build standalone Jito tip transaction
+3. Submit as a 2-tx Jito bundle [swap, tip]
+4. Poll for confirmation
 """
 
 import base64
-import json
+import base58
 import logging
 import random
 import asyncio
+import os
 from dataclasses import dataclass
 from typing import Optional
 
 import httpx
 
 import config
-from detector import ArbOpportunity
+from detector import RebalanceOrder
 
 log = logging.getLogger(__name__)
+
+# Alias for backward compat (RECOVER_USDC path in main.py uses this)
+ArbOpportunity = RebalanceOrder
 
 
 @dataclass
 class TradeResult:
     success: bool
     bundle_id: Optional[str]
-    actual_profit_sol: Optional[float]   # None until confirmed on-chain
+    actual_profit_sol: Optional[float]
     error: Optional[str]
-    opportunity: ArbOpportunity
+    opportunity: RebalanceOrder
 
 
-async def _get_swap_tx(client: httpx.AsyncClient, quote: dict, wallet_pubkey: str) -> Optional[str]:
-    """Call Jupiter /v6/swap, return base64 serialized versioned transaction."""
-    payload = {
-        'quoteResponse':      quote,
-        'userPublicKey':      wallet_pubkey,
-        'wrapAndUnwrapSol':   True,
-        'dynamicComputeUnitLimit': True,
-        'prioritizationFeeLamports': 'auto',
-    }
-    try:
-        resp = await client.post(config.JUPITER_SWAP, json=payload, timeout=15)
-        resp.raise_for_status()
-        data = resp.json()
-        return data.get('swapTransaction')
-    except Exception as e:
-        log.error(f'Jupiter /swap failed: {e}')
-        return None
+def _rpc_url() -> str:
+    key = os.environ.get('HELIUS_API_KEY', config.HELIUS_KEY)
+    if key:
+        return config.HELIUS_RPC.format(key=key)
+    return 'https://api.mainnet-beta.solana.com'
 
 
-def _inject_jito_tip(tx_b64: str, keypair, tip_lamports: int) -> bytes:
-    """
-    Deserialize a versioned transaction, append a SOL transfer to a random
-    Jito tip account, then sign and return raw bytes.
-    """
+async def _build_tip_tx(keypair, tip_lamports: int, rpc_url: str) -> bytes:
+    """Build a standalone tip-only VersionedTransaction."""
     from solders.transaction import VersionedTransaction      # type: ignore
     from solders.system_program import transfer, TransferParams  # type: ignore
     from solders.pubkey import Pubkey                          # type: ignore
-    from solders.message import to_bytes_versioned            # type: ignore
-
-    raw = base64.b64decode(tx_b64)
-    tx = VersionedTransaction.from_bytes(raw)
+    from solders.message import MessageV0                      # type: ignore
+    from solders.hash import Hash                              # type: ignore
 
     tip_acct = Pubkey.from_string(random.choice(config.JITO_TIP_ACCOUNTS))
     tip_ix = transfer(TransferParams(
@@ -72,53 +61,48 @@ def _inject_jito_tip(tx_b64: str, keypair, tip_lamports: int) -> bytes:
         to_pubkey=tip_acct,
         lamports=tip_lamports,
     ))
-
-    # Re-build message with tip instruction appended
-    msg = tx.message
-    new_instructions = list(msg.instructions) + [tip_ix]
-
-    # Build a new VersionedTransaction — Jupiter uses v0 (MessageV0)
-    from solders.message import MessageV0   # type: ignore
-    new_msg = MessageV0(
-        header=msg.header,
-        account_keys=msg.account_keys,
-        recent_blockhash=msg.recent_blockhash,
-        instructions=new_instructions,
-        address_table_lookups=msg.address_table_lookups,
+    async with httpx.AsyncClient() as client:
+        resp = await client.post(rpc_url, json={
+            'jsonrpc': '2.0', 'id': 1, 'method': 'getLatestBlockhash', 'params': []
+        }, timeout=10)
+        resp.raise_for_status()
+        blockhash_str = resp.json()['result']['value']['blockhash']
+    msg = MessageV0.try_compile(
+        payer=keypair.pubkey(),
+        instructions=[tip_ix],
+        address_lookup_table_accounts=[],
+        recent_blockhash=Hash.from_string(blockhash_str),
     )
-    signed = VersionedTransaction(new_msg, [keypair])
-    return bytes(signed)
+    return bytes(VersionedTransaction(msg, [keypair]))
 
 
 def _sign_tx(tx_b64: str, keypair) -> bytes:
-    """Sign a Jupiter versioned transaction without modifying instructions."""
+    """Sign a Jupiter versioned transaction (used by RECOVER_USDC path)."""
     from solders.transaction import VersionedTransaction  # type: ignore
-
     raw = base64.b64decode(tx_b64)
     tx = VersionedTransaction.from_bytes(raw)
-    signed = VersionedTransaction(tx.message, [keypair])
-    return bytes(signed)
+    return bytes(VersionedTransaction(tx.message, [keypair]))
 
 
 async def _submit_bundle(signed_txns: list[bytes]) -> Optional[str]:
-    """Submit transactions as a Jito bundle. Returns bundle_id or None."""
-    encoded = [base64.b64encode(tx).decode() for tx in signed_txns]
-    payload = {
-        'jsonrpc': '2.0',
-        'id': 1,
-        'method': 'sendBundle',
-        'params': [encoded],
-    }
+    """Submit as a Jito bundle (base58-encoded). Returns bundle_id or None."""
+    encoded = [base58.b58encode(tx).decode() for tx in signed_txns]
+    payload = {'jsonrpc': '2.0', 'id': 1, 'method': 'sendBundle', 'params': [encoded]}
     try:
         async with httpx.AsyncClient() as client:
             resp = await client.post(config.JITO_URL, json=payload, timeout=15)
-            resp.raise_for_status()
+            if resp.status_code != 200:
+                log.error(f'Jito sendBundle HTTP {resp.status_code}: {resp.text[:500]}')
+                return None
             data = resp.json()
+            if 'error' in data:
+                log.error(f'Jito sendBundle error: {data["error"]}')
+                return None
             bundle_id = data.get('result')
             log.info(f'Jito bundle submitted: {bundle_id}')
             return bundle_id
     except Exception as e:
-        log.error(f'Jito bundle submission failed: {e}')
+        log.error(f'Jito bundle submission failed: {type(e).__name__}: {e}')
         return None
 
 
@@ -131,11 +115,8 @@ async def _poll_bundle(bundle_id: str, timeout: float = 30.0) -> bool:
             try:
                 resp = await client.get(url, timeout=5)
                 if resp.status_code == 200:
-                    data = resp.json()
-                    status = (data.get('result') or {}).get('value', {}).get('bundle_id', {})
-                    confirmation = data.get('result', {})
-                    # Jito returns confirmation_status when landed
-                    if 'confirmed' in str(confirmation).lower() or 'finalized' in str(confirmation).lower():
+                    text = resp.text.lower()
+                    if 'confirmed' in text or 'finalized' in text:
                         return True
             except Exception:
                 pass
@@ -143,39 +124,77 @@ async def _poll_bundle(bundle_id: str, timeout: float = 30.0) -> bool:
     return False
 
 
-async def execute_arb(opportunity: ArbOpportunity, keypair) -> TradeResult:
+async def execute_arb(opportunity: RebalanceOrder, keypair) -> TradeResult:
     """
-    Execute a two-leg arb as a Jito bundle:
-      Tx1 (buy):  SOL → TOKEN  + Jito tip
-      Tx2 (sell): TOKEN → SOL
+    Execute a single-leg rebalance swap via Raydium CPMM.
+    Submits as a Jito bundle [swap_tx, tip_tx] unless USE_RPC_FALLBACK=true.
     """
-    pubkey = str(keypair.pubkey())
+    from dex.swap_tx import build_sol_to_token_tx, build_token_to_sol_tx
+    from dex.raydium_cpmm import fetch_pool
 
-    async with httpx.AsyncClient() as client:
-        # Build both swap transactions in parallel
-        buy_tx_b64, sell_tx_b64 = await asyncio.gather(
-            _get_swap_tx(client, opportunity.buy_quote,  pubkey),
-            _get_swap_tx(client, opportunity.sell_quote, pubkey),
-        )
+    pubkey  = str(keypair.pubkey())
+    rpc_url = _rpc_url()
 
-    if not buy_tx_b64 or not sell_tx_b64:
-        return TradeResult(
-            success=False, bundle_id=None, actual_profit_sol=None,
-            error='Failed to build swap transactions', opportunity=opportunity,
-        )
-
+    # Refresh pool state right before building the tx to avoid stale reserves
     try:
-        # Tx1: buy with Jito tip injected
-        signed_buy  = _inject_jito_tip(buy_tx_b64,  keypair, opportunity.jito_tip_lamports)
-        # Tx2: sell (no tip needed — tip in Tx1 covers the bundle)
-        signed_sell = _sign_tx(sell_tx_b64, keypair)
+        pool = await fetch_pool(rpc_url, config.RAYDIUM_POOL_ID)
     except Exception as e:
         return TradeResult(
             success=False, bundle_id=None, actual_profit_sol=None,
-            error=f'Transaction signing failed: {e}', opportunity=opportunity,
+            error=f'Pool refresh failed: {e}', opportunity=opportunity,
         )
 
-    bundle_id = await _submit_bundle([signed_buy, signed_sell])
+    try:
+        if opportunity.is_buy_token:
+            log.info(f'Building BUY tx: {opportunity.sol_lamports} lamports SOL → TOKEN')
+            swap_tx, expected_out = await build_sol_to_token_tx(
+                rpc_url, keypair, pool, opportunity.sol_lamports,
+                slippage_bps=config.SLIPPAGE_BPS,
+            )
+            log.info(f'Expected token out: {expected_out / 10**config.TOKEN_DECIMALS:.4f}')
+        else:
+            log.info(f'Building SELL tx: {opportunity.token_amount / 10**config.TOKEN_DECIMALS:.4f} TOKEN → SOL')
+            swap_tx, expected_out = await build_token_to_sol_tx(
+                rpc_url, keypair, pool, opportunity.token_amount,
+                slippage_bps=config.SLIPPAGE_BPS,
+            )
+            log.info(f'Expected SOL out: {expected_out / 1e9:.6f} SOL')
+    except Exception as e:
+        return TradeResult(
+            success=False, bundle_id=None, actual_profit_sol=None,
+            error=f'Swap tx build failed: {type(e).__name__}: {e}', opportunity=opportunity,
+        )
+
+    use_rpc = os.environ.get('USE_RPC_FALLBACK', '').lower() == 'true'
+    if use_rpc:
+        async with httpx.AsyncClient() as client:
+            r = await client.post(rpc_url, json={
+                'jsonrpc': '2.0', 'id': 1, 'method': 'sendTransaction',
+                'params': [base58.b58encode(swap_tx).decode(),
+                           {'encoding': 'base58', 'skipPreflight': False, 'maxRetries': 3}]
+            }, timeout=15)
+            data = r.json()
+            if 'error' in data:
+                return TradeResult(
+                    success=False, bundle_id=None, actual_profit_sol=None,
+                    error=f'sendTransaction failed: {data["error"]}', opportunity=opportunity,
+                )
+            sig = data.get('result', '')
+            log.info(f'Swap tx sent: {sig}')
+            return TradeResult(
+                success=True, bundle_id=sig, actual_profit_sol=None,
+                error=None, opportunity=opportunity,
+            )
+
+    try:
+        tip_tx = await _build_tip_tx(keypair, config.JITO_TIP_LAMPORTS, rpc_url)
+    except Exception as e:
+        return TradeResult(
+            success=False, bundle_id=None, actual_profit_sol=None,
+            error=f'Tip tx build failed: {e}', opportunity=opportunity,
+        )
+
+    bundle_id = await _submit_bundle([swap_tx, tip_tx])
     if not bundle_id:
         return TradeResult(
             success=False, bundle_id=None, actual_profit_sol=None,
@@ -184,13 +203,10 @@ async def execute_arb(opportunity: ArbOpportunity, keypair) -> TradeResult:
 
     landed = await _poll_bundle(bundle_id, timeout=30.0)
     if landed:
-        log.info(f'Bundle {bundle_id} landed ✓  est net +{opportunity.net_profit_sol*1000:.4f} mSOL')
+        log.info(f'Bundle {bundle_id} landed ✓')
         return TradeResult(
-            success=True,
-            bundle_id=bundle_id,
-            actual_profit_sol=opportunity.net_profit_sol,  # confirmed on-chain; actual verified separately
-            error=None,
-            opportunity=opportunity,
+            success=True, bundle_id=bundle_id, actual_profit_sol=None,
+            error=None, opportunity=opportunity,
         )
     else:
         log.warning(f'Bundle {bundle_id} did not confirm within 30s (may still land)')

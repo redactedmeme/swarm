@@ -1,16 +1,11 @@
 """
-logger.py — Redis SwarmInbox push for arb trade events.
-
-Pushes trade results and opportunity detections to:
-  swarm:pending:arb-keeper  — per-agent inbox (picked up by hermes/dashboard)
-  swarm:all                 — global broadcast list
+logger.py — Redis SwarmInbox push for rebalance trade events.
 """
 
 import json
 import logging
 import time
 import uuid
-from typing import Optional
 
 import config
 
@@ -37,13 +32,8 @@ def _push(msg_type: str, payload: dict):
     r = _get_redis()
     if not r:
         return
-    msg = {
-        'id':        str(uuid.uuid4()),
-        'type':      msg_type,
-        'from':      'arb-keeper',
-        'ts':        int(time.time()),
-        **payload,
-    }
+    msg = {'id': str(uuid.uuid4()), 'type': msg_type, 'from': 'arb-keeper',
+           'ts': int(time.time()), **payload}
     serialized = json.dumps(msg)
     try:
         pipe = r.pipeline()
@@ -56,33 +46,31 @@ def _push(msg_type: str, payload: dict):
 
 
 def log_opportunity(opp) -> None:
-    """Log a detected arb opportunity (detect-only mode or pre-execution)."""
-    _push('arb_opportunity', {
-        'net_profit_sol':      round(opp.net_profit_sol, 8),
-        'gross_profit_sol':    round(opp.gross_profit_lamports / 1e9, 8),
-        'buy_sol':             round(opp.buy_sol_lamports / 1e9, 6),
-        'expected_tokens':     opp.expected_tokens,
-        'buy_route':           opp.buy_route_summary,
-        'sell_route':          opp.sell_route_summary,
-        'executed':            False,
+    _push('rebalance_signal', {
+        'is_buy_token':    opp.is_buy_token,
+        'sol_amount':      round(opp.sol_amount, 6),
+        'token_amount':    opp.token_amount,
+        'current_ratio':   round(opp.current_ratio, 4),
+        'target_ratio':    opp.target_ratio,
+        'deviation_pct':   round(opp.deviation * 100, 2),
+        'price_sol_per_token': round(opp.price_sol_per_token, 8),
+        'total_value_sol': round(opp.total_value_sol, 6),
+        'executed':        False,
     })
 
 
 def log_trade(result) -> None:
-    """Log a completed trade attempt (success or failure)."""
     opp = result.opportunity
-    _push('arb_trade', {
-        'success':          result.success,
-        'bundle_id':        result.bundle_id,
-        'actual_profit_sol': result.actual_profit_sol,
-        'est_profit_sol':   round(opp.net_profit_sol, 8),
-        'buy_sol':          round(opp.buy_sol_lamports / 1e9, 6),
-        'buy_route':        opp.buy_route_summary,
-        'sell_route':       opp.sell_route_summary,
-        'error':            result.error,
+    _push('rebalance_trade', {
+        'success':         result.success,
+        'bundle_id':       result.bundle_id,
+        'is_buy_token':    opp.is_buy_token,
+        'sol_amount':      round(opp.sol_amount, 6),
+        'token_amount':    opp.token_amount,
+        'deviation_pct':   round(opp.deviation * 100, 2),
+        'error':           result.error,
     })
 
 
 def log_circuit_status(status: dict) -> None:
-    """Periodic heartbeat with circuit breaker state."""
     _push('arb_status', status)
