@@ -1,9 +1,9 @@
-FROM python:3.11-slim
+FROM python:3.11
 WORKDIR /app
 
 # solders requires Rust at build time for any source installs — use pre-built wheel
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    gcc libssl-dev pkg-config ca-certificates dnsutils libc6 \
+    gcc libssl-dev pkg-config \
     && rm -rf /var/lib/apt/lists/*
 
 COPY requirements.txt .
