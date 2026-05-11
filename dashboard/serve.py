@@ -16,8 +16,10 @@ DEXSCREENER_V2 = f'https://api.dexscreener.com/latest/dex/tokens/{V2_TOKEN}'
 HELIUS_RPC    = 'https://mainnet.helius-rpc.com/?api-key={key}'
 HELIUS_TXN    = 'https://api-mainnet.helius-rpc.com/v0/addresses/{addr}/transactions/?api-key={key}&type=SWAP&limit=30'
 
-V1V2_POOL     = '8Jd4KxLXhSqJx3wx7WRujfLZ7hmddVQkoM4qJqg4cPHo'
-DEXSCREENER_PAIR = f'https://api.dexscreener.com/latest/dex/pairs/solana/{V1V2_POOL}'
+V1V2_POOL          = '8Jd4KxLXhSqJx3wx7WRujfLZ7hmddVQkoM4qJqg4cPHo'
+METEORA_DLMM_POOL  = '7YhtV5K7Cg1GTz2GAfzrwBpgX6haY6sHodsFrSpif1eh'
+DEXSCREENER_PAIR   = f'https://api.dexscreener.com/latest/dex/pairs/solana/{V1V2_POOL}'
+DEXSCREENER_METEORA = f'https://api.dexscreener.com/latest/dex/pairs/solana/{METEORA_DLMM_POOL}'
 
 # Pools that are always included regardless of DexScreener ranking
 PINNED_POOLS  = [
@@ -50,6 +52,9 @@ v2_lock        = threading.Lock()
 
 v1v2_pool      = {}   # Orca Whirlpool data for the v1/v2 pair
 v1v2_lock      = threading.Lock()
+
+meteora_pool   = {}   # Meteora DLMM v2/v1 pair
+meteora_lock   = threading.Lock()
 
 last_sigs      = {}   # pool_addr → newest sig seen (for incremental fetches)
 
@@ -297,6 +302,43 @@ def v1v2_loop():
         time.sleep(SNAPSHOT_INTERVAL)
         fetch_v1v2_pool()
 
+# ── Meteora DLMM v2/v1 pool ───────────────────────────────────────────────────
+
+def fetch_meteora_pool():
+    try:
+        req = urllib.request.Request(DEXSCREENER_METEORA, headers={'User-Agent': 'Mozilla/5.0'})
+        with urllib.request.urlopen(req, timeout=15) as resp:
+            data = json.loads(resp.read())
+
+        p = data.get('pair') or (data.get('pairs') or [None])[0]
+        if not p:
+            return
+
+        entry = {
+            'ts':        int(time.time()),
+            'price':     float(p.get('priceNative') or 0),   # v1 per v2 (native)
+            'price_usd': float(p.get('priceUsd') or 0),
+            'tvl':       float((p.get('liquidity') or {}).get('usd', 0)),
+            'vol24h':    float((p.get('volume') or {}).get('h24', 0)),
+            'buys24h':   int((p.get('txns') or {}).get('h24', {}).get('buys', 0)),
+            'sells24h':  int((p.get('txns') or {}).get('h24', {}).get('sells', 0)),
+            'fee_rate':  0.002,  # Meteora DLMM 0.20% fee tier (manual override)
+        }
+
+        with meteora_lock:
+            meteora_pool.clear()
+            meteora_pool.update(entry)
+
+        print(f'[meteora pool] price={entry["price"]:.6f} tvl=${entry["tvl"]:.0f} vol24h=${entry["vol24h"]:.0f}')
+    except Exception as e:
+        print(f'[meteora pool error] {e}')
+
+def meteora_loop():
+    fetch_meteora_pool()
+    while True:
+        time.sleep(SNAPSHOT_INTERVAL)
+        fetch_meteora_pool()
+
 # ── Helius trade fetch ────────────────────────────────────────────────────────
 
 def fetch_trades_for_pool(pool_addr, pool_label, dex):
@@ -454,6 +496,12 @@ class Handler(SimpleHTTPRequestHandler):
             self._json(body)
             return
 
+        if self.path == '/api/meteorapool':
+            with meteora_lock:
+                body = json.dumps(meteora_pool).encode()
+            self._json(body)
+            return
+
         if self.path in ('/', ''):
             self.path = '/index.html'
         super().do_GET()
@@ -472,7 +520,7 @@ class Handler(SimpleHTTPRequestHandler):
         super().end_headers()
 
     def log_message(self, fmt, *args):
-        if args and str(args[0]).startswith(('GET /api/snapshots', 'GET /api/trades', 'GET /api/token', 'GET /api/v2', 'GET /api/v1v2pool')):
+        if args and str(args[0]).startswith(('GET /api/snapshots', 'GET /api/trades', 'GET /api/token', 'GET /api/v2', 'GET /api/v1v2pool', 'GET /api/meteorapool')):
             return
         super().log_message(fmt, *args)
 
@@ -485,6 +533,7 @@ if __name__ == '__main__':
     threading.Thread(target=token_info_loop,  daemon=True).start()
     threading.Thread(target=v2_loop,          daemon=True).start()
     threading.Thread(target=v1v2_loop,        daemon=True).start()
+    threading.Thread(target=meteora_loop,     daemon=True).start()
 
     print(f'Dashboard on port {port} | snapshots every {SNAPSHOT_INTERVAL//60}m | '
           f'trades every {TRADES_INTERVAL}s | helius={"✓" if HELIUS_KEY else "✗ (set HELIUS_API_KEY)"}')
