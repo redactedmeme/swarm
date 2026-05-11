@@ -6,7 +6,8 @@ if the expected net profit clears the minimum threshold after Jito tip.
 """
 
 import logging
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+import time
 from typing import Optional
 
 import config
@@ -35,6 +36,7 @@ class ArbOpportunity:
     # Route info for logging
     buy_route_summary: str
     sell_route_summary: str
+    snapshot_at: float = field(default_factory=time.monotonic)  # quote capture time
 
     def describe(self) -> str:
         return (
@@ -94,7 +96,11 @@ def find_opportunity(
 
     # Estimate gross profit at trade size
     gross_est_lamports = int(gross_probe * scale)
-    net_profit_sol = (gross_est_lamports - config.JITO_TIP_LAMPORTS) / config.SOL_LAMPORTS
+
+    # Dynamic tip: 40% of gross, floored at config minimum.
+    # More competitive on large spreads; cheaper on thin ones.
+    dynamic_tip = max(config.JITO_TIP_LAMPORTS, int(gross_est_lamports * 0.40))
+    net_profit_sol = (gross_est_lamports - dynamic_tip) / config.SOL_LAMPORTS
 
     if net_profit_sol < config.MIN_PROFIT_SOL:
         log.debug(
@@ -115,10 +121,11 @@ def find_opportunity(
         expected_sol_lamports=expected_sol_back,
         sell_quote=snapshot.sell_quote,
         gross_profit_lamports=gross_probe,
-        jito_tip_lamports=config.JITO_TIP_LAMPORTS,
+        jito_tip_lamports=dynamic_tip,
         net_profit_sol=net_profit_sol,
         buy_route_summary=_route_summary(snapshot.buy_quote),
         sell_route_summary=_route_summary(snapshot.sell_quote),
+        snapshot_at=snapshot.captured_at,
     )
 
     log.info(f'Opportunity found: {opp.describe()}')

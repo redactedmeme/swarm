@@ -14,6 +14,7 @@ import json
 import logging
 import random
 import asyncio
+import time
 from dataclasses import dataclass
 from typing import Optional
 
@@ -150,6 +151,16 @@ async def execute_arb(opportunity: ArbOpportunity, keypair) -> TradeResult:
       Tx2 (sell): TOKEN → SOL
     """
     pubkey = str(keypair.pubkey())
+
+    # Staleness guard: abort if quote is >800ms old before we even build txns.
+    # At that age the spread may have closed; landing at a stale price is a loss.
+    quote_age_ms = (time.monotonic() - opportunity.snapshot_at) * 1000
+    if quote_age_ms > 800:
+        log.warning(f'Quote stale ({quote_age_ms:.0f}ms) — skipping execution')
+        return TradeResult(
+            success=False, bundle_id=None, actual_profit_sol=None,
+            error=f'Quote stale: {quote_age_ms:.0f}ms', opportunity=opportunity,
+        )
 
     async with httpx.AsyncClient() as client:
         # Build both swap transactions in parallel

@@ -8,7 +8,8 @@ Jupiter aggregates all 30+ pools automatically.
 
 import asyncio
 import logging
-from dataclasses import dataclass
+import time
+from dataclasses import dataclass, field
 from typing import Optional
 
 import httpx
@@ -33,6 +34,7 @@ class PriceSnapshot:
     # Derived
     probe_sol_lamports: int    # what we put in on buy side
     probe_tokens: int          # what we put in on sell side
+    captured_at: float = field(default_factory=time.monotonic)  # for staleness check
 
     @property
     def buy_price_sol_per_token(self) -> float:
