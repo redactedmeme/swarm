@@ -94,6 +94,44 @@ async def run():
             # ── Detect opportunity ───────────────────────────────────────────
             opp = find_opportunity(snapshot, sol_balance)
 
+            # ── RECOVER_USDC: convert any USDC in wallet back to SOL via Jupiter ──
+            if config.EXECUTE_TRADES and trades_run == 0 and __import__('os').environ.get('RECOVER_USDC', '').lower() == 'true':
+                import os, httpx, base58
+                from price_feed import _get_quote
+                from executor import _sign_tx
+                rpc_url = config.HELIUS_RPC.format(key=os.environ.get('HELIUS_API_KEY', ''))
+                USDC = 'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v'
+                async with httpx.AsyncClient() as c:
+                    # Read USDC balance
+                    r = await c.post(rpc_url, json={'jsonrpc':'2.0','id':1,'method':'getTokenAccountsByOwner','params':[pubkey,{'mint':USDC},{'encoding':'jsonParsed'}]}, timeout=10)
+                    accs = r.json()['result']['value']
+                    if not accs:
+                        log.warning('RECOVER_USDC: no USDC account found')
+                        trades_run += 1
+                        continue
+                    amount = int(accs[0]['account']['data']['parsed']['info']['tokenAmount']['amount'])
+                    log.warning(f'RECOVER_USDC: selling {amount} USDC lamports')
+                    quote = await _get_quote(c, USDC, config.SOL_MINT, amount, slippage_bps=500)
+                    if not quote:
+                        log.error('RECOVER_USDC: quote failed')
+                        trades_run += 1
+                        continue
+                    sr = await c.post(config.JUPITER_SWAP, json={
+                        'quoteResponse': quote, 'userPublicKey': pubkey,
+                        'wrapAndUnwrapSol': True, 'dynamicComputeUnitLimit': True,
+                        'prioritizationFeeLamports': 0,
+                    }, timeout=15)
+                    swap_b64 = sr.json().get('swapTransaction')
+                    signed = _sign_tx(swap_b64, keypair)
+                    tr = await c.post(rpc_url, json={
+                        'jsonrpc':'2.0','id':1,'method':'sendTransaction',
+                        'params':[base58.b58encode(signed).decode(),{'encoding':'base58','skipPreflight':False,'maxRetries':3}]
+                    }, timeout=15)
+                    log.warning(f'RECOVER_USDC sendTx: {tr.text[:300]}')
+                trades_run += 1
+                await asyncio.sleep(config.POLL_INTERVAL)
+                continue
+
             # ── TIP_ONLY_TEST: try both regular RPC send and Jito bundle ──
             if config.EXECUTE_TRADES and trades_run == 0 and __import__('os').environ.get('TIP_ONLY_TEST', '').lower() == 'true':
                 import os, base64, base58, httpx
