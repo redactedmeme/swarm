@@ -3,7 +3,7 @@ WORKDIR /app
 
 # solders requires Rust at build time for any source installs — use pre-built wheel
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    gcc libssl-dev pkg-config \
+    gcc libssl-dev pkg-config ca-certificates dnsutils libc6 \
     && rm -rf /var/lib/apt/lists/*
 
 COPY requirements.txt .
