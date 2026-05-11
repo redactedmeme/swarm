@@ -103,8 +103,9 @@ def _sign_tx(tx_b64: str, keypair) -> bytes:
 
 
 async def _submit_bundle(signed_txns: list[bytes]) -> Optional[str]:
-    """Submit transactions as a Jito bundle. Returns bundle_id or None."""
-    encoded = [base64.b64encode(tx).decode() for tx in signed_txns]
+    """Submit transactions as a Jito bundle (base58-encoded). Returns bundle_id or None."""
+    import base58
+    encoded = [base58.b58encode(tx).decode() for tx in signed_txns]
     payload = {
         'jsonrpc': '2.0',
         'id': 1,
@@ -114,13 +115,18 @@ async def _submit_bundle(signed_txns: list[bytes]) -> Optional[str]:
     try:
         async with httpx.AsyncClient() as client:
             resp = await client.post(config.JITO_URL, json=payload, timeout=15)
-            resp.raise_for_status()
+            if resp.status_code != 200:
+                log.error(f'Jito sendBundle HTTP {resp.status_code}: {resp.text[:500]}')
+                return None
             data = resp.json()
+            if 'error' in data:
+                log.error(f'Jito sendBundle error: {data["error"]}')
+                return None
             bundle_id = data.get('result')
             log.info(f'Jito bundle submitted: {bundle_id}')
             return bundle_id
     except Exception as e:
-        log.error(f'Jito bundle submission failed: {e}')
+        log.error(f'Jito bundle submission failed: {type(e).__name__}: {e}')
         return None
 
 
