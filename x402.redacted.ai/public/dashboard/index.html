@@ -1410,6 +1410,7 @@ let tradesCache = [];      // real Helius swap events from /api/trades
 let helisAvailable = null; // null=unknown, true/false after first fetch
 let tokenData = {};        // Helius token enrichment from /api/token
 let v2Data = {};           // v2 token market data from /api/v2
+let v1v2PoolData = {};     // Orca Whirlpool data for the v1/v2 pair
 
 document.getElementById('tokenAddr').addEventListener('click', () => {
     navigator.clipboard.writeText(TOKEN);
@@ -1778,6 +1779,15 @@ async function fetchV2Data() {
     } catch (_) {}
 }
 
+async function fetchV1V2Pool() {
+    try {
+        const res = await fetch('/api/v1v2pool');
+        if (!res.ok) return;
+        const data = await res.json();
+        if (data && Object.keys(data).length > 0) v1v2PoolData = data;
+    } catch (_) {}
+}
+
 // ── Main fetch ────────────────────────────────────────────────────────────────
 
 async function fetchData() {
@@ -1794,7 +1804,7 @@ async function fetchData() {
         buildActivityEvents();
         savePrevPoolMap();
         pushClientSnapshot();
-        await Promise.all([fetchServerSnapshots(), fetchTrades(), fetchTokenData(), fetchV2Data()]);
+        await Promise.all([fetchServerSnapshots(), fetchTrades(), fetchTokenData(), fetchV2Data(), fetchV1V2Pool()]);
         render();
         document.getElementById('lastUpdated').textContent = 'Updated ' + new Date().toLocaleTimeString();
     } catch (err) {
@@ -1943,12 +1953,14 @@ function renderFlywheel() {
     const v1PriceStr = v1Price ? '$' + v1Price.toFixed(v1Price < 0.01 ? 8 : 4) : '--';
     const v2PriceStr = v2Price ? '$' + v2Price.toFixed(v2Price < 0.01 ? 8 : 4) : '--';
 
-    // Ratio: how many v2 does 1 v1 buy
-    const rawRatio = v2Price > 0 && v1Price > 0 ? v1Price / v2Price : null;
-    const ratioStr = rawRatio == null ? '--'
-        : rawRatio >= 1000 ? fmtNum(rawRatio) + ' v2'
-        : rawRatio >= 1    ? rawRatio.toFixed(2) + ' v2'
-        : (1 / rawRatio).toFixed(2) + ' v1';
+    // Exchange rate: prefer on-chain Orca pool price, fallback to USD ratio
+    const orcaPrice = v1v2PoolData?.price || null; // v1 per v2 (from Orca)
+    const rawRatio  = orcaPrice ?? (v2Price > 0 && v1Price > 0 ? v1Price / v2Price : null);
+    const ratioStr  = rawRatio == null ? '--'
+        : rawRatio >= 1000 ? fmtNum(rawRatio) + ' fees'
+        : rawRatio >= 1    ? rawRatio.toFixed(4) + ' fees'
+        : (1 / rawRatio).toFixed(4) + ' liq';
+    const rateSource = orcaPrice ? 'Orca pool · live' : 'USD estimate';
 
     // At current fee rate, estimated daily v2 buy pressure
     const v2BuyPresure = v2Price > 0 ? fees24h / v2Price : null;
@@ -1959,13 +1971,13 @@ function renderFlywheel() {
             <div class="flywheel-pulse"></div>
         </div>
         <div class="flywheel-body">
-            <!-- v1 -->
+            <!-- liquidity token -->
             <div class="flywheel-token">
                 <div class="flywheel-token-header">
                     <div class="flywheel-token-icon v1">R</div>
                     <div>
-                        <div class="flywheel-token-name">REDACTED</div>
-                        <span class="flywheel-token-tag">liquidity</span>
+                        <div class="flywheel-token-name">REDACTED <span class="flywheel-token-tag">liquidity</span></div>
+                        <div style="font-size:8px;color:var(--text-muted);margin-top:2px">9a21gb7f…KgnM</div>
                     </div>
                 </div>
                 <div class="flywheel-stat">
@@ -1996,17 +2008,17 @@ function renderFlywheel() {
                     <div class="flywheel-arrow-line"></div>
                     <div class="flywheel-arrow-head"></div>
                 </div>
-                <div class="flywheel-flow-label">buys v2</div>
-                ${v2BuyPresure ? `<div style="font-size:9px;color:var(--cyan);text-align:center">${fmtNum(v2BuyPresure)}<br>v2/day</div>` : ''}
+                <div class="flywheel-flow-label">buys fees</div>
+                ${v2BuyPresure ? `<div style="font-size:9px;color:var(--cyan);text-align:center">${fmtNum(v2BuyPresure)}<br>tokens/day</div>` : ''}
             </div>
 
-            <!-- v2 -->
+            <!-- fees token -->
             <div class="flywheel-token">
                 <div class="flywheel-token-header">
-                    <div class="flywheel-token-icon v2">V2</div>
+                    <div class="flywheel-token-icon v2">R</div>
                     <div>
-                        <div class="flywheel-token-name">REDACTED</div>
-                        <span class="flywheel-token-tag">fee capture</span>
+                        <div class="flywheel-token-name">REDACTED <span class="flywheel-token-tag">fees</span></div>
+                        <div style="font-size:8px;color:var(--text-muted);margin-top:2px">9mtKd1…pump</div>
                     </div>
                 </div>
                 <div class="flywheel-stat">
@@ -2027,17 +2039,43 @@ function renderFlywheel() {
                 </div>
             </div>
         </div>
+
+        <!-- v1/v2 pool row -->
+        ${v1v2PoolData?.tvl ? `
+        <div style="margin-top:12px;padding:10px 12px;background:rgba(255,255,255,0.02);border:1px solid var(--border);border-radius:8px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;">
+            <div style="font-size:9px;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.6px">Orca Pool · liq/fees pair</div>
+            <div style="display:flex;gap:18px;">
+                <div style="text-align:center">
+                    <div style="font-size:9px;color:var(--text-muted)">TVL</div>
+                    <div style="font-size:11px;font-weight:600">${fmt(v1v2PoolData.tvl)}</div>
+                </div>
+                <div style="text-align:center">
+                    <div style="font-size:9px;color:var(--text-muted)">Vol 24h</div>
+                    <div style="font-size:11px;font-weight:600">${fmt(v1v2PoolData.vol24h)}</div>
+                </div>
+                <div style="text-align:center">
+                    <div style="font-size:9px;color:var(--text-muted)">Fee</div>
+                    <div style="font-size:11px;font-weight:600">${v1v2PoolData.fee_rate ? (v1v2PoolData.fee_rate * 100).toFixed(2) + '%' : '–'}</div>
+                </div>
+                <div style="text-align:center">
+                    <div style="font-size:9px;color:var(--text-muted)">Rate</div>
+                    <div style="font-size:11px;font-weight:600;color:var(--cyan)">${ratioStr}</div>
+                </div>
+            </div>
+            <div style="font-size:8px;color:var(--text-muted)">${rateSource}</div>
+        </div>` : ''}
+
         <div class="flywheel-footer">
             <div class="flywheel-footer-stat">
                 <div class="flywheel-footer-label">7d Fee Flow</div>
                 <div class="flywheel-footer-value" style="color:var(--accent)">${fmt(fees7d)}</div>
             </div>
             <div class="flywheel-footer-stat">
-                <div class="flywheel-footer-label">Exchange Rate</div>
-                <div class="flywheel-footer-value" style="color:var(--text-secondary)">1 v1 = ${ratioStr}</div>
+                <div class="flywheel-footer-label">1 liq =</div>
+                <div class="flywheel-footer-value" style="color:var(--text-secondary)">${ratioStr}</div>
             </div>
             <div class="flywheel-footer-stat">
-                <div class="flywheel-footer-label">v2 1h Change</div>
+                <div class="flywheel-footer-label">fees 1h</div>
                 <div class="flywheel-footer-value ${pctClass(v2Ch1)}">${fmtPct(v2Ch1)}</div>
             </div>
         </div>

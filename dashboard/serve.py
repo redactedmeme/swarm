@@ -16,9 +16,12 @@ DEXSCREENER_V2 = f'https://api.dexscreener.com/latest/dex/tokens/{V2_TOKEN}'
 HELIUS_RPC    = 'https://mainnet.helius-rpc.com/?api-key={key}'
 HELIUS_TXN    = 'https://api-mainnet.helius-rpc.com/v0/addresses/{addr}/transactions/?api-key={key}&type=SWAP&limit=30'
 
+V1V2_POOL     = '8Jd4KxLXhSqJx3wx7WRujfLZ7hmddVQkoM4qJqg4cPHo'
+ORCA_POOL_API = f'https://api.mainnet.orca.so/v1/whirlpool/{V1V2_POOL}'
+
 # Pools that are always included regardless of DexScreener ranking
 PINNED_POOLS  = [
-    {'addr': '8Jd4KxLXhSqJx3wx7WRujfLZ7hmddVQkoM4qJqg4cPHo', 'label': 'REDACTED/? (v1)', 'dex': 'raydium'},
+    {'addr': V1V2_POOL, 'label': 'REDACTED (liquidity)/REDACTED (fees)', 'dex': 'orca'},
 ]
 
 SNAPSHOT_INTERVAL   = 1800   # 30 min
@@ -44,6 +47,9 @@ token_info_lock = threading.Lock()
 
 v2_snapshot    = {}   # latest v2 token market data
 v2_lock        = threading.Lock()
+
+v1v2_pool      = {}   # Orca Whirlpool data for the v1/v2 pair
+v1v2_lock      = threading.Lock()
 
 last_sigs      = {}   # pool_addr → newest sig seen (for incremental fetches)
 
@@ -243,6 +249,39 @@ def v2_loop():
         time.sleep(SNAPSHOT_INTERVAL)
         fetch_v2_data()
 
+# ── Orca v1/v2 pool ───────────────────────────────────────────────────────────
+
+def fetch_v1v2_pool():
+    try:
+        req = urllib.request.Request(ORCA_POOL_API, headers={'User-Agent': 'Mozilla/5.0'})
+        with urllib.request.urlopen(req, timeout=15) as resp:
+            data = json.loads(resp.read())
+
+        entry = {
+            'ts':       int(time.time()),
+            'price':    float(data.get('price', 0)),          # v1 per v2
+            'tvl':      float(data.get('tvlUsdc', 0)),
+            'vol24h':   float(data.get('volume', {}).get('day', 0)),
+            'vol7d':    float(data.get('volume', {}).get('week', 0)),
+            'fee_rate': float(data.get('lpFeeRate', 0)),
+            'tick_spacing': data.get('tickSpacing'),
+            'liq_usd':  float(data.get('tvlUsdc', 0)),
+        }
+
+        with v1v2_lock:
+            v1v2_pool.clear()
+            v1v2_pool.update(entry)
+
+        print(f'[v1v2 pool] price={entry["price"]:.6f} tvl=${entry["tvl"]:.0f} vol24h=${entry["vol24h"]:.0f}')
+    except Exception as e:
+        print(f'[v1v2 pool error] {e}')
+
+def v1v2_loop():
+    fetch_v1v2_pool()
+    while True:
+        time.sleep(SNAPSHOT_INTERVAL)
+        fetch_v1v2_pool()
+
 # ── Helius trade fetch ────────────────────────────────────────────────────────
 
 def fetch_trades_for_pool(pool_addr, pool_label, dex):
@@ -394,6 +433,12 @@ class Handler(SimpleHTTPRequestHandler):
             self._json(body)
             return
 
+        if self.path == '/api/v1v2pool':
+            with v1v2_lock:
+                body = json.dumps(v1v2_pool).encode()
+            self._json(body)
+            return
+
         if self.path in ('/', ''):
             self.path = '/index.html'
         super().do_GET()
@@ -412,7 +457,7 @@ class Handler(SimpleHTTPRequestHandler):
         super().end_headers()
 
     def log_message(self, fmt, *args):
-        if args and str(args[0]).startswith(('GET /api/snapshots', 'GET /api/trades', 'GET /api/token', 'GET /api/v2')):
+        if args and str(args[0]).startswith(('GET /api/snapshots', 'GET /api/trades', 'GET /api/token', 'GET /api/v2', 'GET /api/v1v2pool')):
             return
         super().log_message(fmt, *args)
 
@@ -424,6 +469,7 @@ if __name__ == '__main__':
     threading.Thread(target=trades_loop,      daemon=True).start()
     threading.Thread(target=token_info_loop,  daemon=True).start()
     threading.Thread(target=v2_loop,          daemon=True).start()
+    threading.Thread(target=v1v2_loop,        daemon=True).start()
 
     print(f'Dashboard on port {port} | snapshots every {SNAPSHOT_INTERVAL//60}m | '
           f'trades every {TRADES_INTERVAL}s | helius={"✓" if HELIUS_KEY else "✗ (set HELIUS_API_KEY)"}')
