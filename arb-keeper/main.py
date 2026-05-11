@@ -94,6 +94,19 @@ async def run():
             # ── Detect opportunity ───────────────────────────────────────────
             opp = find_opportunity(snapshot, sol_balance)
 
+            # ── TIP_ONLY_TEST: send a single tip-tx bundle to verify Jito works ──
+            if config.EXECUTE_TRADES and trades_run == 0 and __import__('os').environ.get('TIP_ONLY_TEST', '').lower() == 'true':
+                import os
+                from executor import _build_tip_tx, _submit_bundle
+                rpc_url = config.HELIUS_RPC.format(key=os.environ.get('HELIUS_API_KEY', ''))
+                log.warning('TIP_ONLY_TEST: submitting tip-only bundle')
+                tip_tx = await _build_tip_tx(keypair, config.JITO_TIP_LAMPORTS, rpc_url)
+                bid = await _submit_bundle([tip_tx])
+                log.warning(f'TIP_ONLY_TEST submitted: bundle_id={bid}')
+                trades_run += 1
+                await asyncio.sleep(config.POLL_INTERVAL)
+                continue
+
             # ── FORCE_FIRST_SWAP override: synthesize an opportunity from the ──
             # current snapshot, execute once, then disable. Used to validate the
             # on-chain execution pipeline (Jupiter swap build → Jito bundle → land).
