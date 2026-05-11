@@ -94,15 +94,30 @@ async def run():
             # ── Detect opportunity ───────────────────────────────────────────
             opp = find_opportunity(snapshot, sol_balance)
 
-            # ── TIP_ONLY_TEST: send a single tip-tx bundle to verify Jito works ──
+            # ── TIP_ONLY_TEST: try both regular RPC send and Jito bundle ──
             if config.EXECUTE_TRADES and trades_run == 0 and __import__('os').environ.get('TIP_ONLY_TEST', '').lower() == 'true':
-                import os
+                import os, base64, base58, httpx
                 from executor import _build_tip_tx, _submit_bundle
                 rpc_url = config.HELIUS_RPC.format(key=os.environ.get('HELIUS_API_KEY', ''))
-                log.warning('TIP_ONLY_TEST: submitting tip-only bundle')
+                log.warning('TIP_ONLY_TEST: building tip tx')
                 tip_tx = await _build_tip_tx(keypair, config.JITO_TIP_LAMPORTS, rpc_url)
+                log.warning(f'TIP_ONLY_TEST: tx size {len(tip_tx)} bytes')
+
+                # Attempt A: regular Solana RPC sendTransaction (verifies tx validity)
+                try:
+                    async with httpx.AsyncClient() as c:
+                        r = await c.post(rpc_url, json={
+                            'jsonrpc': '2.0', 'id': 1, 'method': 'sendTransaction',
+                            'params': [base58.b58encode(tip_tx).decode(),
+                                       {'encoding': 'base58', 'skipPreflight': False}]
+                        }, timeout=15)
+                        log.warning(f'TIP_ONLY_TEST regular RPC: {r.status_code} {r.text[:400]}')
+                except Exception as e:
+                    log.error(f'regular sendTransaction failed: {e}')
+
+                # Attempt B: Jito bundle
                 bid = await _submit_bundle([tip_tx])
-                log.warning(f'TIP_ONLY_TEST submitted: bundle_id={bid}')
+                log.warning(f'TIP_ONLY_TEST Jito bundle_id={bid}')
                 trades_run += 1
                 await asyncio.sleep(config.POLL_INTERVAL)
                 continue
