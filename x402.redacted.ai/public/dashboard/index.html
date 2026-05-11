@@ -425,6 +425,9 @@
 
         .flywheel-token-icon.v1 { background: rgba(124,92,252,0.2); color: var(--accent); }
         .flywheel-token-icon.v2 { background: rgba(6,182,212,0.2);  color: var(--cyan); }
+        .flywheel-token-icon img, .hero-icon img {
+            width: 100%; height: 100%; border-radius: 50%; object-fit: cover; display: block;
+        }
 
         .flywheel-token-name {
             font-size: 11px;
@@ -1857,7 +1860,7 @@ function renderHero() {
 
     document.getElementById('heroCard').innerHTML = `
         <div class="hero-top">
-            <div class="hero-icon">R</div>
+            <div class="hero-icon">${tokenIcon(snapshots.at(-1)?.image_url || tokenData.image_url, 'R')}</div>
             <span class="hero-token-name">REDACTED Token</span>
             <span class="hero-updated">Updated ${new Date().toLocaleTimeString()}</span>
         </div>
@@ -1974,7 +1977,7 @@ function renderFlywheel() {
             <!-- liquidity token -->
             <div class="flywheel-token">
                 <div class="flywheel-token-header">
-                    <div class="flywheel-token-icon v1">R</div>
+                    <div class="flywheel-token-icon v1">${tokenIcon(snapshots.at(-1)?.image_url || tokenData.image_url, 'R')}</div>
                     <div>
                         <div class="flywheel-token-name">REDACTED <span class="flywheel-token-tag">liquidity</span></div>
                         <div style="font-size:8px;color:var(--text-muted);margin-top:2px">9a21gb7f…KgnM</div>
@@ -2015,7 +2018,7 @@ function renderFlywheel() {
             <!-- fees token -->
             <div class="flywheel-token">
                 <div class="flywheel-token-header">
-                    <div class="flywheel-token-icon v2">R</div>
+                    <div class="flywheel-token-icon v2">${tokenIcon(v2Data.image_url, 'R')}</div>
                     <div>
                         <div class="flywheel-token-name">REDACTED <span class="flywheel-token-tag">fees</span></div>
                         <div style="font-size:8px;color:var(--text-muted);margin-top:2px">9mtKd1…pump</div>
@@ -2715,6 +2718,11 @@ function renderActivityFeed() {
             </div>
         </div>`;
     }).join('');
+}
+
+function tokenIcon(url, fallback, cls) {
+    if (url) return `<img src="${url}" alt="${fallback}" onerror="this.parentElement.textContent='${fallback}'">`;
+    return fallback;
 }
 
 function fmtNum(n) {

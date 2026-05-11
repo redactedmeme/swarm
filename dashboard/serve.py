@@ -128,6 +128,11 @@ def fetch_token_info():
     info['holder_count'] = holder_count
     info['holder_count_capped'] = page > 10  # True if we stopped early
 
+    # 5. Token image via Helius DAS getAsset
+    resp = helius_rpc('getAsset', {'id': TOKEN})
+    das  = resp.get('result') or {}
+    info['image_url'] = (das.get('content') or {}).get('links', {}).get('image', '')
+
     with token_info_lock:
         token_info.clear()
         token_info.update(info)
@@ -165,8 +170,9 @@ def take_snapshot():
             'buys':   sum(txn(p, 'buys')  for p in pairs),
             'sells':  sum(txn(p, 'sells') for p in pairs),
             'price':  float(pairs[0].get('priceUsd', 0) or 0) if pairs else 0,
-            'mcap':   float(pairs[0].get('marketCap') or pairs[0].get('fdv') or 0) if pairs else 0,
-            'pools':  len(pairs),
+            'mcap':      float(pairs[0].get('marketCap') or pairs[0].get('fdv') or 0) if pairs else 0,
+            'pools':     len(pairs),
+            'image_url': (pairs[0].get('info') or {}).get('imageUrl', '') if pairs else '',
         }
 
         with snapshots_lock:
@@ -233,6 +239,7 @@ def fetch_v2_data():
                 'h6':  pairs[0].get('priceChange', {}).get('h6'),
                 'h24': pairs[0].get('priceChange', {}).get('h24'),
             },
+            'image_url': (pairs[0].get('info') or {}).get('imageUrl', ''),
         }
 
         with v2_lock:
