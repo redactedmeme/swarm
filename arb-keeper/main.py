@@ -13,7 +13,31 @@ Env vars required:
 
 import asyncio
 import logging
+import socket
 import time
+
+# ── DNS bypass — patch socket.getaddrinfo before any network calls ────────────
+# Railway containers sometimes receive a broken /etc/resolv.conf; this routes
+# all hostname resolution directly to Google/Cloudflare DNS via dnspython.
+try:
+    import dns.resolver as _dns_resolver
+    _dns_res = _dns_resolver.Resolver(configure=False)
+    _dns_res.nameservers = ['8.8.8.8', '1.1.1.1']
+    _dns_res.lifetime = 5.0
+    _orig_getaddrinfo = socket.getaddrinfo
+
+    def _patched_getaddrinfo(host, port, family=0, type=0, proto=0, flags=0):
+        try:
+            if host and not host[0].isdigit():
+                answers = _dns_res.resolve(host, 'A')
+                host = str(answers[0])
+        except Exception:
+            pass
+        return _orig_getaddrinfo(host, port, family, type, proto, flags)
+
+    socket.getaddrinfo = _patched_getaddrinfo
+except ImportError:
+    pass  # dnspython not installed — fall back to system resolver
 
 import config
 import logger as swarm_log

@@ -10,4 +10,4 @@ COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
 COPY . .
-CMD ["/bin/sh", "-c", "echo 'nameserver 8.8.8.8\nnameserver 1.1.1.1' > /etc/resolv.conf && python main.py"]
+CMD ["python", "main.py"]
