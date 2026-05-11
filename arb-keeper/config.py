@@ -18,18 +18,18 @@ JITO_TIP_ACCOUNTS = [
     'ADaUMid9yfUytqMBgopwjb2DTLSokTSzL1zt6iGPaS49',
 ]
 
-# ── Execution parameters ───────────────────────────────────────────────────────
-POLL_INTERVAL      = 5        # seconds between price checks
-PROBE_SOL          = 0.01     # SOL used for price probe quotes
-MIN_PROFIT_SOL     = 0.0005   # minimum net profit after tip+fees to execute
-MAX_TRADE_SOL      = 0.05     # maximum SOL per leg (position sizing cap)
-SLIPPAGE_BPS       = 50       # 0.5% slippage tolerance
-JITO_TIP_LAMPORTS  = 10_000   # ~0.00001 SOL tip — raise if bundles not landing
+# ── Execution parameters (all overridable via Railway env vars) ───────────────
+POLL_INTERVAL      = int(os.environ.get('POLL_INTERVAL',     '5'))
+PROBE_SOL          = float(os.environ.get('PROBE_SOL',       '0.005'))  # small probe
+MIN_PROFIT_SOL     = float(os.environ.get('MIN_PROFIT_SOL',  '0.001'))  # 1 mSOL minimum
+MAX_TRADE_SOL      = float(os.environ.get('MAX_TRADE_SOL',   '0.005'))  # 0.005 SOL test size
+SLIPPAGE_BPS       = int(os.environ.get('SLIPPAGE_BPS',      '25'))     # 0.25% — tight for arb
+JITO_TIP_LAMPORTS  = int(os.environ.get('JITO_TIP_LAMPORTS', '25000'))  # ~0.000025 SOL
 
 # ── Risk management ────────────────────────────────────────────────────────────
-MAX_CONSEC_FAILS    = 3        # pause after this many consecutive failures
-PAUSE_SECONDS       = 300      # 5-minute cooldown after circuit opens
-DAILY_LOSS_CAP_SOL  = 0.1     # halt for the day if cumulative loss exceeds this
+MAX_CONSEC_FAILS    = int(os.environ.get('MAX_CONSEC_FAILS',    '3'))
+PAUSE_SECONDS       = int(os.environ.get('PAUSE_SECONDS',       '300'))
+DAILY_LOSS_CAP_SOL  = float(os.environ.get('DAILY_LOSS_CAP_SOL', '0.05'))  # tighter cap for testing
 
 # ── Phase control ──────────────────────────────────────────────────────────────
 # Set EXECUTE_TRADES=false in Railway env to run in detect-only (Phase 1) mode
