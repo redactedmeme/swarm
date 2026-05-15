@@ -1390,8 +1390,6 @@ let serverSnapshots = [];  // loaded from /api/snapshots
 let prevPoolMap = {};      // pairAddress → {buys, sells, vol24h} from previous poll
 let activityFeed = [];     // capped at 40 events (h1-diff fallback)
 let feedPollCount = 0;
-let tradesCache = [];      // real Helius swap events from /api/trades
-let helisAvailable = null; // null=unknown, true/false after first fetch
 let tokenData = {};        // Helius token enrichment from /api/token
 let v2Data = {};           // v2 token market data from /api/v2
 let v1v2PoolData = {};     // Orca Whirlpool data for the v1/v2 pair
@@ -1733,20 +1731,6 @@ function renderHistoryChart() {
     if (sourceEl) sourceEl.textContent = spanLabel;
 }
 
-// ── Helius trades fetch ───────────────────────────────────────────────────────
-
-async function fetchTrades() {
-    try {
-        const res = await fetch('/api/trades');
-        if (!res.ok) return;
-        const data = await res.json();
-        helisAvailable = data.length > 0;
-        tradesCache = data;
-    } catch (_) {
-        helisAvailable = false;
-    }
-}
-
 async function fetchTokenData() {
     try {
         const res = await fetch('/api/token');
@@ -1799,7 +1783,7 @@ async function fetchData() {
         buildActivityEvents();
         savePrevPoolMap();
         pushClientSnapshot();
-        await Promise.all([fetchServerSnapshots(), fetchTrades(), fetchTokenData(), fetchV2Data(), fetchV1V2Pool(), fetchMeteoraPool()]);
+        await Promise.all([fetchServerSnapshots(), fetchTokenData(), fetchV2Data(), fetchV1V2Pool(), fetchMeteoraPool()]);
         render();
         document.getElementById('lastUpdated').textContent = 'Updated ' + new Date().toLocaleTimeString();
     } catch (err) {
@@ -2715,51 +2699,6 @@ function savePrevPoolMap() {
 function renderActivityFeed() {
     const container = document.getElementById('activityFeed');
     const subEl = document.getElementById('feedSub');
-
-    // ── Real Helius swap cards ────────────────────────────────────────────────
-    if (tradesCache.length > 0) {
-        if (subEl) subEl.textContent = `${tradesCache.length} live swaps · on-chain`;
-
-        container.innerHTML = tradesCache.slice(0, 25).map(t => {
-            const isBuy  = t.direction === 'buy';
-            const cls    = isBuy ? 'buy-dominant' : 'sell-dominant';
-            const col    = isBuy ? 'var(--green)' : 'var(--red)';
-            const arrow  = isBuy ? '→' : '←';
-            const dotCls = ['raydium','orca','meteora'].includes(t.dex) ? t.dex : 'unknown';
-
-            const parts = (t.pool || '/').split('/');
-            const base  = parts[0] || 'REDACTED';
-            const quote = parts[1] || 'SOL';
-
-            const flowHtml = isBuy
-                ? `<div class="feed-token-box buy-side">${quote}<div style="font-size:8px;color:var(--text-muted)">${t.sol_amt.toFixed(3)} SOL</div></div>
-                   <div class="feed-arrow">${arrow}</div>
-                   <div class="feed-token-box buy-side">${base}<div style="font-size:8px;color:var(--green)">${fmtNum(t.tok_amt)}</div></div>`
-                : `<div class="feed-token-box sell-side">${base}<div style="font-size:8px;color:var(--text-muted)">${fmtNum(t.tok_amt)}</div></div>
-                   <div class="feed-arrow">${arrow}</div>
-                   <div class="feed-token-box sell-side">${quote}<div style="font-size:8px;color:var(--red)">${t.sol_amt.toFixed(3)} SOL</div></div>`;
-
-            const usdStr = t.usd_val >= 0.01 ? fmt(t.usd_val) : `<$0.01`;
-
-            return `
-            <div class="feed-item ${cls}">
-                <div class="feed-item-top">
-                    <span class="feed-time-badge">${timeAgo(t.ts)}</span>
-                    <span class="dex-dot ${dotCls}"></span>
-                    <span class="feed-pool-name">${t.pool || '?'}</span>
-                    <span style="font-size:9px;color:var(--text-muted)">${t.dex || ''}</span>
-                    <span class="feed-vol-badge" style="color:${col}">${usdStr}</span>
-                </div>
-                <div class="feed-flow">${flowHtml}</div>
-                <div class="feed-item-stats">
-                    <span><span class="feed-stat-label">wallet </span><span class="feed-stat-val" style="color:var(--text-muted)">${t.wallet}</span></span>
-                    <span><span class="feed-stat-label">type </span><span class="feed-stat-val" style="color:${col}">${t.direction.toUpperCase()}</span></span>
-                    <span><span class="feed-stat-label">sig </span><span class="feed-stat-val" style="color:var(--text-muted);font-size:9px">${(t.sig||'').slice(0,8)}…</span></span>
-                </div>
-            </div>`;
-        }).join('');
-        return;
-    }
 
     // ── h1-diff fallback ─────────────────────────────────────────────────────
     if (feedPollCount < 2) {
