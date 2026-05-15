@@ -39,8 +39,8 @@ def _push(msg_type: str, payload: dict):
         pipe = r.pipeline()
         pipe.lpush(f'swarm:msg:{msg["id"]}', serialized)
         pipe.lpush('swarm:pending:arb-keeper', msg['id'])
-        pipe.lpush('swarm:all', msg['id'])
         pipe.execute()
+        # swarm:all intentionally omitted — key type conflict with other services
     except Exception as e:
         log.warning(f'Redis push failed: {e}')
 
