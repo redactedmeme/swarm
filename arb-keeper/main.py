@@ -117,6 +117,11 @@ async def run():
             # ── Balance check ────────────────────────────────────────────────
             sol_balance = await _get_balance(pubkey)
             token_balance_raw = await _get_token_balance(pubkey)
+            if pubkey:
+                log.info(
+                    f'Balances: {sol_balance:.4f} SOL | '
+                    f'{token_balance_raw / 10**config.TOKEN_DECIMALS:.2f} tok'
+                )
 
             # ── Detect rebalance opportunity ─────────────────────────────────
             opp = find_opportunity(snapshot, sol_balance, token_balance_raw)

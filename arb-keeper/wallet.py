@@ -98,18 +98,22 @@ async def get_sol_balance(pubkey: str) -> float:
 
 
 async def get_token_balance(pubkey: str, mint: str) -> int:
-    """Returns raw token balance in base units (u64)."""
+    """Returns raw token balance in base units (u64).
+
+    Derives the ATA address deterministically and calls getAccountInfo directly —
+    more reliable than getTokenAccountsByOwner on public RPC.
+    """
+    from dex.swap_tx import get_associated_token_address
+    ata = get_associated_token_address(pubkey, mint)
     async with httpx.AsyncClient() as client:
-        data = await _rpc(client, 'getTokenAccountsByOwner', [
-            pubkey,
-            {'mint': mint},
-            {'encoding': 'jsonParsed'},
-        ])
-    accounts = (data.get('result') or {}).get('value', [])
-    if not accounts:
+        data = await _rpc(client, 'getAccountInfo', [ata, {'encoding': 'jsonParsed'}])
+    value = (data.get('result') or {}).get('value')
+    if not value:
         return 0
-    info = accounts[0]['account']['data']['parsed']['info']['tokenAmount']
-    return int(info['amount'])
+    try:
+        return int(value['data']['parsed']['info']['tokenAmount']['amount'])
+    except (KeyError, TypeError):
+        return 0
 
 
 # ── Transaction signing ───────────────────────────────────────────────────────
