@@ -107,26 +107,21 @@ async def get_token_balance(pubkey: str, mint: str) -> int:
     import base64, struct
     from dex.swap_tx import get_associated_token_address
     ata = get_associated_token_address(pubkey, mint)
-    log.info(f'get_token_balance: ATA={ata}')
     async with httpx.AsyncClient() as client:
         data = await _rpc(client, 'getAccountInfo', [ata, {'encoding': 'base64'}])
     value = (data.get('result') or {}).get('value')
     if not value:
-        log.warning(f'get_token_balance: no account data for ATA={ata} (account may not exist)')
+        log.debug(f'get_token_balance: no account for ATA={ata}')
         return 0
     raw_data = value.get('data')
     if isinstance(raw_data, list):
         raw_bytes = base64.b64decode(raw_data[0])
-        log.info(f'get_token_balance: raw_bytes len={len(raw_bytes)}')
     else:
-        log.warning(f'get_token_balance: unexpected data format: {type(raw_data)} val={str(raw_data)[:80]}')
+        log.warning(f'get_token_balance: unexpected data format for ATA={ata}')
         return 0
     if len(raw_bytes) < 72:
-        log.warning(f'get_token_balance: raw_bytes too short ({len(raw_bytes)} bytes)')
         return 0
-    amount = struct.unpack_from('<Q', raw_bytes, 64)[0]
-    log.info(f'get_token_balance: amount={amount}')
-    return amount
+    return struct.unpack_from('<Q', raw_bytes, 64)[0]
 
 
 # ── Transaction signing ───────────────────────────────────────────────────────
