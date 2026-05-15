@@ -380,6 +380,6 @@ if __name__ == '__main__':
     threading.Thread(target=meteora_loop,     daemon=True).start()
 
     print(f'Dashboard on port {port} | snapshots every {SNAPSHOT_INTERVAL//60}m | '
-          f'trades every {TRADES_INTERVAL}s | helius={"✓" if HELIUS_KEY else "✗ (set HELIUS_API_KEY)"}')
+          f'token info every {TOKEN_INFO_INTERVAL//60}m | helius={"✓" if HELIUS_KEY else "✗ (set HELIUS_API_KEY)"}')
 
     HTTPServer(('0.0.0.0', port), Handler).serve_forever()
