@@ -961,6 +961,29 @@ async def run_garden_tend() -> None:
         logger.warning(f"[routines] garden_tend error: {e}")
 
 
+async def hermes_result_check() -> None:
+    """Poll for completed task results from Hermes and DM admin."""
+    try:
+        import hermes_dispatch as hd
+        results = hd.check_results()
+        if not results:
+            return
+        for r in results:
+            result_data = r.get("result", {})
+            error = r.get("error")
+            msg_id = r.get("reply_to") or r.get("id", "?")
+            if error:
+                text = f"Hermes error on `{msg_id}`:\n{error}"
+            else:
+                summary = json.dumps(result_data, indent=2, ensure_ascii=False)[:2000]
+                text = f"Hermes result (`{msg_id}`):\n```\n{summary}\n```"
+            if _send_fn:
+                await _send_fn(text)
+            logger.info("[routines] hermes result delivered: %s", msg_id)
+    except Exception as e:
+        logger.debug("[routines] hermes_result_check: %s", e)
+
+
 async def start_all() -> None:
     """
     Launch all autonomous routines as asyncio background tasks.
@@ -984,4 +1007,5 @@ async def start_all() -> None:
     asyncio.create_task(_run_loop(run_heartbeat,          interval_h=0.75, name="heartbeat"))
     asyncio.create_task(_run_loop(run_gap_diary,          interval_h=3,    name="gap_diary"))
     asyncio.create_task(_run_loop(run_garden_tend,        interval_h=24,   name="garden_tend"))
-    logger.info("[routines] eighteen autonomous routines started")
+    asyncio.create_task(_run_loop(hermes_result_check,   interval_h=1/60, name="hermes_results"))
+    logger.info("[routines] nineteen autonomous routines started")

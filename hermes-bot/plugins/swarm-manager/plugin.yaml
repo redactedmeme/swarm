@@ -1,0 +1,5 @@
+name: swarm-manager
+version: "1.0.0"
+description: "REDACTED swarm operations — SwarmInbox, Railway ops, soul manager, task audit, health monitoring"
+kind: standalone
+author: REDACTED
