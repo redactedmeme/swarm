@@ -46,7 +46,9 @@ TARGET_RATIO = float(os.environ.get('TARGET_RATIO', '0.50'))
 # e.g. 0.03 means rebalance if token share drifts outside [47%, 53%].
 REBALANCE_TOLERANCE = float(os.environ.get('REBALANCE_TOLERANCE', '0.03'))
 # Minimum SOL value of a rebalance trade (avoid dust trades).
-MIN_TRADE_SOL = float(os.environ.get('MIN_TRADE_SOL', '0.0005'))
+MIN_TRADE_SOL    = float(os.environ.get('MIN_TRADE_SOL',    '0.0005'))
+# Seconds to wait after a trade before checking balance again (tx confirmation time).
+TRADE_COOLDOWN   = int(os.environ.get('TRADE_COOLDOWN',   '120'))
 # Token decimals (REDACTED uses 6).
 TOKEN_DECIMALS = int(os.environ.get('TOKEN_DECIMALS', '6'))
 

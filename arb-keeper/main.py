@@ -81,10 +81,11 @@ async def run():
     keypair, pubkey = _load_wallet()
     cb = CircuitBreaker()
 
-    heartbeat  = 0
-    opps_seen  = 0
-    trades_run = 0
-    token_balance_raw = 0  # updated each loop when wallet is loaded
+    heartbeat       = 0
+    opps_seen       = 0
+    trades_run      = 0
+    token_balance_raw = 0
+    last_trade_at   = 0.0  # monotonic time of last executed trade
 
     while True:
         loop_start = time.monotonic()
@@ -94,6 +95,15 @@ async def run():
             if config.EXECUTE_TRADES and cb.is_open():
                 await asyncio.sleep(config.POLL_INTERVAL)
                 continue
+
+            # ── Post-trade cooldown (wait for tx confirmation + balance update) ──
+            if config.EXECUTE_TRADES and last_trade_at > 0:
+                since = time.monotonic() - last_trade_at
+                if since < config.TRADE_COOLDOWN:
+                    remaining = config.TRADE_COOLDOWN - since
+                    log.debug(f'Post-trade cooldown: {remaining:.0f}s remaining')
+                    await asyncio.sleep(config.POLL_INTERVAL)
+                    continue
 
             # ── Price snapshot ───────────────────────────────────────────────
             snapshot = await get_price_snapshot(probe_sol=config.PROBE_SOL)
@@ -251,6 +261,7 @@ async def run():
                     from executor import execute_arb
                     result = await execute_arb(opp, keypair)
                     trades_run += 1
+                    last_trade_at = time.monotonic()
                     swarm_log.log_trade(result)
 
                     if not result.success:
