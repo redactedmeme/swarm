@@ -49,8 +49,8 @@ REBALANCE_TOLERANCE = float(os.environ.get('REBALANCE_TOLERANCE', '0.03'))
 MIN_TRADE_SOL    = float(os.environ.get('MIN_TRADE_SOL',    '0.0005'))
 # Seconds to wait after a trade before checking balance again (tx confirmation time).
 TRADE_COOLDOWN   = int(os.environ.get('TRADE_COOLDOWN',   '120'))
-# Token decimals (REDACTED uses 6).
-TOKEN_DECIMALS = int(os.environ.get('TOKEN_DECIMALS', '6'))
+# Token decimals — confirmed on-chain via getTokenAccountsByOwner (decimals=9).
+TOKEN_DECIMALS = int(os.environ.get('TOKEN_DECIMALS', '9'))
 
 # ── Risk management ────────────────────────────────────────────────────────────
 MAX_CONSEC_FAILS   = int(os.environ.get('MAX_CONSEC_FAILS',    '3'))

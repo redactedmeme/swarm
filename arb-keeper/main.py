@@ -35,13 +35,15 @@ logging.getLogger('httpcore').setLevel(logging.WARNING)
 
 
 def _load_wallet():
-    """Load keypair if execution is enabled. Returns (keypair, pubkey_str)."""
-    if not config.EXECUTE_TRADES:
+    """Load keypair and pubkey. Keypair is None in detect-only mode (no signing needed)."""
+    if not config.PRIVATE_KEY:
         return None, None
     from wallet import load_keypair
     kp = load_keypair()
     pubkey = str(kp.pubkey())
     log.info(f'Keeper wallet: {pubkey}')
+    if not config.EXECUTE_TRADES:
+        return None, pubkey  # pubkey available for balance reads, no signing
     return kp, pubkey
 
 
