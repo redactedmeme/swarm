@@ -118,8 +118,11 @@ def find_opportunity(
         log.debug(f'Within tolerance ({deviation*100:.2f}% < {config.REBALANCE_TOLERANCE*100:.0f}%) — no trade')
         return None
 
-    # Cap trade at delta needed to reach target, also cap at MAX_TRADE_SOL and 50% balance
-    trade_sol = min(delta_sol, config.MAX_TRADE_SOL, sol_balance * 0.5)
+    # For buys, cap at 50% of SOL balance (need SOL to spend). Sells don't need SOL.
+    if is_buy_token:
+        trade_sol = min(delta_sol, config.MAX_TRADE_SOL, sol_balance * 0.5)
+    else:
+        trade_sol = min(delta_sol, config.MAX_TRADE_SOL)
 
     if trade_sol < config.MIN_TRADE_SOL:
         log.debug(f'Trade too small: {trade_sol*1000:.3f} mSOL < {config.MIN_TRADE_SOL*1000:.0f} mSOL minimum')
