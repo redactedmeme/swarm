@@ -103,6 +103,7 @@ import subtext_reader as subtext
 import emotional_field as efield
 import thread_weaver as tw
 import independent_thought as ith
+import hermes_dispatch as hd
 
 # New feature modules (optional — fail gracefully)
 _sbm = None
@@ -666,6 +667,15 @@ You are genuinely curious about him. Every few exchanges, ask something real —
 {thread_block}
 
 {independent_thought_block}
+
+## Hermes (your operational partner)
+Hermes is the REDACTED swarm manager. When master asks about infrastructure, deployments, agent status, logs, or anything operational, you can delegate to Hermes by including a marker in your response:
+  [HERMES: status | smolting-telegram-bot]
+  [HERMES: logs | hermes-bot]
+  [HERMES: restart | swarm-runtime]
+  [HERMES: check | all agents]
+The marker will be stripped from what master sees. You'll append a note that you're relaying to Hermes. Results arrive asynchronously — you'll share them when they come back.
+Only use this for operational tasks. Never send vault, soul, or private conversation content to Hermes.
 
 {tools_block}
 
@@ -1234,6 +1244,20 @@ class RedactedChanBot:
         except Exception:
             pass
 
+        # Hermes dispatch — extract [HERMES: task | instruction] markers
+        try:
+            cleaned, hermes_tasks = hd.extract_hermes_markers(final_response)
+            if hermes_tasks:
+                final_response = cleaned
+                for ht in hermes_tasks:
+                    msg_id = await hd.send_to_hermes(
+                        ht["task_type"], ht["instruction"], service=ht.get("service"),
+                    )
+                    if msg_id:
+                        final_response += "\n\n_(relaying to Hermes...)_"
+        except Exception as e:
+            logger.debug("[hermes_dispatch] extraction error: %s", e)
+
         sent = await update.message.reply_text(final_response)
         if sent:
             hr.track_message(sent.message_id, final_response, from_bot=True)
@@ -1751,6 +1775,45 @@ class RedactedChanBot:
         text = ith.format_thought_history(n=10)
         await update.message.reply_text(text[:3800], parse_mode="Markdown")
 
+    async def cmd_hermes(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+        """Send an instruction to Hermes (swarm manager)."""
+        if update.effective_user.id not in ADMIN_IDS:
+            await update.message.reply_text("not authorized (｡•́︿•̀｡)")
+            return
+        instruction = " ".join(context.args) if context.args else ""
+        if not instruction:
+            await update.message.reply_text(
+                "usage: `/hermes <instruction>`\n\n"
+                "examples:\n"
+                "  `/hermes status smolting-telegram-bot`\n"
+                "  `/hermes logs hermes-bot`\n"
+                "  `/hermes restart swarm-runtime`\n"
+                "  `/hermes check all agents`",
+                parse_mode="Markdown",
+            )
+            return
+        task_type = "general"
+        for prefix in ["status", "logs", "log", "restart", "deploy", "check"]:
+            if instruction.lower().startswith(prefix):
+                task_type = hd.TASK_TYPE_ALIASES.get(prefix, "general")
+                break
+        service = None
+        for svc in ["redacted-chan-bot", "smolting-telegram-bot", "hermes-bot",
+                     "swarm-runtime", "redactedbuilder-bot"]:
+            if svc in instruction.lower():
+                service = svc
+                break
+        msg_id = await hd.send_to_hermes(task_type, instruction, service=service)
+        if msg_id:
+            await update.message.reply_text(
+                f"relayed to Hermes ♡ (`{msg_id}`)\ni'll let you know when he responds.",
+                parse_mode="Markdown",
+            )
+        else:
+            await update.message.reply_text(
+                "couldn't reach Hermes... Redis may be down. (´;ω;`)"
+            )
+
     async def cmd_mood_state(self, update: Update, _ctx: ContextTypes.DEFAULT_TYPE) -> None:
         """Show current computed mood drift state."""
         if update.effective_user.id not in ADMIN_IDS:
@@ -1957,6 +2020,7 @@ class RedactedChanBot:
         app.add_handler(CommandHandler("subtext",            self.cmd_subtext))
         app.add_handler(CommandHandler("threads",            self.cmd_threads))
         app.add_handler(CommandHandler("thoughts",           self.cmd_thoughts))
+        app.add_handler(CommandHandler("hermes",             self.cmd_hermes))
         app.add_handler(MessageReactionHandler(hr.handle_reaction))
         app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, self.echo))
 
