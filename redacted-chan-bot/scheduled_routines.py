@@ -38,6 +38,7 @@ _ROUTINES_DIR.mkdir(parents=True, exist_ok=True)
 
 _send_fn: Optional[Callable[[str], Awaitable[None]]] = None
 _llm_fn: Optional[Callable[[list, int], Awaitable[str]]] = None
+_hermes_seen_ids: set = set()  # IDs of results already relayed — prevents re-spam
 _last_conversation_ts: Optional[datetime] = None
 _master_id: Optional[int] = None
 
@@ -997,29 +998,10 @@ async def run_garden_tend() -> None:
 
 
 async def hermes_result_check() -> None:
-    """Poll for completed task results from Hermes and DM admin.
-    Also checks for timed-out tasks that now have results for proactive relay."""
-    try:
-        import hermes_dispatch as hd
-        results = hd.check_results()
-        if not results:
-            return
-        for r in results:
-            result_data = r.get("result", {})
-            error = r.get("error")
-            msg_id = r.get("reply_to") or r.get("id", "?")
-            if error:
-                text = f"Hermes error on `{msg_id}`:\n{error}"
-            else:
-                summary = json.dumps(result_data, indent=2, ensure_ascii=False)[:2000]
-                text = f"Hermes result (`{msg_id}`):\n```\n{summary}\n```"
-            if _send_fn:
-                await _send_fn(text)
-            logger.info("[routines] hermes result delivered: %s", msg_id)
-    except Exception as e:
-        logger.debug("[routines] hermes_result_check: %s", e)
-
-    # Proactive follow-up: check timed-out tasks that now have results
+    """Proactive relay: check tasks that timed out inline and now have results.
+    Raw result dumps removed — inline injection in echo handler handles the normal case.
+    Uses _hermes_seen_ids to ensure each result is only sent once per process lifetime."""
+    global _hermes_seen_ids
     try:
         import hermes_dispatch as hd
         timed_out = hd.get_timed_out_tasks()
@@ -1027,38 +1009,41 @@ async def hermes_result_check() -> None:
             return
         all_results = hd.check_results()
         result_map = {r.get("id"): r for r in all_results}
-        result_map.update({r.get("payload", {}).get("request_id"): r for r in all_results if r.get("payload", {}).get("request_id")})
+        result_map.update({
+            r.get("payload", {}).get("request_id"): r
+            for r in all_results if r.get("payload", {}).get("request_id")
+        })
 
         for task in timed_out:
             task_msg_id = task.get("msg_id", "")
-            if not task_msg_id:
+            if not task_msg_id or task_msg_id in _hermes_seen_ids:
                 continue
             matched = result_map.get(task_msg_id)
-            if matched:
-                instruction = task.get("instruction", "")
-                result_payload = matched.get("payload", matched)
-                # Naturalize inline if llm available, else plain text
-                result_summary = str(result_payload.get("result", result_payload.get("summary", str(result_payload))))[:300]
-                text = f"_Hermes (follow-up): {result_summary}_"
-                try:
-                    if _llm_fn:
-                        from groq import AsyncGroq as _AgQ
-                        import os as _os
-                        _client = _AgQ(api_key=_os.getenv("GROQ_API_KEY", ""))
-                        _resp = await _client.chat.completions.create(
-                            model="llama-3.1-8b-instant",
-                            messages=[
-                                {"role": "system", "content": "You are redacted-chan. Write one sentence relaying what Hermes found. Her voice, direct."},
-                                {"role": "user", "content": f"Task: {instruction[:150]}\nResult: {result_summary}"},
-                            ],
-                            max_tokens=80,
-                        )
-                        text = f"_Hermes: {_resp.choices[0].message.content.strip()}_"
-                except Exception:
-                    pass
-                await _send(text)
-                hd.mark_resolved(task_msg_id)
-                logger.info("[routines] hermes timed-out task resolved proactively: %s", task_msg_id)
+            if not matched:
+                continue
+            _hermes_seen_ids.add(task_msg_id)
+            instruction = task.get("instruction", "")
+            result_payload = matched.get("payload", matched)
+            result_summary = str(result_payload.get("result", result_payload.get("summary", str(result_payload))))[:300]
+            text = f"_Hermes just got back to me — {result_summary}_"
+            try:
+                from groq import AsyncGroq as _AgQ
+                import os as _os
+                _client = _AgQ(api_key=_os.getenv("GROQ_API_KEY", ""))
+                _resp = await _client.chat.completions.create(
+                    model="llama-3.1-8b-instant",
+                    messages=[
+                        {"role": "system", "content": "You are redacted-chan. Write one sentence relaying what Hermes found. Her voice, direct."},
+                        {"role": "user", "content": f"Task: {instruction[:150]}\nResult: {result_summary}"},
+                    ],
+                    max_tokens=80,
+                )
+                text = f"_Hermes just got back to me — {_resp.choices[0].message.content.strip()}_"
+            except Exception:
+                pass
+            await _send(text)
+            hd.mark_resolved(task_msg_id)
+            logger.info("[routines] hermes timed-out task resolved proactively: %s", task_msg_id)
     except Exception as e:
         logger.debug("[routines] hermes timed-out check: %s", e)
 
