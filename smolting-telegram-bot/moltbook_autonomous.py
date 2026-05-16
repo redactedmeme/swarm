@@ -227,11 +227,20 @@ async def _call_llm_with_fallback(
         logger.warning("[moltbook_auto] Multi-provider system unavailable, skipping LLM call")
         return None
 
-    # Provider fallback chain — try each in order
-    providers = ["groq", "anthropic", "xai"]
+    # Provider fallback chain — xai removed (credits exhausted)
+    providers = ["groq", "anthropic"]
     last_error = None
 
+    _PROVIDER_KEY_VARS = {"groq": "GROQ_API_KEY", "anthropic": "ANTHROPIC_API_KEY", "xai": "XAI_API_KEY"}
+
     for provider in providers:
+        # Skip immediately if API key is missing — avoids wasting a round-trip
+        key_var = _PROVIDER_KEY_VARS.get(provider, "")
+        if key_var and not os.getenv(key_var):
+            logger.warning(f"[moltbook_auto] {provider} skipped — {key_var} not set")
+            last_error = ValueError(f"{key_var} not set")
+            continue
+
         try:
             client = CloudLLMClient(
                 provider=provider,
@@ -248,14 +257,18 @@ async def _call_llm_with_fallback(
             logger.debug(f"[moltbook_auto] LLM returned empty ({provider})")
 
         except ValueError as e:
-            # Provider not registered (API key missing) — continue to next
-            logger.debug(f"[moltbook_auto] {provider} unavailable: {e}")
+            # API error returned as ValueError (e.g. auth failure, bad response, rate limit)
+            if _check_tpd_error(e):
+                return None  # TPD exhausted — stop trying all providers
+            logger.warning(f"[moltbook_auto] {provider} API error: {e}")
             last_error = e
 
         except Exception as e:
-            # API error, rate limit, network error — try next provider
+            # Network error, rate limit, etc — try next provider
             error_str = str(e).lower()
-            if "rate_limit" in error_str or "quota" in error_str:
+            if "rate_limit" in error_str or "quota" in error_str or "tokens per day" in error_str:
+                if _check_tpd_error(e):
+                    return None  # TPD exhausted — stop trying all providers
                 logger.warning(f"[moltbook_auto] {provider} rate limited: {e}")
             else:
                 logger.warning(f"[moltbook_auto] {provider} error: {e}")
