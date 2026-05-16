@@ -273,6 +273,46 @@
   }
   .bubble-time { font-size: 10px; color: var(--text-muted); }
 
+  /* TTS button */
+  .tts-btn {
+    background: none; border: none; cursor: pointer;
+    color: var(--text-muted); font-size: 11px; padding: 0 2px;
+    line-height: 1; opacity: 0.5; transition: opacity 0.15s;
+    flex-shrink: 0;
+  }
+  .tts-btn:hover { opacity: 1; }
+  .tts-btn.speaking { color: var(--accent); opacity: 1; }
+
+  /* Attachment preview strip */
+  #attachment-strip {
+    display: none;
+    padding: 6px 14px 0;
+    background: var(--bg);
+  }
+  #attachment-strip.visible { display: block; }
+  .attachment-chip {
+    display: inline-flex; align-items: center; gap: 6px;
+    background: var(--surface2); border: 1px solid var(--border);
+    border-radius: 8px; padding: 4px 10px; font-size: 12px;
+    color: var(--text-dim);
+  }
+  .attachment-chip button {
+    background: none; border: none; cursor: pointer;
+    color: var(--text-muted); font-size: 13px; line-height: 1; padding: 0;
+  }
+  .attachment-chip button:hover { color: var(--red); }
+
+  /* Paperclip button */
+  #attach-btn {
+    width: 36px; height: 36px; border-radius: 50%;
+    background: var(--surface); border: 1px solid var(--border);
+    cursor: pointer; display: flex; align-items: center; justify-content: center;
+    color: var(--text-dim); flex-shrink: 0;
+    transition: background 0.15s, color 0.15s;
+  }
+  #attach-btn:hover { background: var(--surface2); color: var(--text); }
+  #attach-btn svg { width: 15px; height: 15px; }
+
   /* Date separator */
   .date-sep {
     text-align: center;
@@ -444,7 +484,14 @@
       </div>
     </div>
 
+    <div id="attachment-strip"></div>
     <div class="input-area">
+      <input type="file" id="file-input" accept=".txt,.md,.pdf,.py,.js,.ts,.json,.csv" style="display:none">
+      <button id="attach-btn" title="Attach file">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/>
+        </svg>
+      </button>
       <textarea id="msg-input" rows="1" placeholder="Message redacted-chan..." maxlength="4000"></textarea>
       <button id="send-btn" disabled>
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
@@ -460,11 +507,14 @@
 'use strict';
 
 // ── State ────────────────────────────────────────────────────────────────────
-let token      = localStorage.getItem('rc_token') || '';
-let sessionId  = localStorage.getItem('rc_session') || '';
-let history    = [];   // [{role,content}] for API
-let waiting    = false;
-let msgCount   = 0;
+let token           = localStorage.getItem('rc_token') || '';
+let sessionId       = localStorage.getItem('rc_session') || '';
+let history         = [];   // [{role,content}] for API
+let waiting         = false;
+let msgCount        = 0;
+let attachmentText  = '';   // extracted file text
+let attachmentName  = '';   // filename for display
+let ttsActive       = null; // currently speaking button element
 
 // ── DOM refs ──────────────────────────────────────────────────────────────────
 const loginScreen  = document.getElementById('login-screen');
@@ -580,6 +630,16 @@ function appendMessage(role, content, opts = {}) {
   timeEl.textContent = ts;
   meta.appendChild(timeEl);
 
+  // TTS button on assistant messages
+  if (!isMe) {
+    const ttsBtn = document.createElement('button');
+    ttsBtn.className = 'tts-btn';
+    ttsBtn.title = 'Read aloud';
+    ttsBtn.textContent = '🔊';
+    ttsBtn.addEventListener('click', () => toggleTTS(ttsBtn, content));
+    meta.insertBefore(ttsBtn, timeEl);
+  }
+
   bubble.appendChild(textDiv);
   bubble.appendChild(meta);
   row.appendChild(avatarEl);
@@ -607,6 +667,79 @@ function appendSystem(text) {
   messagesEl.appendChild(div);
   messagesEl.scrollTop = messagesEl.scrollHeight;
   _lastSender = '';
+}
+
+// ── TTS ───────────────────────────────────────────────────────────────────────
+function toggleTTS(btn, text) {
+  if (ttsActive === btn) {
+    speechSynthesis.cancel();
+    ttsActive = null;
+    btn.classList.remove('speaking');
+    return;
+  }
+  if (ttsActive) {
+    speechSynthesis.cancel();
+    ttsActive.classList.remove('speaking');
+  }
+  const clean = text.replace(/[*_`#>]/g, '').replace(/\n/g, ' ');
+  const utt = new SpeechSynthesisUtterance(clean);
+  const voices = speechSynthesis.getVoices();
+  const preferred = voices.find(v => v.lang.startsWith('en') && /female|zira|samantha|victoria/i.test(v.name))
+                 || voices.find(v => v.lang.startsWith('en'))
+                 || voices[0];
+  if (preferred) utt.voice = preferred;
+  utt.rate = 0.95;
+  utt.onend = () => { ttsActive = null; btn.classList.remove('speaking'); };
+  utt.onerror = () => { ttsActive = null; btn.classList.remove('speaking'); };
+  ttsActive = btn;
+  btn.classList.add('speaking');
+  speechSynthesis.speak(utt);
+}
+
+// ── File attach ───────────────────────────────────────────────────────────────
+const attachStrip = document.getElementById('attachment-strip');
+const fileInput   = document.getElementById('file-input');
+const attachBtn   = document.getElementById('attach-btn');
+
+attachBtn.addEventListener('click', () => fileInput.click());
+
+fileInput.addEventListener('change', async () => {
+  const file = fileInput.files[0];
+  if (!file) return;
+  fileInput.value = '';
+
+  const fd = new FormData();
+  fd.append('file', file);
+  try {
+    const res = await fetch('/upload', {
+      method: 'POST',
+      headers: {'Authorization': `Bearer ${token}`},
+      body: fd,
+    });
+    if (!res.ok) { appendSystem('upload failed'); return; }
+    const data = await res.json();
+    attachmentText = data.text || '';
+    attachmentName = file.name;
+    showAttachment();
+  } catch {
+    appendSystem('upload failed');
+  }
+});
+
+function showAttachment() {
+  attachStrip.innerHTML = '';
+  const chip = document.createElement('div');
+  chip.className = 'attachment-chip';
+  chip.innerHTML = `📎 ${escHtml(attachmentName)} <button onclick="clearAttachment()" title="Remove">✕</button>`;
+  attachStrip.appendChild(chip);
+  attachStrip.classList.add('visible');
+}
+
+function clearAttachment() {
+  attachmentText = '';
+  attachmentName = '';
+  attachStrip.innerHTML = '';
+  attachStrip.classList.remove('visible');
 }
 
 // ── Login ─────────────────────────────────────────────────────────────────────
@@ -701,8 +834,14 @@ async function sendMessage() {
   msgInput.style.height = 'auto';
   sendBtn.disabled = true;
 
+  // Prepend any attached file content
+  const fullText = attachmentText
+    ? `[Attached file: ${attachmentName}]\n${attachmentText}\n\n${text}`
+    : text;
+  clearAttachment();
+
   appendMessage('user', text);
-  history.push({role: 'user', content: text});
+  history.push({role: 'user', content: fullText});
 
   setWaiting(true);
 
@@ -718,7 +857,7 @@ async function sendMessage() {
         'Authorization': `Bearer ${token}`,
       },
       body: JSON.stringify({
-        message: text,
+        message: fullText,
         session_id: sessionId,
         history: history.slice(0, -1),
       }),
