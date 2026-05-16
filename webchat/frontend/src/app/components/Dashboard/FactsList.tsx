@@ -20,7 +20,7 @@ export default function FactsList({ data, loading }: Props) {
       {data.slice(0, 15).map((fact, i) => (
         <div key={i} className="flex items-start gap-2.5 text-sm">
           <div className="mt-1.5 w-1.5 h-1.5 rounded-full bg-primary/60 shrink-0" />
-          <p className="text-foreground/90 leading-relaxed flex-1">{fact.text}</p>
+          <p className="text-foreground/90 leading-relaxed flex-1">{fact.fact}</p>
           {fact.resonance != null && (
             <span className="shrink-0 text-[10px] text-muted-foreground font-mono mt-1">
               {(fact.resonance * 100).toFixed(0)}%

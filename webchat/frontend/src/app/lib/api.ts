@@ -1,4 +1,4 @@
-import type { ChanMood, ChanFact, ProxyLogEntry, PrivacyConfig } from '@/app/types'
+import type { ChanMood, ChanFact, ProxyLogEntry, PrivacyConfig, VaultEntry, AgentHeartbeat } from '@/app/types'
 
 const BASE = ''
 
@@ -81,9 +81,21 @@ export async function apiGetHeatmap(): Promise<{ heatmap: Record<string, number>
   return res.json()
 }
 
-export async function apiGetProxyLogs(): Promise<{ logs: ProxyLogEntry[] }> {
-  const res = await fetch(`${BASE}/proxy-logs`, { headers: authHeaders() })
+export async function apiGetProxyLogs(): Promise<{ logs: ProxyLogEntry[]; entries?: ProxyLogEntry[] }> {
+  const res = await fetch(`${BASE}/proxy-logs?n=500`, { headers: authHeaders() })
   if (!res.ok) throw new Error('Failed to fetch proxy logs')
+  return res.json()
+}
+
+export async function apiGetHeartbeats(): Promise<{ agents: AgentHeartbeat[] }> {
+  const res = await fetch(`${BASE}/chan/heartbeats`, { headers: authHeaders() })
+  if (!res.ok) throw new Error('Failed to fetch heartbeats')
+  return res.json()
+}
+
+export async function apiGetVault(n = 30): Promise<{ entries: VaultEntry[] }> {
+  const res = await fetch(`${BASE}/chan/vault?n=${n}`, { headers: authHeaders() })
+  if (!res.ok) throw new Error('Failed to fetch vault')
   return res.json()
 }
 
