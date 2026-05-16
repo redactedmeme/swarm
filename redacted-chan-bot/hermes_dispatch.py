@@ -7,14 +7,75 @@ and returns task_result messages that we poll here.
 """
 from __future__ import annotations
 
+import json
 import logging
 import re
+import time as _time
+from pathlib import Path
 from typing import Optional
 
 logger = logging.getLogger("hermes_dispatch")
 
 HERMES_AGENT = "hermes"
 SELF_AGENT = "redacted-chan"
+
+# ── Pending task tracking ─────────────────────────────────────────────────────
+
+_DATA_DIR = Path("/data") if Path("/data").exists() else Path(__file__).parent / "fs"
+_PENDING_PATH = _DATA_DIR / "hermes_pending.jsonl"
+
+
+def track_pending(msg_id: str, task_type: str, instruction: str) -> None:
+    """Log a dispatched task as pending."""
+    try:
+        _DATA_DIR.mkdir(parents=True, exist_ok=True)
+        entry = {
+            "msg_id": msg_id,
+            "task_type": task_type,
+            "instruction": instruction[:200],
+            "sent_at": _time.time(),
+            "timed_out": False,
+            "resolved": False,
+        }
+        with open(_PENDING_PATH, "a", encoding="utf-8") as f:
+            f.write(json.dumps(entry) + "\n")
+    except Exception:
+        pass
+
+
+def mark_resolved(msg_id: str) -> None:
+    """Mark a pending task as resolved (result received inline)."""
+    _update_pending(msg_id, resolved=True)
+
+
+def mark_timed_out(msg_id: str) -> None:
+    """Mark a pending task as timed out (needs proactive follow-up)."""
+    _update_pending(msg_id, timed_out=True)
+
+
+def get_timed_out_tasks() -> list:
+    """Return tasks that timed out inline and still need proactive follow-up."""
+    if not _PENDING_PATH.exists():
+        return []
+    try:
+        entries = [json.loads(l) for l in _PENDING_PATH.read_text(encoding="utf-8").splitlines() if l.strip()]
+        cutoff = _time.time() - 86400  # 24h
+        return [e for e in entries if e.get("timed_out") and not e.get("resolved") and e.get("sent_at", 0) > cutoff]
+    except Exception:
+        return []
+
+
+def _update_pending(msg_id: str, **kwargs) -> None:
+    if not _PENDING_PATH.exists():
+        return
+    try:
+        entries = [json.loads(l) for l in _PENDING_PATH.read_text(encoding="utf-8").splitlines() if l.strip()]
+        for e in entries:
+            if e.get("msg_id") == msg_id:
+                e.update(kwargs)
+        _PENDING_PATH.write_text("\n".join(json.dumps(e) for e in entries) + "\n", encoding="utf-8")
+    except Exception:
+        pass
 
 # Lazy import to avoid circular deps at module load
 _inbox = None

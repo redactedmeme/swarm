@@ -17,8 +17,8 @@ Each tier stored in SQLite as compressed_chunks. The prompt injection pulls:
   - Relevant medium chunks (keyword-matched to current message)
   - The latest deep epoch summary (always — it's the long-view baseline)
 
-Compression uses Groq llama-3.1-8b-instant (fast, cheap — these are summaries
-of summaries, not generation). A full compress run costs ~10 Groq calls max.
+Compression uses Groq (model configurable via LCO_MODEL env var, defaults to
+llama-3.3-70b-versatile). A full compress run costs ~10 Groq calls max.
 
 Run via:
   asyncio.create_task(lco.run_compression_pass(llm_fn, user_id))
@@ -35,6 +35,9 @@ from pathlib import Path
 from typing import Callable, Awaitable, Optional
 
 logger = logging.getLogger(__name__)
+
+# Model used for compression passes — configurable via env
+LCO_MODEL = os.getenv("LCO_MODEL", "llama-3.3-70b-versatile")
 
 _DATA_DIR = Path(os.getenv("DATA_DIR", "/data"))
 _DB_PATH  = _DATA_DIR / "long_context.db"

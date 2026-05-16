@@ -48,6 +48,9 @@ inbox_tools = _import_plugin_module("inbox_tools")
 railway_tools = _import_plugin_module("railway_tools")
 audit_tools = _import_plugin_module("audit_tools")
 health_tools = _import_plugin_module("health_tools")
+web_tools   = _import_plugin_module("web_tools")
+exec_tools  = _import_plugin_module("exec_tools")
+skill_tools = _import_plugin_module("skill_tools")
 
 
 # ── Tool registry ─────────────────────────────────────────────────────────────
@@ -68,6 +71,9 @@ def _load_tools():
     railway_tools.register(ctx)
     audit_tools.register(ctx)
     health_tools.register(ctx)
+    web_tools.register(ctx)
+    exec_tools.register(ctx)
+    skill_tools.register(ctx)
     logger.info("[swarm_manager] %d tools loaded: %s", len(TOOLS), list(TOOLS))
 
 
@@ -135,14 +141,26 @@ async def _run_agent_loop(instruction: str, msg_id: str, task_type: str, service
     service_hint = f"\nTarget service: {service}" if service else ""
     user_msg = f"Task (id={msg_id}, type={task_type}){service_hint}\nInstruction: {instruction}"
 
+    # Build system message — inject past skill context if available
+    system_content = SYSTEM_PROMPT
+    try:
+        import skill_memory
+        past = skill_memory.recall(task_type or "general", instruction, n=5)
+        if past:
+            skill_context = skill_memory.format_for_context(past)
+            system_content = skill_context + "\n\n" + system_content
+    except Exception:
+        pass
+
     messages = [
-        {"role": "system", "content": SYSTEM_PROMPT},
+        {"role": "system", "content": system_content},
         {"role": "user", "content": user_msg},
     ]
     tools = _groq_tool_schemas()
 
     final_text = ""
     tool_results: list[dict] = []
+    tools_used_this_task: list[str] = []
 
     for round_num in range(MAX_TOOL_ROUNDS):
         try:
@@ -179,6 +197,7 @@ async def _run_agent_loop(instruction: str, msg_id: str, task_type: str, service
             logger.info("[agent] Tool call: %s(%s)", fn_name, json.dumps(fn_args)[:200])
             result_str = _call_tool(fn_name, fn_args)
             tool_results.append({"tool": fn_name, "args": fn_args, "result": result_str})
+            tools_used_this_task.append(fn_name)
 
             messages.append({
                 "role": "tool",
@@ -189,6 +208,7 @@ async def _run_agent_loop(instruction: str, msg_id: str, task_type: str, service
         if choice.finish_reason == "stop":
             break
 
+    tools_used_unique = list({t["tool"] for t in tool_results})
     result = {
         "status": "ok",
         "instruction": instruction,
@@ -196,9 +216,24 @@ async def _run_agent_loop(instruction: str, msg_id: str, task_type: str, service
         "service": service,
         "summary": final_text,
         "tool_calls": len(tool_results),
-        "tools_used": list({t["tool"] for t in tool_results}),
+        "tools_used": tools_used_unique,
         "details": tool_results[-3:] if tool_results else [],  # last 3 tool results
     }
+
+    # Save skill memory on success
+    try:
+        import skill_memory
+        skill_memory.remember(
+            task_type=task_type or "general",
+            instruction_summary=instruction[:200],
+            approach_summary=f"Used tools: {', '.join(tools_used_this_task)}" if tools_used_this_task else "No tools used",
+            outcome=str(final_text)[:200],
+            tools_used=tools_used_this_task,
+            success=True,
+        )
+    except Exception:
+        pass
+
     return result
 
 

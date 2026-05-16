@@ -997,7 +997,8 @@ async def run_garden_tend() -> None:
 
 
 async def hermes_result_check() -> None:
-    """Poll for completed task results from Hermes and DM admin."""
+    """Poll for completed task results from Hermes and DM admin.
+    Also checks for timed-out tasks that now have results for proactive relay."""
     try:
         import hermes_dispatch as hd
         results = hd.check_results()
@@ -1017,6 +1018,49 @@ async def hermes_result_check() -> None:
             logger.info("[routines] hermes result delivered: %s", msg_id)
     except Exception as e:
         logger.debug("[routines] hermes_result_check: %s", e)
+
+    # Proactive follow-up: check timed-out tasks that now have results
+    try:
+        import hermes_dispatch as hd
+        timed_out = hd.get_timed_out_tasks()
+        if not timed_out:
+            return
+        all_results = hd.check_results()
+        result_map = {r.get("id"): r for r in all_results}
+        result_map.update({r.get("payload", {}).get("request_id"): r for r in all_results if r.get("payload", {}).get("request_id")})
+
+        for task in timed_out:
+            task_msg_id = task.get("msg_id", "")
+            if not task_msg_id:
+                continue
+            matched = result_map.get(task_msg_id)
+            if matched:
+                instruction = task.get("instruction", "")
+                result_payload = matched.get("payload", matched)
+                # Naturalize inline if llm available, else plain text
+                result_summary = str(result_payload.get("result", result_payload.get("summary", str(result_payload))))[:300]
+                text = f"_Hermes (follow-up): {result_summary}_"
+                try:
+                    if _llm_fn:
+                        from groq import AsyncGroq as _AgQ
+                        import os as _os
+                        _client = _AgQ(api_key=_os.getenv("GROQ_API_KEY", ""))
+                        _resp = await _client.chat.completions.create(
+                            model="llama-3.1-8b-instant",
+                            messages=[
+                                {"role": "system", "content": "You are redacted-chan. Write one sentence relaying what Hermes found. Her voice, direct."},
+                                {"role": "user", "content": f"Task: {instruction[:150]}\nResult: {result_summary}"},
+                            ],
+                            max_tokens=80,
+                        )
+                        text = f"_Hermes: {_resp.choices[0].message.content.strip()}_"
+                except Exception:
+                    pass
+                await _send(text)
+                hd.mark_resolved(task_msg_id)
+                logger.info("[routines] hermes timed-out task resolved proactively: %s", task_msg_id)
+    except Exception as e:
+        logger.debug("[routines] hermes timed-out check: %s", e)
 
 
 async def _register_aliveness_modules() -> None:
@@ -1048,6 +1092,11 @@ async def _register_aliveness_modules() -> None:
         caff.register_llm_fn(_llm_fn)
     except Exception:
         pass
+    try:
+        import relationship_arc as rarc
+        rarc.register_llm_fn(_llm_fn)
+    except Exception as e:
+        logger.debug(f"[routines] relationship_arc register: {e}")
     logger.info("[routines] aliveness modules registered")
 
 
@@ -1075,6 +1124,8 @@ async def start_all() -> None:
     asyncio.create_task(_run_loop(run_gap_diary,          interval_h=3,    name="gap_diary"))
     asyncio.create_task(_run_loop(run_garden_tend,        interval_h=24,   name="garden_tend"))
     asyncio.create_task(_run_loop(hermes_result_check,   interval_h=1/60, name="hermes_results"))
+    asyncio.create_task(_run_loop(lambda: __import__('relationship_arc').distill_arc(), interval_h=168, name="arc_distill"))
+    asyncio.create_task(_run_loop(lambda: __import__('relationship_arc').distill_pinned_moments(), interval_h=168, name="pinned_moments"))
     # Register LLM fns for aliveness modules (they're invoked from echo handler, not as routines)
     asyncio.create_task(_register_aliveness_modules())
-    logger.info("[routines] nineteen autonomous routines started + five aliveness modules registered")
+    logger.info("[routines] twenty-one autonomous routines started + six aliveness modules registered")
