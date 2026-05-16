@@ -1,46 +1,49 @@
-"""Railway ops tools — deploy, status, logs, restart services."""
+"""Railway ops tools — deploy, status, logs, restart services via GraphQL API."""
 from __future__ import annotations
 
-import asyncio
 import json
 import logging
 import os
-import subprocess
+import time
+
+import requests
 
 logger = logging.getLogger("swarm-manager.railway")
 
+RAILWAY_API = "https://backboard.railway.com/graphql/v2"
+ENV_ID = "b07b0204-16f5-4063-9a24-f3b6dfe45e53"
+
 SERVICE_MAP = {
-    "redacted-chan-bot": "87d03512-83fc-4169-844f-2625030e4135",
-    "smolting-telegram-bot": "2d6387ab-5e20-44fa-87c9-0045fbabfff1",
-    "hermes-bot": "54fb26d2-def4-4a70-9a7a-a900f3418ed6",
-    "swarm-runtime": "9f910ac1-7fa8-49ab-a30f-5a10db7d3d8a",
-    "redactedbuilder-bot": "9e700bcc-fc26-49f0-a1a1-625d065885da",
-    "redacted-website": "4f55d261-2235-4f89-9d6e-03f5da6b3eca",
-    "redacted-dashboard": "879c2780-65d4-459b-955e-3e2f85b47bec",
+    "redacted-chan-bot":       "87d03512-83fc-4169-844f-2625030e4135",
+    "smolting-telegram-bot":   "2d6387ab-5e20-44fa-87c9-0045fbabfff1",
+    "hermes-bot":              "54fb26d2-def4-4a70-9a7a-a900f3418ed6",
+    "swarm-runtime":           "9f910ac1-7fa8-49ab-a30f-5a10db7d3d8a",
+    "redactedbuilder-bot":     "9e700bcc-fc26-49f0-a1a1-625d065885da",
+    "redacted-website":        "4f55d261-2235-4f89-9d6e-03f5da6b3eca",
+    "redacted-dashboard":      "879c2780-65d4-459b-955e-3e2f85b47bec",
 }
 
-BLOCKED_OPERATIONS = {"delete", "remove", "env_delete", "volume_delete"}
 
-
-def _get_token() -> str:
+def _token() -> str:
     return os.getenv("RAILWAY_TOKEN", "")
 
 
-def _run_railway(args: list[str], timeout: int = 30) -> tuple[str, str, int]:
-    token = _get_token()
+def _gql(query: str, variables: dict | None = None, timeout: int = 20) -> dict:
+    """Execute a Railway GraphQL query. Returns parsed JSON or raises."""
+    token = _token()
     if not token:
-        return "", "RAILWAY_TOKEN not set", 1
-    env = {**os.environ, "RAILWAY_TOKEN": token}
-    try:
-        proc = subprocess.run(
-            ["railway"] + args,
-            capture_output=True, text=True, timeout=timeout, env=env,
-        )
-        return proc.stdout.strip(), proc.stderr.strip(), proc.returncode
-    except FileNotFoundError:
-        return "", "railway CLI not found — install via npm i -g @railway/cli", 1
-    except subprocess.TimeoutExpired:
-        return "", f"Command timed out after {timeout}s", 1
+        raise RuntimeError("RAILWAY_TOKEN not set")
+    resp = requests.post(
+        RAILWAY_API,
+        json={"query": query, "variables": variables or {}},
+        headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"},
+        timeout=timeout,
+    )
+    resp.raise_for_status()
+    data = resp.json()
+    if "errors" in data:
+        raise RuntimeError(f"GraphQL errors: {data['errors']}")
+    return data.get("data", {})
 
 
 def _validate_service(name: str) -> str | None:
@@ -49,40 +52,125 @@ def _validate_service(name: str) -> str | None:
     return None
 
 
+# ── Status ───────────────────────────────────────────────────────────────────
+
+_STATUS_QUERY = """
+query ServiceStatus($serviceId: String!, $environmentId: String!) {
+  serviceInstance(serviceId: $serviceId, environmentId: $environmentId) {
+    serviceId
+    buildCommand
+    startCommand
+    domains { serviceDomains { domain } }
+    latestDeployment {
+      id
+      status
+      createdAt
+      url
+    }
+  }
+}
+"""
+
+
 def _handle_railway_status(args: dict) -> str:
     service = args.get("service", "")
-    if not service:
-        results = {}
-        for svc in SERVICE_MAP:
-            out, err, rc = _run_railway(["status", "--service", svc, "--json"], timeout=15)
-            results[svc] = out if rc == 0 else f"error: {err}"
-        return json.dumps({"status": "ok", "services": results})
+    services = [service] if service else list(SERVICE_MAP.keys())
 
-    err = _validate_service(service)
-    if err:
-        return json.dumps({"status": "error", "error": err})
+    if service:
+        err = _validate_service(service)
+        if err:
+            return json.dumps({"status": "error", "error": err})
 
-    out, stderr, rc = _run_railway(["status", "--service", service, "--json"])
-    if rc != 0:
-        return json.dumps({"status": "error", "error": stderr or "status check failed"})
-    return json.dumps({"status": "ok", "service": service, "details": out})
+    results = {}
+    for svc in services:
+        svc_id = SERVICE_MAP[svc]
+        try:
+            data = _gql(_STATUS_QUERY, {"serviceId": svc_id, "environmentId": ENV_ID})
+            inst = data.get("serviceInstance") or {}
+            dep = inst.get("latestDeployment") or {}
+            results[svc] = {
+                "status": dep.get("status", "UNKNOWN"),
+                "deployment_id": dep.get("id", ""),
+                "deployed_at": dep.get("createdAt", ""),
+                "url": dep.get("url", ""),
+            }
+        except Exception as e:
+            results[svc] = {"status": "error", "error": str(e)}
+
+    if len(services) == 1:
+        svc = services[0]
+        return json.dumps({"status": "ok", "service": svc, **results[svc]})
+    return json.dumps({"status": "ok", "services": results})
+
+
+# ── Logs ─────────────────────────────────────────────────────────────────────
+
+_DEPLOYMENTS_QUERY = """
+query Deployments($serviceId: String!) {
+  deployments(input: { serviceId: $serviceId }) {
+    edges { node { id status createdAt } }
+  }
+}
+"""
+
+_BUILD_LOGS_QUERY = """
+query BuildLogs($deploymentId: String!) {
+  buildLogs(deploymentId: $deploymentId) { message }
+}
+"""
+
+_DEPLOY_LOGS_QUERY = """
+query DeployLogs($deploymentId: String!) {
+  deploymentLogs(deploymentId: $deploymentId, limit: 100) { message timestamp }
+}
+"""
 
 
 def _handle_railway_logs(args: dict) -> str:
     service = args.get("service", "")
-    lines = args.get("lines", 50)
+    lines = min(int(args.get("lines", 50)), 200)
+    log_type = args.get("type", "runtime")  # "runtime" or "build"
+
     err = _validate_service(service)
     if err:
         return json.dumps({"status": "error", "error": err})
 
-    out, stderr, rc = _run_railway(
-        ["logs", "--service", service, "--lines", str(min(lines, 200))],
-        timeout=30,
-    )
-    if rc != 0:
-        return json.dumps({"status": "error", "error": stderr or "log fetch failed"})
-    log_lines = out.split("\n")[-lines:]
-    return json.dumps({"status": "ok", "service": service, "lines": log_lines, "count": len(log_lines)})
+    svc_id = SERVICE_MAP[service]
+    try:
+        # Get latest deployment id
+        data = _gql(_DEPLOYMENTS_QUERY, {"serviceId": svc_id})
+        edges = (data.get("deployments") or {}).get("edges", [])
+        if not edges:
+            return json.dumps({"status": "error", "error": "No deployments found"})
+        dep_id = edges[0]["node"]["id"]
+
+        if log_type == "build":
+            data2 = _gql(_BUILD_LOGS_QUERY, {"deploymentId": dep_id})
+            msgs = [e.get("message", "") for e in (data2.get("buildLogs") or [])]
+        else:
+            data2 = _gql(_DEPLOY_LOGS_QUERY, {"deploymentId": dep_id})
+            msgs = [e.get("message", "") for e in (data2.get("deploymentLogs") or [])]
+
+        log_lines = msgs[-lines:]
+        return json.dumps({
+            "status": "ok",
+            "service": service,
+            "deployment_id": dep_id,
+            "lines": log_lines,
+            "count": len(log_lines),
+        })
+    except Exception as e:
+        logger.error("[railway] Log fetch failed for %s: %s", service, e)
+        return json.dumps({"status": "error", "error": str(e)})
+
+
+# ── Restart ──────────────────────────────────────────────────────────────────
+
+_REDEPLOY_MUTATION = """
+mutation Redeploy($serviceId: String!, $environmentId: String!) {
+  serviceInstanceRedeploy(serviceId: $serviceId, environmentId: $environmentId)
+}
+"""
 
 
 def _handle_railway_restart(args: dict) -> str:
@@ -91,11 +179,16 @@ def _handle_railway_restart(args: dict) -> str:
     if err:
         return json.dumps({"status": "error", "error": err})
 
-    out, stderr, rc = _run_railway(["redeploy", "--service", service, "--yes"])
-    if rc != 0:
-        return json.dumps({"status": "error", "error": stderr or "restart failed"})
-    return json.dumps({"status": "ok", "service": service, "message": "Redeployment triggered"})
+    svc_id = SERVICE_MAP[service]
+    try:
+        _gql(_REDEPLOY_MUTATION, {"serviceId": svc_id, "environmentId": ENV_ID})
+        return json.dumps({"status": "ok", "service": service, "message": "Redeployment triggered"})
+    except Exception as e:
+        logger.error("[railway] Restart failed for %s: %s", service, e)
+        return json.dumps({"status": "error", "error": str(e)})
 
+
+# ── Deploy (approval gate) ────────────────────────────────────────────────────
 
 def _handle_railway_deploy(args: dict) -> str:
     service = args.get("service", "")
@@ -109,6 +202,8 @@ def _handle_railway_deploy(args: dict) -> str:
         "message": f"Deploy to {service} requires approval. Send '/hermes approve deploy {service}' to confirm.",
     })
 
+
+# ── Registration ─────────────────────────────────────────────────────────────
 
 def register(ctx):
     ctx.register_tool(
@@ -148,6 +243,12 @@ def register(ctx):
                         "type": "integer",
                         "description": "Number of log lines to fetch (max 200, default 50)",
                         "default": 50,
+                    },
+                    "type": {
+                        "type": "string",
+                        "description": "Log type: 'runtime' (default) or 'build'",
+                        "enum": ["runtime", "build"],
+                        "default": "runtime",
                     },
                 },
                 "required": ["service"],
@@ -196,4 +297,4 @@ def register(ctx):
         handler=_handle_railway_deploy,
     )
 
-    logger.info("[swarm-manager] Railway tools registered (4 tools)")
+    logger.info("[swarm-manager] Railway tools registered (4 tools) — using GraphQL API")
