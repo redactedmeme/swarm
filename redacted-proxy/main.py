@@ -145,6 +145,7 @@ _PROVIDER_URLS = {
     "groq":      "https://api.groq.com/openai/v1/chat/completions",
     "anthropic": "https://api.anthropic.com/v1/messages",
     "openai":    "https://api.openai.com/v1/chat/completions",
+    "venice":    "https://api.venice.ai/api/v1/chat/completions",
 }
 
 _PROVIDER_KEYS = {
@@ -152,29 +153,45 @@ _PROVIDER_KEYS = {
     "groq":      os.getenv("GROQ_API_KEY", ""),
     "anthropic": os.getenv("ANTHROPIC_API_KEY", ""),
     "openai":    os.getenv("OPENAI_API_KEY", ""),
+    "venice":    os.getenv("VENICE_API_KEY", ""),
+}
+
+# Venice model names that should NOT fall through to Groq's gemma/mixtral routing
+_VENICE_MODELS = {
+    "gemma-4-uncensored", "mistral-31-24b", "mistral-small-3-2-24b-instruct",
+    "qwen-2-5-vl", "llama-3-3-70b", "nous-hermes-3-nitro", "venice-uncensored",
+    "lfm-40b",
 }
 
 _MODEL_ALIASES = {
     # xAI
-    "grok-4-1-fast":            ("xai",       "grok-4-1-fast"),
-    "grok-3-fast":              ("xai",       "grok-3-fast"),
-    "grok-3":                   ("xai",       "grok-3"),
+    "grok-4-1-fast":                       ("xai",     "grok-4-1-fast"),
+    "grok-3-fast":                          ("xai",     "grok-3-fast"),
+    "grok-3":                               ("xai",     "grok-3"),
     # Groq
-    "llama-3.3-70b":            ("groq",      "llama-3.3-70b-versatile"),
-    "llama-3.1-8b":             ("groq",      "llama-3.1-8b-instant"),
-    "llama-3.1-8b-instant":     ("groq",      "llama-3.1-8b-instant"),
-    "llama-3.3-70b-versatile":  ("groq",      "llama-3.3-70b-versatile"),
-    "gemma2-9b-it":             ("groq",      "gemma2-9b-it"),
-    "mixtral-8x7b":             ("groq",      "mixtral-8x7b-32768"),
-    "qwen-qwq-32b":             ("groq",      "qwen-qwq-32b"),
+    "llama-3.3-70b":                        ("groq",    "llama-3.3-70b-versatile"),
+    "llama-3.1-8b":                         ("groq",    "llama-3.1-8b-instant"),
+    "llama-3.1-8b-instant":                 ("groq",    "llama-3.1-8b-instant"),
+    "llama-3.3-70b-versatile":              ("groq",    "llama-3.3-70b-versatile"),
+    "meta-llama/llama-4-scout-17b-16e-instruct": ("groq", "meta-llama/llama-4-scout-17b-16e-instruct"),
+    "gemma2-9b-it":                         ("groq",    "gemma2-9b-it"),
+    "mixtral-8x7b":                         ("groq",    "mixtral-8x7b-32768"),
+    "qwen-qwq-32b":                         ("groq",    "qwen-qwq-32b"),
     # Anthropic
-    "claude-haiku":             ("anthropic", "claude-3-haiku-20240307"),
-    "claude-sonnet":            ("anthropic", "claude-sonnet-4-5"),
-    "claude-opus":              ("anthropic", "claude-opus-4-5"),
-    "claude-3-haiku-20240307":  ("anthropic", "claude-3-haiku-20240307"),
+    "claude-haiku":                         ("anthropic", "claude-3-haiku-20240307"),
+    "claude-sonnet":                        ("anthropic", "claude-sonnet-4-5"),
+    "claude-opus":                          ("anthropic", "claude-opus-4-5"),
+    "claude-3-haiku-20240307":              ("anthropic", "claude-3-haiku-20240307"),
     # OpenAI
-    "gpt-4o":                   ("openai",    "gpt-4o"),
-    "gpt-4o-mini":              ("openai",    "gpt-4o-mini"),
+    "gpt-4o":                               ("openai",  "gpt-4o"),
+    "gpt-4o-mini":                          ("openai",  "gpt-4o-mini"),
+    # Venice (uncensored / privacy-first)
+    "gemma-4-uncensored":                   ("venice",  "gemma-4-uncensored"),
+    "mistral-31-24b":                       ("venice",  "mistral-31-24b"),
+    "mistral-small-3-2-24b-instruct":       ("venice",  "mistral-small-3-2-24b-instruct"),
+    "venice-uncensored":                    ("venice",  "venice-uncensored"),
+    "nous-hermes-3-nitro":                  ("venice",  "nous-hermes-3-nitro"),
+    "lfm-40b":                              ("venice",  "lfm-40b"),
 }
 
 
@@ -184,6 +201,8 @@ def _resolve_provider(model: str, explicit_provider: str = "") -> tuple[str, str
         return explicit_provider.lower(), model
     if model in _MODEL_ALIASES:
         return _MODEL_ALIASES[model]
+    if model in _VENICE_MODELS:
+        return "venice", model
     if model.startswith("grok-"):
         return "xai", model
     if model.startswith(("llama-", "gemma", "mixtral", "qwen-", "deepseek-")):
