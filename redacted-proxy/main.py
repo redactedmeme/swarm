@@ -82,24 +82,34 @@ logger = logging.getLogger(__name__)
 # ── Config ────────────────────────────────────────────────────────────────────
 
 PROXY_TOKEN         = os.getenv("PROXY_TOKEN", "")
-PRIVACY_MODE        = os.getenv("PRIVACY_MODE", "anonymous").lower()
-PRIVACY_SCRUB       = os.getenv("PRIVACY_SCRUB", "false").lower() == "true"
 DEFAULT_TEMPERATURE = os.getenv("DEFAULT_TEMPERATURE", "")
 DEFAULT_TOP_P       = os.getenv("DEFAULT_TOP_P", "")
 RATE_LIMIT_RPM      = int(os.getenv("RATE_LIMIT_RPM", "60"))
 PORT                = int(os.getenv("PORT", "7080"))
 
-# LOG_LEVEL: explicit env var wins; otherwise inherit from PRIVACY_MODE
-_LOG_LEVEL_ENV = os.getenv("LOG_LEVEL", "").lower()
-# Legacy LOG_CONTENT=false support
-if not _LOG_LEVEL_ENV and os.getenv("LOG_CONTENT", "").lower() == "false":
-    _LOG_LEVEL_ENV = "minimal"
-if _LOG_LEVEL_ENV in ("none", "minimal", "full"):
-    LOG_LEVEL = _LOG_LEVEL_ENV
-elif PRIVACY_MODE == "private":
-    LOG_LEVEL = "minimal"
-else:
-    LOG_LEVEL = "full"
+# Runtime-mutable config — all values here can be changed via POST /config
+# without a redeploy. Seeded from env vars at startup.
+def _default_log_level(privacy_mode: str) -> str:
+    env = os.getenv("LOG_LEVEL", "").lower()
+    if not env and os.getenv("LOG_CONTENT", "").lower() == "false":
+        env = "minimal"
+    if env in ("none", "minimal", "full"):
+        return env
+    return "minimal" if privacy_mode in ("private", "maximum") else "full"
+
+_cfg: dict = {
+    "privacy_mode":   os.getenv("PRIVACY_MODE", "anonymous").lower(),
+    "privacy_scrub":  os.getenv("PRIVACY_SCRUB", "false").lower() == "true",
+    "ephemeral_mode": os.getenv("EPHEMERAL_MODE", "false").lower() == "true",
+    "log_level":      "",   # filled below
+}
+_cfg["log_level"] = _default_log_level(_cfg["privacy_mode"])
+
+# Shorthands used internally
+def PRIVACY_MODE()  -> str:  return _cfg["privacy_mode"]
+def PRIVACY_SCRUB() -> bool: return _cfg["privacy_scrub"]
+def EPHEMERAL_MODE()-> bool: return _cfg["ephemeral_mode"]
+def LOG_LEVEL()     -> str:  return _cfg["log_level"]
 
 _DATA_DIR  = Path("/data") if Path("/data").exists() else Path(__file__).parent / "data"
 _LOG_PATH  = _DATA_DIR / "proxy_log.jsonl"
@@ -301,8 +311,8 @@ def _from_anthropic(result: dict) -> dict:
 
 def _log_entry(provider: str, model: str, messages: list, response_text: str,
                latency_ms: float, error: str = "", ephemeral: bool = False) -> None:
-    """Append a log entry — respects LOG_LEVEL and X-Ephemeral."""
-    if LOG_LEVEL == "none" or ephemeral:
+    """Append a log entry — respects LOG_LEVEL, EPHEMERAL_MODE, and X-Ephemeral."""
+    if LOG_LEVEL() == "none" or ephemeral or EPHEMERAL_MODE():
         return
     try:
         entry: dict[str, Any] = {
@@ -312,12 +322,11 @@ def _log_entry(provider: str, model: str, messages: list, response_text: str,
             "latency_ms": round(latency_ms),
             "turns":      len(messages),
         }
-        # Token count estimates (rough: 1 token ≈ 4 chars)
         prompt_chars = sum(len(str(m.get("content", ""))) for m in messages)
         entry["prompt_tokens_est"]     = prompt_chars // 4
         entry["completion_tokens_est"] = len(response_text) // 4
 
-        if LOG_LEVEL == "full":
+        if LOG_LEVEL() == "full":
             entry["messages_preview"] = [
                 {"role": m.get("role", "?"), "content": str(m.get("content", ""))[:200]}
                 for m in messages[-3:]
@@ -328,18 +337,16 @@ def _log_entry(provider: str, model: str, messages: list, response_text: str,
 
         _log_ring.append(entry)
 
-        if LOG_LEVEL != "none":
-            _DATA_DIR.mkdir(parents=True, exist_ok=True)
-            line = json.dumps(entry, ensure_ascii=False) + "\n"
-            with open(_LOG_PATH, "a", encoding="utf-8") as f:
-                f.write(line)
-            # Rotate
-            try:
-                lines = _LOG_PATH.read_text(encoding="utf-8").splitlines()
-                if len(lines) > _LOG_MAX:
-                    _LOG_PATH.write_text("\n".join(lines[-_LOG_MAX:]) + "\n", encoding="utf-8")
-            except Exception:
-                pass
+        _DATA_DIR.mkdir(parents=True, exist_ok=True)
+        line = json.dumps(entry, ensure_ascii=False) + "\n"
+        with open(_LOG_PATH, "a", encoding="utf-8") as f:
+            f.write(line)
+        try:
+            lines = _LOG_PATH.read_text(encoding="utf-8").splitlines()
+            if len(lines) > _LOG_MAX:
+                _LOG_PATH.write_text("\n".join(lines[-_LOG_MAX:]) + "\n", encoding="utf-8")
+        except Exception:
+            pass
 
     except Exception as e:
         logger.debug("[proxy] log write failed: %s", e)
@@ -394,11 +401,63 @@ async def handle_health(request: web.Request) -> web.Response:
     providers_up = {p: bool(k) for p, k in _PROVIDER_KEYS.items()}
     return web.json_response({
         "status":        "ok",
-        "privacy_mode":  PRIVACY_MODE,
-        "log_level":     LOG_LEVEL,
-        "privacy_scrub": PRIVACY_SCRUB,
+        "privacy_mode":  PRIVACY_MODE(),
+        "log_level":     LOG_LEVEL(),
+        "privacy_scrub": PRIVACY_SCRUB(),
+        "ephemeral_mode": EPHEMERAL_MODE(),
         "providers":     providers_up,
     })
+
+
+async def handle_config_get(request: web.Request) -> web.Response:
+    """Return current runtime config."""
+    return web.json_response({
+        "privacy_mode":   _cfg["privacy_mode"],
+        "log_level":      _cfg["log_level"],
+        "privacy_scrub":  _cfg["privacy_scrub"],
+        "ephemeral_mode": _cfg["ephemeral_mode"],
+        "valid_privacy_modes": ["anonymous", "private", "maximum"],
+        "valid_log_levels":    ["none", "minimal", "full"],
+    })
+
+
+async def handle_config_post(request: web.Request) -> web.Response:
+    """Update runtime config — changes take effect immediately, no redeploy needed."""
+    try:
+        body = await request.json()
+    except Exception:
+        return web.json_response({"error": "invalid JSON"}, status=400)
+
+    updated = {}
+    if "privacy_mode" in body:
+        val = str(body["privacy_mode"]).lower()
+        if val not in ("anonymous", "private", "maximum"):
+            return web.json_response({"error": "privacy_mode must be anonymous|private|maximum"}, status=400)
+        _cfg["privacy_mode"] = val
+        # Auto-adjust log_level when mode changes, unless explicitly set in same request
+        if "log_level" not in body:
+            _cfg["log_level"] = _default_log_level(val)
+        updated["privacy_mode"] = val
+
+    if "log_level" in body:
+        val = str(body["log_level"]).lower()
+        if val not in ("none", "minimal", "full"):
+            return web.json_response({"error": "log_level must be none|minimal|full"}, status=400)
+        _cfg["log_level"] = val
+        updated["log_level"] = val
+
+    if "privacy_scrub" in body:
+        val = bool(body["privacy_scrub"])
+        _cfg["privacy_scrub"] = val
+        updated["privacy_scrub"] = val
+
+    if "ephemeral_mode" in body:
+        val = bool(body["ephemeral_mode"])
+        _cfg["ephemeral_mode"] = val
+        updated["ephemeral_mode"] = val
+
+    logger.info("[proxy] config updated: %s", updated)
+    return web.json_response({"ok": True, "updated": updated, "current": dict(_cfg)})
 
 
 async def handle_models(request: web.Request) -> web.Response:
@@ -439,7 +498,7 @@ async def handle_chat_completions(request: web.Request) -> web.Response:
         payload["top_p"] = float(request.headers["X-Top-P"])
 
     original_messages = payload.get("messages", [])
-    payload["messages"] = _clean_messages(original_messages, PRIVACY_SCRUB)
+    payload["messages"] = _clean_messages(original_messages, PRIVACY_SCRUB())
 
     error_text = ""
     response_text = ""
@@ -450,7 +509,7 @@ async def handle_chat_completions(request: web.Request) -> web.Response:
         latency_ms = (time.monotonic() - t0) * 1000
         logger.info("[proxy] %s/%s → %d chars (%.0fms)%s",
                     provider, upstream_model, len(response_text), latency_ms,
-                    " [ephemeral]" if ephemeral else "")
+                    " [ephemeral]" if (ephemeral or EPHEMERAL_MODE()) else "")
         _log_entry(provider, upstream_model, original_messages, response_text,
                    latency_ms, ephemeral=ephemeral)
         return web.json_response(result)
@@ -491,10 +550,12 @@ async def make_app() -> web.Application:
     app.router.add_get("/v1/models",             handle_models)
     app.router.add_post("/v1/chat/completions",  handle_chat_completions)
     app.router.add_get("/logs",                  handle_logs)
+    app.router.add_get("/config",                handle_config_get)
+    app.router.add_post("/config",               handle_config_post)
     return app
 
 
 if __name__ == "__main__":
     logger.info("[proxy] starting on port %d | mode=%s log=%s scrub=%s rpm=%d",
-                PORT, PRIVACY_MODE, LOG_LEVEL, PRIVACY_SCRUB, RATE_LIMIT_RPM)
+                PORT, PRIVACY_MODE(), LOG_LEVEL(), PRIVACY_SCRUB(), RATE_LIMIT_RPM)
     web.run_app(make_app(), port=PORT, host="0.0.0.0")

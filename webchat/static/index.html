@@ -410,10 +410,129 @@
   }
   .empty-state .icon { font-size: 36px; opacity: 0.3; }
 
+  /* ── Privacy panel ── */
+  #privacy-panel {
+    position: fixed; inset: 0; z-index: 50;
+    display: flex; align-items: flex-start; justify-content: flex-end;
+    pointer-events: none;
+  }
+  #privacy-panel.hidden { display: none; }
+
+  .privacy-backdrop {
+    position: absolute; inset: 0;
+    background: rgba(0,0,0,0.4);
+    pointer-events: all;
+  }
+
+  .privacy-drawer {
+    position: relative; z-index: 1;
+    width: 300px; height: 100vh;
+    background: var(--sidebar);
+    border-left: 1px solid var(--border);
+    display: flex; flex-direction: column;
+    pointer-events: all;
+    overflow-y: auto;
+  }
+
+  .privacy-header {
+    padding: 16px 18px 12px;
+    border-bottom: 1px solid var(--border);
+    display: flex; align-items: center; gap: 10px;
+  }
+  .privacy-header-title { font-size: 14px; font-weight: 600; flex: 1; }
+  .privacy-close {
+    background: none; border: none; cursor: pointer;
+    color: var(--text-muted); font-size: 18px; line-height: 1; padding: 2px 4px;
+    border-radius: 6px; transition: color 0.15s, background 0.15s;
+  }
+  .privacy-close:hover { color: var(--text); background: var(--surface); }
+
+  .privacy-body { padding: 16px 18px; display: flex; flex-direction: column; gap: 20px; }
+
+  .privacy-section { display: flex; flex-direction: column; gap: 10px; }
+  .privacy-section-label {
+    font-size: 10px; font-weight: 600; letter-spacing: 0.08em;
+    text-transform: uppercase; color: var(--text-muted);
+  }
+
+  .mode-grid { display: flex; flex-direction: column; gap: 6px; }
+  .mode-option {
+    display: flex; align-items: center; gap: 10px;
+    padding: 10px 12px;
+    border-radius: 10px;
+    border: 1px solid var(--border);
+    cursor: pointer;
+    background: var(--surface);
+    transition: border-color 0.15s, background 0.15s;
+  }
+  .mode-option:hover { background: var(--surface2); }
+  .mode-option.selected { border-color: var(--accent); background: var(--accent-dim); }
+  .mode-option input[type=radio] { display: none; }
+  .mode-icon { font-size: 18px; flex-shrink: 0; width: 24px; text-align: center; }
+  .mode-text { flex: 1; }
+  .mode-name { font-size: 12px; font-weight: 600; }
+  .mode-desc { font-size: 11px; color: var(--text-dim); margin-top: 1px; }
+
+  .toggle-row {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 8px 0;
+    border-bottom: 1px solid var(--border);
+  }
+  .toggle-row:last-child { border-bottom: none; }
+  .toggle-label { font-size: 13px; }
+  .toggle-sub { font-size: 11px; color: var(--text-dim); margin-top: 1px; }
+
+  .toggle-switch {
+    position: relative; width: 38px; height: 22px; flex-shrink: 0;
+  }
+  .toggle-switch input { opacity: 0; width: 0; height: 0; }
+  .toggle-slider {
+    position: absolute; inset: 0; cursor: pointer;
+    background: var(--surface2); border-radius: 22px;
+    border: 1px solid var(--border);
+    transition: background 0.2s;
+  }
+  .toggle-slider:before {
+    content: ''; position: absolute;
+    width: 16px; height: 16px; left: 2px; top: 2px;
+    background: var(--text-muted); border-radius: 50%;
+    transition: transform 0.2s, background 0.2s;
+  }
+  .toggle-switch input:checked + .toggle-slider { background: var(--accent-dim); border-color: var(--accent); }
+  .toggle-switch input:checked + .toggle-slider:before { transform: translateX(16px); background: var(--accent); }
+
+  .log-level-row { display: flex; gap: 6px; }
+  .log-chip {
+    flex: 1; padding: 6px 0; text-align: center;
+    font-size: 11px; font-weight: 600; border-radius: 8px;
+    border: 1px solid var(--border); background: var(--surface);
+    cursor: pointer; color: var(--text-dim);
+    transition: border-color 0.15s, background 0.15s, color 0.15s;
+  }
+  .log-chip.selected { border-color: var(--accent); background: var(--accent-dim); color: var(--text); }
+
+  .privacy-status {
+    font-size: 11px; color: var(--text-muted);
+    text-align: center; padding: 8px 0 0;
+  }
+  .privacy-status.ok { color: var(--green); }
+  .privacy-status.err { color: var(--red); }
+
+  /* Shield button in header */
+  .shield-btn {
+    background: none; border: none; cursor: pointer;
+    color: var(--text-muted); font-size: 15px; padding: 4px 6px;
+    border-radius: 8px; transition: color 0.15s, background 0.15s;
+    line-height: 1;
+  }
+  .shield-btn:hover { color: var(--text); background: var(--surface); }
+  .shield-btn.active { color: var(--accent); }
+
   /* Responsive */
   @media (max-width: 640px) {
     #sidebar { display: none; }
     .bubble { max-width: 85%; }
+    .privacy-drawer { width: 100vw; }
   }
 </style>
 </head>
@@ -431,6 +550,85 @@
       <input type="password" id="pw-input" placeholder="passphrase" autocomplete="current-password" />
     </div>
     <button class="login-btn" id="login-btn">Connect</button>
+  </div>
+</div>
+
+<!-- ── Privacy panel ── -->
+<div id="privacy-panel" class="hidden">
+  <div class="privacy-backdrop" id="privacy-backdrop"></div>
+  <div class="privacy-drawer">
+    <div class="privacy-header">
+      <span style="font-size:16px">🛡</span>
+      <div class="privacy-header-title">Privacy Controls</div>
+      <button class="privacy-close" id="privacy-close">✕</button>
+    </div>
+    <div class="privacy-body">
+
+      <div class="privacy-section">
+        <div class="privacy-section-label">Mode</div>
+        <div class="mode-grid" id="mode-grid">
+          <label class="mode-option" data-mode="anonymous">
+            <input type="radio" name="privacy_mode" value="anonymous">
+            <div class="mode-icon">🌐</div>
+            <div class="mode-text">
+              <div class="mode-name">Anonymous</div>
+              <div class="mode-desc">Strip fingerprints · synthetic UA · full logs</div>
+            </div>
+          </label>
+          <label class="mode-option" data-mode="private">
+            <input type="radio" name="privacy_mode" value="private">
+            <div class="mode-icon">🔒</div>
+            <div class="mode-text">
+              <div class="mode-name">Private</div>
+              <div class="mode-desc">No content in logs · metadata only</div>
+            </div>
+          </label>
+          <label class="mode-option" data-mode="maximum">
+            <input type="radio" name="privacy_mode" value="maximum">
+            <div class="mode-icon">⛔</div>
+            <div class="mode-text">
+              <div class="mode-name">Maximum</div>
+              <div class="mode-desc">Minimal logs · PII scrub · strongest posture</div>
+            </div>
+          </label>
+        </div>
+      </div>
+
+      <div class="privacy-section">
+        <div class="privacy-section-label">Log Level</div>
+        <div class="log-level-row" id="log-level-row">
+          <div class="log-chip" data-level="full">Full</div>
+          <div class="log-chip" data-level="minimal">Minimal</div>
+          <div class="log-chip" data-level="none">None</div>
+        </div>
+      </div>
+
+      <div class="privacy-section">
+        <div class="privacy-section-label">Options</div>
+        <div class="toggle-row">
+          <div>
+            <div class="toggle-label">PII Scrubbing</div>
+            <div class="toggle-sub">Redact IDs, emails, @handles before forwarding</div>
+          </div>
+          <label class="toggle-switch">
+            <input type="checkbox" id="toggle-scrub">
+            <span class="toggle-slider"></span>
+          </label>
+        </div>
+        <div class="toggle-row">
+          <div>
+            <div class="toggle-label">Ephemeral Mode</div>
+            <div class="toggle-sub">Disable all logging globally for every request</div>
+          </div>
+          <label class="toggle-switch">
+            <input type="checkbox" id="toggle-ephemeral">
+            <span class="toggle-slider"></span>
+          </label>
+        </div>
+      </div>
+
+      <div class="privacy-status" id="privacy-status">loading…</div>
+    </div>
   </div>
 </div>
 
@@ -470,6 +668,7 @@
         <div class="chat-header-name">redacted-chan</div>
         <div class="chat-header-status" id="header-status">connecting...</div>
       </div>
+      <button class="shield-btn" id="shield-btn" title="Privacy controls">🛡</button>
     </div>
 
     <div id="messages"></div>
@@ -919,6 +1118,122 @@ async function sendMessage() {
     }
   }
 }
+
+// ── Privacy panel ────────────────────────────────────────────────────────────
+const privacyPanel    = document.getElementById('privacy-panel');
+const privacyBackdrop = document.getElementById('privacy-backdrop');
+const privacyClose    = document.getElementById('privacy-close');
+const privacyStatus   = document.getElementById('privacy-status');
+const shieldBtn       = document.getElementById('shield-btn');
+const toggleScrub     = document.getElementById('toggle-scrub');
+const toggleEphemeral = document.getElementById('toggle-ephemeral');
+
+let _privacyCfg = null;   // last known config from proxy
+let _privacySaving = false;
+
+function openPrivacyPanel() {
+  privacyPanel.classList.remove('hidden');
+  shieldBtn.classList.add('active');
+  loadPrivacyConfig();
+}
+
+function closePrivacyPanel() {
+  privacyPanel.classList.add('hidden');
+  shieldBtn.classList.remove('active');
+}
+
+shieldBtn.addEventListener('click', openPrivacyPanel);
+privacyClose.addEventListener('click', closePrivacyPanel);
+privacyBackdrop.addEventListener('click', closePrivacyPanel);
+
+function _renderConfig(cfg) {
+  _privacyCfg = cfg;
+
+  // Mode options
+  document.querySelectorAll('.mode-option').forEach(el => {
+    el.classList.toggle('selected', el.dataset.mode === cfg.privacy_mode);
+  });
+
+  // Log level chips
+  document.querySelectorAll('.log-chip').forEach(el => {
+    el.classList.toggle('selected', el.dataset.level === cfg.log_level);
+  });
+
+  // Toggles
+  toggleScrub.checked     = !!cfg.privacy_scrub;
+  toggleEphemeral.checked = !!cfg.ephemeral_mode;
+
+  privacyStatus.textContent = '● synced';
+  privacyStatus.className   = 'privacy-status ok';
+}
+
+async function loadPrivacyConfig() {
+  privacyStatus.textContent = 'loading…';
+  privacyStatus.className   = 'privacy-status';
+  try {
+    const res = await fetch('/proxy-config', {
+      headers: {'Authorization': `Bearer ${token}`},
+    });
+    if (res.status === 503) {
+      privacyStatus.textContent = 'proxy not reachable';
+      privacyStatus.className   = 'privacy-status err';
+      return;
+    }
+    const cfg = await res.json();
+    _renderConfig(cfg);
+  } catch {
+    privacyStatus.textContent = 'could not load config';
+    privacyStatus.className   = 'privacy-status err';
+  }
+}
+
+async function savePrivacyConfig(patch) {
+  if (_privacySaving) return;
+  _privacySaving = true;
+  privacyStatus.textContent = 'saving…';
+  privacyStatus.className   = 'privacy-status';
+  try {
+    const res = await fetch('/proxy-config', {
+      method: 'POST',
+      headers: {'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json'},
+      body: JSON.stringify(patch),
+    });
+    const data = await res.json();
+    if (data.current) {
+      _renderConfig(data.current);
+    } else if (data.error) {
+      privacyStatus.textContent = data.error;
+      privacyStatus.className   = 'privacy-status err';
+    }
+  } catch {
+    privacyStatus.textContent = 'save failed';
+    privacyStatus.className   = 'privacy-status err';
+  } finally {
+    _privacySaving = false;
+  }
+}
+
+// Mode selection
+document.querySelectorAll('.mode-option').forEach(el => {
+  el.addEventListener('click', () => {
+    savePrivacyConfig({privacy_mode: el.dataset.mode});
+  });
+});
+
+// Log level chips
+document.querySelectorAll('.log-chip').forEach(el => {
+  el.addEventListener('click', () => {
+    savePrivacyConfig({log_level: el.dataset.level});
+  });
+});
+
+// Toggles
+toggleScrub.addEventListener('change', () => {
+  savePrivacyConfig({privacy_scrub: toggleScrub.checked});
+});
+toggleEphemeral.addEventListener('change', () => {
+  savePrivacyConfig({ephemeral_mode: toggleEphemeral.checked});
+});
 
 // ── Init ──────────────────────────────────────────────────────────────────────
 if (token) {

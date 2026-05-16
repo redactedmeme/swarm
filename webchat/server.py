@@ -35,6 +35,8 @@ WEB_PASSWORD = os.getenv("WEB_PASSWORD", "")
 WEB_SECRET = os.getenv("WEB_SECRET", "changeme")
 INTERNAL_URL = os.getenv("REDACTED_CHAN_INTERNAL_URL", "http://localhost:8080")
 DATA_PROXY_TOKEN = os.getenv("DATA_PROXY_TOKEN", "")
+PROXY_INTERNAL_URL = os.getenv("PROXY_INTERNAL_URL", "")   # e.g. http://redacted-proxy.railway.internal:7080
+PROXY_TOKEN = os.getenv("PROXY_TOKEN", "")
 
 JWT_ALGORITHM = "HS256"
 JWT_EXPIRY_HOURS = 24
@@ -195,6 +197,51 @@ class ChatRequest(BaseModel):
     session_id: str = ""
     history: list = []
     image_data: str = ""   # base64 data URL for image attachments
+
+
+@app.get("/proxy-config")
+async def proxy_config_get(request: Request):
+    """Fetch current proxy privacy config — requires login."""
+    authorization = request.headers.get("Authorization", "")
+    _validate_token(authorization)
+    if not PROXY_INTERNAL_URL:
+        raise HTTPException(status_code=503, detail="proxy not configured")
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            resp = await client.get(
+                f"{PROXY_INTERNAL_URL}/config",
+                headers={"Authorization": f"Bearer {PROXY_TOKEN}"},
+            )
+        return resp.json()
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=str(e))
+
+
+class ProxyConfigUpdate(BaseModel):
+    privacy_mode:   str | None = None
+    log_level:      str | None = None
+    privacy_scrub:  bool | None = None
+    ephemeral_mode: bool | None = None
+
+
+@app.post("/proxy-config")
+async def proxy_config_post(body: ProxyConfigUpdate, request: Request):
+    """Update proxy privacy config at runtime — requires login."""
+    authorization = request.headers.get("Authorization", "")
+    _validate_token(authorization)
+    if not PROXY_INTERNAL_URL:
+        raise HTTPException(status_code=503, detail="proxy not configured")
+    payload = {k: v for k, v in body.model_dump().items() if v is not None}
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            resp = await client.post(
+                f"{PROXY_INTERNAL_URL}/config",
+                json=payload,
+                headers={"Authorization": f"Bearer {PROXY_TOKEN}", "Content-Type": "application/json"},
+            )
+        return resp.json()
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=str(e))
 
 
 @app.post("/chat")
