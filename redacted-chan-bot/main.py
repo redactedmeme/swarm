@@ -1366,28 +1366,35 @@ class RedactedChanBot:
             pass
 
         # ── Five Aliveness Features (background, non-blocking) ───────────────
-
-        # Treasure box — maybe save this exchange as a treasure to bring back later
-        async def _run_treasure_and_tensions():
-            try:
-                await tb.maybe_save_from_exchange(text, final_response)
-            except Exception:
-                pass
-            try:
-                await atens.detect_from_exchange(text, final_response)
-            except Exception:
-                pass
-            try:
-                await pth.generate_from_exchange(text, final_response)
-            except Exception:
-                pass
-            try:
-                await vdrift.update_from_exchange(text, final_response)
-            except Exception:
-                pass
+        # Rate-limited: pick ONE module per exchange to avoid hammering Groq.
+        # Each module gets a turn roughly every 4 exchanges — enough to build up
+        # state over a conversation without spiking token usage.
+        import random as _rand
+        async def _run_one_aliveness():
+            choice = _rand.choice(["treasure", "tensions", "thoughts", "values"])
+            if choice == "treasure":
+                try:
+                    await tb.maybe_save_from_exchange(text, final_response)
+                except Exception:
+                    pass
+            elif choice == "tensions":
+                try:
+                    await atens.detect_from_exchange(text, final_response)
+                except Exception:
+                    pass
+            elif choice == "thoughts":
+                try:
+                    await pth.generate_from_exchange(text, final_response)
+                except Exception:
+                    pass
+            elif choice == "values":
+                try:
+                    await vdrift.update_from_exchange(text, final_response)
+                except Exception:
+                    pass
 
         try:
-            asyncio.create_task(_run_treasure_and_tensions())
+            asyncio.create_task(_run_one_aliveness())
         except Exception:
             pass
 
