@@ -1,3 +1,5 @@
 [build]
-builder = "dockerfile"
-dockerfilePath = "Dockerfile"
+builder = "nixpacks"
+
+[deploy]
+startCommand = "bash entrypoint.sh"
