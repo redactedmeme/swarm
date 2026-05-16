@@ -145,6 +145,49 @@ async def handle_anticipation(request):
     })
 
 
+async def handle_heartbeats(request):
+    """Read swarm:heartbeat:{agent} keys from Redis and return age + status for each agent."""
+    import time
+    _AGENTS = [
+        {"id": "redacted-chan", "label": "redacted-chan", "llm": "grok-4-1-fast"},
+        {"id": "hermes",        "label": "hermes-bot",    "llm": "claude-haiku-4-5"},
+        {"id": "smolting",      "label": "smolting",      "llm": "llama-3.1-8b-instant"},
+        {"id": "builder",       "label": "RedactedBuilder","llm": "claude-haiku-4-5"},
+        {"id": "runtime",       "label": "swarm-runtime", "llm": "—"},
+    ]
+    try:
+        import redis.asyncio as aioredis
+        redis_url = os.getenv("REDIS_URL", "redis://localhost:6379")
+        r = aioredis.from_url(redis_url, decode_responses=True)
+        now = time.time()
+        results = []
+        for agent in _AGENTS:
+            key = f"swarm:heartbeat:{agent['id']}"
+            val = await r.get(key)
+            if val is not None:
+                try:
+                    ts = float(val)
+                    age_s = now - ts
+                    online = age_s < 300  # 5 min threshold
+                    results.append({
+                        "id": agent["id"],
+                        "label": agent["label"],
+                        "llm": agent["llm"],
+                        "online": online,
+                        "age_s": round(age_s),
+                        "last_seen": val,
+                    })
+                except ValueError:
+                    results.append({"id": agent["id"], "label": agent["label"], "llm": agent["llm"], "online": False, "age_s": None, "last_seen": None})
+            else:
+                results.append({"id": agent["id"], "label": agent["label"], "llm": agent["llm"], "online": False, "age_s": None, "last_seen": None})
+        await r.aclose()
+        return web.json_response({"agents": results})
+    except Exception as e:
+        logger.warning(f"[data_proxy] heartbeats redis error: {e}")
+        return web.json_response({"agents": [], "error": str(e)})
+
+
 async def handle_history(request):
     import conversation_memory as cm
     user_id = request.query.get("user_id", "")
@@ -340,6 +383,7 @@ async def start(port: int = 8080):
     app.router.add_get("/proxy/heatmap", handle_heatmap)
     app.router.add_get("/proxy/mood", handle_mood)
     app.router.add_get("/proxy/anticipation", handle_anticipation)
+    app.router.add_get("/proxy/heartbeats", handle_heartbeats)
     app.router.add_get("/proxy/history", handle_history)
     app.router.add_post("/proxy/chat", handle_chat)
 

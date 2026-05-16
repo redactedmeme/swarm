@@ -279,6 +279,42 @@ async def chan_anticipation(request: Request):
     return resp.json()
 
 
+@app.get("/chan/heartbeats")
+async def chan_heartbeats(request: Request):
+    authorization = request.headers.get("Authorization", "")
+    _validate_token(authorization)
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            resp = await client.get(
+                f"{INTERNAL_URL}/proxy/heartbeats",
+                headers={"Authorization": f"Bearer {DATA_PROXY_TOKEN}"},
+            )
+        return resp.json()
+    except Exception as e:
+        return JSONResponse({"agents": [], "error": str(e)})
+
+
+@app.get("/chan/vault")
+async def chan_vault(request: Request):
+    authorization = request.headers.get("Authorization", "")
+    _validate_token(authorization)
+    n = int(request.query_params.get("n", 30))
+    category = request.query_params.get("category", "")
+    params = {"n": n}
+    if category:
+        params["category"] = category
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            resp = await client.get(
+                f"{INTERNAL_URL}/proxy/vault/entries",
+                params=params,
+                headers={"Authorization": f"Bearer {DATA_PROXY_TOKEN}"},
+            )
+        return resp.json()
+    except Exception as e:
+        return JSONResponse({"entries": [], "error": str(e)})
+
+
 @app.get("/chan/heatmap")
 async def chan_heatmap(request: Request):
     authorization = request.headers.get("Authorization", "")
@@ -299,7 +335,7 @@ async def proxy_logs(request: Request):
     _validate_token(authorization)
     if not PROXY_INTERNAL_URL:
         return JSONResponse({"entries": []})
-    n = int(request.query_params.get("n", 50))
+    n = int(request.query_params.get("n", 500))
     try:
         async with httpx.AsyncClient(timeout=10.0) as client:
             resp = await client.get(
