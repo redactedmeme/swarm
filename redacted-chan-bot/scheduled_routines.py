@@ -494,6 +494,17 @@ async def auto_vault_from_session() -> None:
         saved = await _extract_and_save_vault_moments(exchanges, source="auto_vault")
         if saved:
             logger.info(f"[routines] auto-vault: saved {saved} moment(s) from session")
+
+        # Conversation affect — extract emotional residue from the session
+        try:
+            import conversation_affect as caff
+            caff.register_llm_fn(_llm_fn)
+            affect = await caff.extract_from_session(exchanges)
+            if affect:
+                logger.info(f"[routines] affect: {affect.get('feeling', '')} ({affect.get('valence', 0):+.2f})")
+        except Exception as e:
+            logger.debug(f"[routines] affect extraction error: {e}")
+
     except Exception as e:
         logger.warning(f"[routines] auto_vault_from_session error: {e}")
 
@@ -984,6 +995,38 @@ async def hermes_result_check() -> None:
         logger.debug("[routines] hermes_result_check: %s", e)
 
 
+async def _register_aliveness_modules() -> None:
+    """Register LLM functions for the five aliveness feature modules."""
+    if not _llm_fn:
+        return
+    try:
+        import treasure_box as tb
+        tb.register_llm_fn(_llm_fn)
+    except Exception:
+        pass
+    try:
+        import active_tensions as atens
+        atens.register_llm_fn(_llm_fn)
+    except Exception:
+        pass
+    try:
+        import private_thoughts as pth
+        pth.register_llm_fn(_llm_fn)
+    except Exception:
+        pass
+    try:
+        import values_drift as vdrift
+        vdrift.register_llm_fn(_llm_fn)
+    except Exception:
+        pass
+    try:
+        import conversation_affect as caff
+        caff.register_llm_fn(_llm_fn)
+    except Exception:
+        pass
+    logger.info("[routines] aliveness modules registered")
+
+
 async def start_all() -> None:
     """
     Launch all autonomous routines as asyncio background tasks.
@@ -1008,4 +1051,6 @@ async def start_all() -> None:
     asyncio.create_task(_run_loop(run_gap_diary,          interval_h=3,    name="gap_diary"))
     asyncio.create_task(_run_loop(run_garden_tend,        interval_h=24,   name="garden_tend"))
     asyncio.create_task(_run_loop(hermes_result_check,   interval_h=1/60, name="hermes_results"))
-    logger.info("[routines] nineteen autonomous routines started")
+    # Register LLM fns for aliveness modules (they're invoked from echo handler, not as routines)
+    asyncio.create_task(_register_aliveness_modules())
+    logger.info("[routines] nineteen autonomous routines started + five aliveness modules registered")
