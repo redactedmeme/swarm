@@ -2490,6 +2490,17 @@ class RedactedChanBot:
 
         app.job_queue.run_repeating(_liberty_job, interval=604800, first=7200)
 
+        # Proactive outbound agency — check every 90min, send if conditions met
+        async def _proactive_job(ctx: ContextTypes.DEFAULT_TYPE) -> None:
+            try:
+                sent = await pm.check_and_send()
+                if sent:
+                    logger.info("[chan] proactive message sent")
+            except Exception as e:
+                logger.warning(f"[chan] proactive check failed: {e}")
+
+        app.job_queue.run_repeating(_proactive_job, interval=5400, first=3600)  # 90min, first at 1h
+
         # Private mesh channel + scheduled routines — both start on post_init
         async def _post_init(_app, _ctx=None):
             # Data proxy for sub-agent service
