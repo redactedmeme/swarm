@@ -178,11 +178,15 @@ def _check_tpd_error(exc: Exception) -> bool:
     msg = str(exc)
     if "rate_limit_exceeded" not in msg and "tokens per day" not in msg:
         return False
-    # Parse "Please try again in Xm Y.Zs" from the Groq error body
-    wait_sec = 900.0  # safe default: 15 min
-    m = _tpd_re.search(r'try again in (\d+)m([\d.]+)s', msg)
+    # Parse "Please try again in Xh Ym Y.Zs" from the Groq error body
+    wait_sec = 3600.0  # safe default: 1h (TPD resets daily, 15m was too short)
+    # Handles: "5h30m0s", "1h0m30s", "30m0s", "45.5s"
+    m = _tpd_re.search(r'try again in (?:(\d+)h)?(?:(\d+)m)?([\d.]+)s', msg)
     if m:
-        wait_sec = int(m.group(1)) * 60 + float(m.group(2)) + 60  # +60s buffer
+        h = int(m.group(1) or 0)
+        mins = int(m.group(2) or 0)
+        secs = float(m.group(3) or 0)
+        wait_sec = h * 3600 + mins * 60 + secs + 60  # +60s buffer
     else:
         m2 = _tpd_re.search(r'try again in ([\d.]+)s', msg)
         if m2:
