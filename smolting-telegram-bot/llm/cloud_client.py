@@ -24,7 +24,9 @@ class CloudLLMClient:
         self._xai_key = os.getenv("XAI_API_KEY", "")
 
     def _get_api_key(self) -> str:
-        """Get API key based on provider"""
+        """Get API key — proxy token takes precedence if PROXY_URL is set."""
+        if os.getenv("PROXY_URL"):
+            return os.getenv("PROXY_TOKEN", "")
         keys = {
             "openai": os.getenv("OPENAI_API_KEY"),
             "anthropic": os.getenv("ANTHROPIC_API_KEY"),
@@ -35,7 +37,10 @@ class CloudLLMClient:
         return keys.get(self.provider, "") or ""
 
     def _get_base_url(self) -> str:
-        """Get base URL for provider"""
+        """Get base URL for provider — proxy takes precedence if PROXY_URL is set."""
+        proxy = os.getenv("PROXY_URL", "").rstrip("/")
+        if proxy:
+            return proxy
         urls = {
             "openai": "https://api.openai.com/v1",
             "anthropic": "https://api.anthropic.com/v1",
@@ -48,7 +53,8 @@ class CloudLLMClient:
     async def chat_completion(self, messages: list, model: str = None, max_tokens: int = None) -> str:
         """Chat completion with cloud LLM"""
         max_tokens = max_tokens or self._default_max_tokens
-        if self.provider in ("openai", "xai", "groq", "together"):
+        # Proxy speaks OpenAI-compatible for all providers
+        if os.getenv("PROXY_URL") or self.provider in ("openai", "xai", "groq", "together"):
             return await self._openai_completion(messages, model, max_tokens=max_tokens)
         elif self.provider == "anthropic":
             return await self._anthropic_completion(messages, model, max_tokens=max_tokens)
