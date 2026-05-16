@@ -1,11 +1,12 @@
 import { useQuery } from '@tanstack/react-query'
 import { motion } from 'framer-motion'
-import { Activity, Brain, Zap, Shield } from 'lucide-react'
-import { apiGetMood, apiGetFacts, apiGetProxyLogs } from '@/app/lib/api'
+import { Activity, Brain, Zap, Shield, BookHeart } from 'lucide-react'
+import { apiGetMood, apiGetFacts, apiGetProxyLogs, apiGetVault } from '@/app/lib/api'
 import AgentGrid from '@/app/components/Dashboard/AgentGrid'
 import MoodPanel from '@/app/components/Dashboard/MoodPanel'
 import FactsList from '@/app/components/Dashboard/FactsList'
 import ProxyTable from '@/app/components/Dashboard/ProxyTable'
+import VaultPanel from '@/app/components/Dashboard/VaultPanel'
 
 const STAGGER = { hidden: {}, show: { transition: { staggerChildren: 0.07 } } }
 const ITEM = {
@@ -17,11 +18,14 @@ export default function DashboardPage() {
   const mood = useQuery({ queryKey: ['mood'], queryFn: apiGetMood, refetchInterval: 30_000 })
   const facts = useQuery({ queryKey: ['facts'], queryFn: apiGetFacts, refetchInterval: 60_000 })
   const logs = useQuery({ queryKey: ['proxy-logs'], queryFn: apiGetProxyLogs, refetchInterval: 30_000 })
+  const vault = useQuery({ queryKey: ['vault'], queryFn: () => apiGetVault(30), refetchInterval: 120_000 })
+
+  // proxy logs endpoint may return { logs: [...] } or { entries: [...] }
+  const proxyData = logs.data?.logs ?? (logs.data as { entries?: typeof logs.data.logs })?.entries
 
   return (
     <div className="h-full overflow-y-auto">
       <div className="max-w-5xl mx-auto px-4 py-6">
-        {/* Header */}
         <div className="flex items-center gap-3 mb-6">
           <div className="flex items-center gap-2">
             <Activity size={18} className="text-primary" />
@@ -37,14 +41,14 @@ export default function DashboardPage() {
           animate="show"
           className="grid grid-cols-1 md:grid-cols-2 gap-4"
         >
-          {/* Agent heartbeats */}
+          {/* Agent heartbeats — full width */}
           <motion.div variants={ITEM} className="md:col-span-2">
             <SectionCard icon={<Zap size={14} />} title="Agent Heartbeats">
               <AgentGrid />
             </SectionCard>
           </motion.div>
 
-          {/* Mood */}
+          {/* Chan state — compact */}
           <motion.div variants={ITEM}>
             <SectionCard icon={<Brain size={14} />} title="Chan State">
               <MoodPanel data={mood.data} loading={mood.isLoading} />
@@ -58,10 +62,17 @@ export default function DashboardPage() {
             </SectionCard>
           </motion.div>
 
-          {/* Proxy logs */}
+          {/* Vault — full width */}
           <motion.div variants={ITEM} className="md:col-span-2">
-            <SectionCard icon={<Shield size={14} />} title="Proxy Activity">
-              <ProxyTable data={logs.data?.logs} loading={logs.isLoading} />
+            <SectionCard icon={<BookHeart size={14} />} title="Memory Vault">
+              <VaultPanel data={vault.data?.entries} loading={vault.isLoading} />
+            </SectionCard>
+          </motion.div>
+
+          {/* Proxy logs — full width */}
+          <motion.div variants={ITEM} className="md:col-span-2">
+            <SectionCard icon={<Shield size={14} />} title={`Proxy Activity${proxyData ? ` · ${proxyData.length} entries` : ''}`}>
+              <ProxyTable data={proxyData} loading={logs.isLoading} />
             </SectionCard>
           </motion.div>
         </motion.div>
