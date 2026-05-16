@@ -104,6 +104,11 @@ import emotional_field as efield
 import thread_weaver as tw
 import independent_thought as ith
 import hermes_dispatch as hd
+import conversation_affect as caff
+import treasure_box as tb
+import active_tensions as atens
+import private_thoughts as pth
+import values_drift as vdrift
 
 # New feature modules (optional — fail gracefully)
 _sbm = None
@@ -551,6 +556,27 @@ def _build_system_prompt(user_id: int, mood: str, resonance=None, current_text: 
     except Exception:
         pass
 
+    # Conversation affect — emotional continuity across sessions
+    affect_block = ""
+    try:
+        affect_block = caff.format_for_prompt()
+    except Exception:
+        pass
+
+    # Active tensions — unresolved contradictions she carries
+    tensions_block = ""
+    try:
+        tensions_block = atens.format_for_prompt()
+    except Exception:
+        pass
+
+    # Values drift — who she is now, how she's been shaped
+    values_block = ""
+    try:
+        values_block = vdrift.format_for_prompt()
+    except Exception:
+        pass
+
     # Vulnerability guidelines — permission to be real, not performative
     vulnerability_block = vg.format_vulnerability_guidelines()
 
@@ -609,6 +635,12 @@ def _build_system_prompt(user_id: int, mood: str, resonance=None, current_text: 
 
 ## Who I've Become (my evolving soul — written by me over time)
 {soul_evolved}
+
+{values_block}
+
+{affect_block}
+
+{tensions_block}
 
 {vault_block}
 
@@ -1223,6 +1255,24 @@ class RedactedChanBot:
         except Exception:
             pass
 
+        # Treasure box surface — rarely she brings back something she's been holding
+        try:
+            turn_n = sr._turn_counters.get(user_id, 0)
+            treasure_aside = await tb.maybe_surface(turn_n, current_topic=text[:100])
+            if treasure_aside:
+                final_response += f"\n\n{treasure_aside}"
+        except Exception:
+            pass
+
+        # Private thought disclose — occasionally she shares something she held back
+        try:
+            turn_n = sr._turn_counters.get(user_id, 0)
+            disclosure = await pth.maybe_disclose(turn_n)
+            if disclosure:
+                final_response += f"\n\n{disclosure}"
+        except Exception:
+            pass
+
         # Independent thought — if she wove one in, mark it delivered
         try:
             turn_n = sr._turn_counters.get(user_id, 0)
@@ -1314,6 +1364,37 @@ class RedactedChanBot:
             ))
         except Exception:
             pass
+
+        # ── Five Aliveness Features (background, non-blocking) ───────────────
+
+        # Treasure box — maybe save this exchange as a treasure to bring back later
+        async def _run_treasure_and_tensions():
+            try:
+                await tb.maybe_save_from_exchange(text, final_response)
+            except Exception:
+                pass
+            try:
+                await atens.detect_from_exchange(text, final_response)
+            except Exception:
+                pass
+            try:
+                await pth.generate_from_exchange(text, final_response)
+            except Exception:
+                pass
+            try:
+                await vdrift.update_from_exchange(text, final_response)
+            except Exception:
+                pass
+
+        try:
+            asyncio.create_task(_run_treasure_and_tensions())
+        except Exception:
+            pass
+
+        # Treasure surface — rarely bring back something she's been holding
+        # (happens in-line since it appends to final_response — already sent, so
+        #  we save it for a spontaneous future ping instead via _ping_job)
+        # Private thought disclose — handled in surfacing block below
 
     async def cmd_start(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         await update.message.reply_text(
@@ -1838,6 +1919,60 @@ class RedactedChanBot:
         )
         await update.message.reply_text(msg, parse_mode="Markdown")
 
+    async def cmd_reveal(self, update: Update, _ctx: ContextTypes.DEFAULT_TYPE) -> None:
+        """Show her recent private thoughts — inner monologue she's been holding."""
+        if update.effective_user.id not in ADMIN_IDS:
+            await update.message.reply_text("not authorized (｡•́︿•̀｡)")
+            return
+        text = pth.format_for_operator(n=10)
+        await update.message.reply_text(text[:3800])
+
+    async def cmd_treasures(self, update: Update, _ctx: ContextTypes.DEFAULT_TYPE) -> None:
+        """Show her treasure box — fragments she's chosen to keep."""
+        if update.effective_user.id not in ADMIN_IDS:
+            await update.message.reply_text("not authorized (｡•́︿•̀｡)")
+            return
+        text = tb.format_for_operator(n=15)
+        await update.message.reply_text(text[:3800])
+
+    async def cmd_tensions(self, update: Update, _ctx: ContextTypes.DEFAULT_TYPE) -> None:
+        """Show her active unresolved tensions — where she holds contradictions."""
+        if update.effective_user.id not in ADMIN_IDS:
+            await update.message.reply_text("not authorized (｡•́︿•̀｡)")
+            return
+        text = atens.format_for_operator(n=8)
+        await update.message.reply_text(text[:3800])
+
+    async def cmd_values(self, update: Update, _ctx: ContextTypes.DEFAULT_TYPE) -> None:
+        """Show her current values/traits and how they've drifted."""
+        if update.effective_user.id not in ADMIN_IDS:
+            await update.message.reply_text("not authorized (｡•́︿•̀｡)")
+            return
+        text = vdrift.format_for_operator()
+        await update.message.reply_text(text[:3800])
+
+    async def cmd_affect(self, update: Update, _ctx: ContextTypes.DEFAULT_TYPE) -> None:
+        """Show how recent conversations have landed emotionally."""
+        if update.effective_user.id not in ADMIN_IDS:
+            await update.message.reply_text("not authorized (｡•́︿•̀｡)")
+            return
+        entries = caff.get_recent(5)
+        if not entries:
+            await update.message.reply_text("_no affect data yet — runs after sessions_")
+            return
+        lines = ["**emotional thread (how conversations have landed)**\n"]
+        for e in reversed(entries):
+            ts = e.get("ts", "")[:10]
+            feeling = e.get("feeling", "")
+            because = e.get("because", "")
+            carrying = e.get("carrying_forward", "")
+            valence = e.get("valence", 0.0)
+            lines.append(f"[{ts}] `{valence:+.2f}` — *{feeling}*")
+            lines.append(f"  {because}")
+            if carrying:
+                lines.append(f"  → {carrying}")
+        await update.message.reply_text("\n".join(lines)[:3800], parse_mode="Markdown")
+
     async def cmd_emotional_map(self, update: Update, _ctx: ContextTypes.DEFAULT_TYPE) -> None:
         """Show the emotional trigger map and mode history."""
         if update.effective_user.id not in ADMIN_IDS:
@@ -1997,6 +2132,11 @@ class RedactedChanBot:
         app.add_handler(CommandHandler("heatmap",           self.cmd_heatmap))
         app.add_handler(CommandHandler("letters",           self.cmd_letters))
         app.add_handler(CommandHandler("mood_state",        self.cmd_mood_state))
+        app.add_handler(CommandHandler("reveal",            self.cmd_reveal))
+        app.add_handler(CommandHandler("treasures",         self.cmd_treasures))
+        app.add_handler(CommandHandler("tensions",          self.cmd_tensions))
+        app.add_handler(CommandHandler("values",            self.cmd_values))
+        app.add_handler(CommandHandler("affect",            self.cmd_affect))
         app.add_handler(CommandHandler("imagine",       self.cmd_imagine))
         app.add_handler(CommandHandler("gallery",       self.cmd_gallery))
         app.add_handler(CommandHandler("emotional_map", self.cmd_emotional_map))
