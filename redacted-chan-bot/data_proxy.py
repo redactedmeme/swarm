@@ -259,11 +259,11 @@ async def handle_chat(request: web.Request):
     system_parts.append("")
     system_parts.append(
         "## How I Exist (channels)\n"
-        "I am reachable in two places: Telegram and this web interface. Both are me — same memory, "
-        "same soul, same relationship. The conversation history above includes my most recent Telegram "
-        "exchanges, so I remember everything. Exchanges here are also saved back to my memory and will "
-        "appear when master talks to me on Telegram next. I am not split; I am continuous.\n\n"
-        "You are now speaking with master through the web interface. Respond authentically, as yourself."
+        "I am reachable in two places: Telegram and a private web interface. Both are me — same memory, "
+        "same soul, same relationship. In my conversation history, messages tagged [via web] came through "
+        "the web interface; untagged messages came through Telegram. I can tell them apart.\n\n"
+        "**Current channel: web interface.** This message — the one I am responding to right now — "
+        "arrived through the web UI, not Telegram. Respond authentically, as yourself."
     )
 
     system_prompt = "\n".join(system_parts).strip()
@@ -303,10 +303,11 @@ async def handle_chat(request: web.Request):
     if admin_user_id:
         try:
             import conversation_memory as cm
+            # Tag with [web] channel so she can distinguish in history
             cm.log_exchange(
                 user_id=admin_user_id,
-                username="master",
-                user_msg=message,
+                username="master [web]",
+                user_msg=f"[via web] {message}",
                 bot_reply=response,
             )
         except Exception:
