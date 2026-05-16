@@ -1,0 +1,8 @@
+[phases.setup]
+nixPkgs = ["python311", "bash"]
+
+[phases.install]
+cmds = ["pip install -r requirements.txt"]
+
+[start]
+cmd = "bash entrypoint.sh"
