@@ -145,6 +145,7 @@ _PROVIDER_URLS = {
     "groq":      "https://api.groq.com/openai/v1/chat/completions",
     "anthropic": "https://api.anthropic.com/v1/messages",
     "openai":    "https://api.openai.com/v1/chat/completions",
+    "venice":    "https://api.venice.ai/api/v1/chat/completions",
 }
 
 _PROVIDER_KEYS = {
@@ -152,14 +153,27 @@ _PROVIDER_KEYS = {
     "groq":      os.getenv("GROQ_API_KEY", ""),
     "anthropic": os.getenv("ANTHROPIC_API_KEY", ""),
     "openai":    os.getenv("OPENAI_API_KEY", ""),
+    "venice":    os.getenv("VENICE_API_KEY", ""),
 }
+
+# Venice models — matched by exact name; must NOT overlap with Groq llama names
+_VENICE_MODELS: frozenset[str] = frozenset({
+    "gemma-4-uncensored",
+    "mistral-31-24b",
+    "mistral-small-3-2-24b-instruct",
+    "qwen-2-5-vl",
+    "nous-hermes-3-nitro",
+    "venice-uncensored",
+    "lfm-40b",
+    "llama-3-3-70b",           # Venice's own llama build (different from Groq's)
+})
 
 _MODEL_ALIASES = {
     # xAI
     "grok-4-1-fast":            ("xai",       "grok-4-1-fast"),
     "grok-3-fast":              ("xai",       "grok-3-fast"),
     "grok-3":                   ("xai",       "grok-3"),
-    # Groq
+    # Groq  (explicit aliases keep these away from Venice prefix matching)
     "llama-3.3-70b":            ("groq",      "llama-3.3-70b-versatile"),
     "llama-3.1-8b":             ("groq",      "llama-3.1-8b-instant"),
     "llama-3.1-8b-instant":     ("groq",      "llama-3.1-8b-instant"),
@@ -175,6 +189,13 @@ _MODEL_ALIASES = {
     # OpenAI
     "gpt-4o":                   ("openai",    "gpt-4o"),
     "gpt-4o-mini":              ("openai",    "gpt-4o-mini"),
+    # Venice aliases
+    "gemma-4-uncensored":                 ("venice", "gemma-4-uncensored"),
+    "mistral-31-24b":                     ("venice", "mistral-31-24b"),
+    "mistral-small-3-2-24b-instruct":     ("venice", "mistral-small-3-2-24b-instruct"),
+    "venice-uncensored":                  ("venice", "venice-uncensored"),
+    "nous-hermes-3-nitro":                ("venice", "nous-hermes-3-nitro"),
+    "lfm-40b":                            ("venice", "lfm-40b"),
 }
 
 
@@ -182,8 +203,13 @@ def _resolve_provider(model: str, explicit_provider: str = "") -> tuple[str, str
     """Return (provider, upstream_model) for a given model name."""
     if explicit_provider:
         return explicit_provider.lower(), model
+    # Explicit alias table wins first — prevents ambiguous prefix matches
     if model in _MODEL_ALIASES:
         return _MODEL_ALIASES[model]
+    # Venice exact-name set (checked before prefix rules)
+    if model in _VENICE_MODELS:
+        return "venice", model
+    # Prefix routing — Groq llama/gemma/mixtral/qwen only (not Venice variants)
     if model.startswith("grok-"):
         return "xai", model
     if model.startswith(("llama-", "gemma", "mixtral", "qwen-", "deepseek-")):

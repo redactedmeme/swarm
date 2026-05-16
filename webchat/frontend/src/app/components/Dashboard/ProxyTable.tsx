@@ -43,7 +43,7 @@ export default function ProxyTable({ data, loading }: Props) {
             return (
               <tr key={i} className="text-foreground/80">
                 <td className="py-1.5 pr-4 font-mono text-muted-foreground whitespace-nowrap">
-                  {new Date(row.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
+                  {new Date(row.ts ?? row.timestamp ?? '').toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
                 </td>
                 <td className="py-1.5 pr-4">
                   <span className={cn('px-1.5 py-0.5 rounded border text-[10px] font-medium', colorClass)}>

@@ -380,6 +380,30 @@ async def proxy_logs(request: Request):
         return JSONResponse({"entries": []})
 
 
+@app.post("/hermes/chat")
+async def hermes_chat(body: ChatRequest, request: Request):
+    """Dispatch a task to Hermes via chan-bot's data_proxy → Redis SwarmInbox."""
+    authorization = request.headers.get("Authorization", "")
+    _validate_token(authorization)
+
+    client_ip = request.client.host if request.client else "unknown"
+    if not _check_rate_limit(client_ip):
+        raise HTTPException(status_code=429, detail="rate limit exceeded")
+
+    try:
+        async with httpx.AsyncClient(timeout=70.0) as client:
+            resp = await client.post(
+                f"{INTERNAL_URL}/proxy/hermes/task",
+                json={"message": body.message, "session_id": body.session_id},
+                headers={"Authorization": f"Bearer {DATA_PROXY_TOKEN}", "Content-Type": "application/json"},
+            )
+        return resp.json()
+    except httpx.TimeoutException:
+        return JSONResponse({"response": "Hermes timed out — check the swarm feed or Telegram.", "agent": "hermes", "timeout": True})
+    except Exception as e:
+        return JSONResponse({"response": f"Hermes unavailable: {e}", "agent": "hermes"}, status_code=503)
+
+
 @app.post("/chat")
 async def chat(body: ChatRequest, request: Request):
     """Proxy an authenticated chat message to the internal redacted-chan data proxy."""

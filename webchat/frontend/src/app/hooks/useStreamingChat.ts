@@ -4,8 +4,9 @@ import { useAuthStore } from '@/app/store/authStore'
 import { useChatStore, buildApiHistory } from '@/app/store/chatStore'
 import { apiUpload } from '@/app/lib/api'
 import type { Attachment } from '@/app/types'
+import type { ChatAgent } from '@/app/components/Chat/ChanHeader'
 
-export function useStreamingChat() {
+export function useStreamingChat(agent: ChatAgent = 'chan') {
   const sessionId = useAuthStore((s) => s.sessionId)
   const setSessionId = useAuthStore((s) => s.setAuth)
   const token = useAuthStore((s) => s.token)
@@ -14,6 +15,7 @@ export function useStreamingChat() {
     pendingAttachments,
     isWaiting,
     addUserMessage,
+    addMessage,
     startStreamingMessage,
     appendStreamingChunk,
     finalizeStreamingMessage,
@@ -55,6 +57,40 @@ export function useStreamingChat() {
       addUserMessage(content, attachments)
       setWaiting(true)
 
+      // ── Hermes: non-streaming POST, poll up to 70s ────────────────────────
+      if (agent === 'hermes') {
+        const msgId = startStreamingMessage()
+        try {
+          const res = await fetch('/hermes/chat', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              Authorization: `Bearer ${token}`,
+            },
+            body: JSON.stringify({
+              message: content,
+              session_id: sessionId ?? '',
+              history: buildApiHistory(messages),
+            }),
+            signal: AbortSignal.timeout(75_000),
+          })
+          const data = await res.json() as { response?: string; error?: string; timeout?: boolean }
+          const reply = data.response ?? data.error ?? 'No response'
+          appendStreamingChunk(msgId, reply)
+          if (data.timeout) {
+            toast.info('Hermes is still working — check the swarm feed for updates')
+          }
+        } catch (err) {
+          appendStreamingChunk(msgId, 'Hermes is unavailable right now.')
+          toast.error(err instanceof Error ? err.message : 'Hermes error')
+        } finally {
+          finalizeStreamingMessage(msgId)
+          setWaiting(false)
+        }
+        return
+      }
+
+      // ── Chan (default): SSE streaming ─────────────────────────────────────
       const history = buildApiHistory(messages)
       const payload = {
         message: content,
@@ -76,9 +112,7 @@ export function useStreamingChat() {
           signal: AbortSignal.timeout(100_000),
         })
 
-        if (!res.ok || !res.body) {
-          throw new Error(`HTTP ${res.status}`)
-        }
+        if (!res.ok || !res.body) throw new Error(`HTTP ${res.status}`)
 
         const reader = res.body.getReader()
         const decoder = new TextDecoder()
@@ -101,22 +135,13 @@ export function useStreamingChat() {
                 session_id?: string
                 error?: string
               }
-              if (evt.error) {
-                toast.error(evt.error)
-                break
-              }
+              if (evt.error) { toast.error(evt.error); break }
               if (evt.session_id && evt.session_id !== sessionId) {
-                // persist new session id without clearing token
-                const currentToken = token ?? ''
-                setSessionId(currentToken, evt.session_id)
+                setSessionId(token ?? '', evt.session_id)
               }
-              if (evt.delta) {
-                appendStreamingChunk(msgId, evt.delta)
-              }
+              if (evt.delta) appendStreamingChunk(msgId, evt.delta)
               if (evt.done) break
-            } catch {
-              // malformed SSE line — skip
-            }
+            } catch { /* malformed SSE */ }
           }
         }
       } catch (err) {
@@ -127,18 +152,9 @@ export function useStreamingChat() {
       }
     },
     [
-      messages,
-      pendingAttachments,
-      isWaiting,
-      sessionId,
-      token,
-      addUserMessage,
-      startStreamingMessage,
-      appendStreamingChunk,
-      finalizeStreamingMessage,
-      setWaiting,
-      clearAttachments,
-      setSessionId,
+      agent, messages, pendingAttachments, isWaiting, sessionId, token,
+      addUserMessage, addMessage, startStreamingMessage, appendStreamingChunk,
+      finalizeStreamingMessage, setWaiting, clearAttachments, setSessionId,
     ],
   )
 
