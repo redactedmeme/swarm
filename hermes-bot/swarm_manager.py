@@ -324,13 +324,7 @@ async def health_sweep_loop():
             result = json.loads(result_str)
             stale = result.get("stale_agents", [])
             if stale:
-                logger.warning("[health] Stale agents: %s", stale)
-                for agent in stale:
-                    svc = health_tools.AGENT_SERVICE_MAP.get(agent)
-                    if svc and svc != "hermes-bot":  # Don't restart ourselves
-                        logger.info("[health] Auto-restarting %s (%s)", agent, svc)
-                        restart_result = railway_tools._handle_railway_restart({"service": svc})
-                        logger.info("[health] Restart result: %s", restart_result[:200])
+                logger.warning("[health] Stale agents: %s — auto-restart disabled (RAILWAY_WRITE_TOKEN not configured)", stale)
             else:
                 logger.info("[health] All agents healthy (%d/%d)",
                             result.get("healthy_count", 0), result.get("total_count", 0))

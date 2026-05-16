@@ -528,6 +528,141 @@
   .shield-btn:hover { color: var(--text); background: var(--surface); }
   .shield-btn.active { color: var(--accent); }
 
+  /* ── Tab switcher ── */
+  .tab-switcher {
+    display: flex; gap: 4px;
+  }
+  .tab-btn {
+    background: none; border: 1px solid transparent;
+    border-radius: 8px; padding: 4px 10px;
+    font-size: 11px; font-weight: 600;
+    color: var(--text-dim); cursor: pointer;
+    transition: color 0.15s, background 0.15s, border-color 0.15s;
+    font-family: var(--font);
+  }
+  .tab-btn:hover { color: var(--text); background: var(--surface); }
+  .tab-btn.active { color: var(--text); background: var(--surface2); border-color: var(--border); }
+
+  /* ── Swarm dashboard ── */
+  #swarm-area {
+    flex: 1; display: none; flex-direction: column;
+    overflow-y: auto; background: var(--bg);
+    padding: 16px;
+    gap: 14px;
+  }
+  #swarm-area.visible { display: flex; }
+
+  .swarm-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 14px;
+  }
+  @media (max-width: 800px) {
+    .swarm-grid { grid-template-columns: 1fr; }
+  }
+
+  .swarm-panel {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 16px;
+  }
+  .swarm-panel.full-width { grid-column: 1 / -1; }
+
+  .swarm-panel-header {
+    font-size: 10px; font-weight: 600;
+    letter-spacing: 0.08em; text-transform: uppercase;
+    color: var(--text-muted); margin-bottom: 12px;
+    display: flex; align-items: center; justify-content: space-between;
+  }
+
+  .swarm-refresh-btn {
+    background: none; border: 1px solid var(--border);
+    border-radius: 6px; padding: 2px 8px;
+    font-size: 10px; color: var(--text-dim);
+    cursor: pointer; font-family: var(--font);
+    text-transform: none; letter-spacing: 0;
+    transition: background 0.15s, color 0.15s;
+  }
+  .swarm-refresh-btn:hover { background: var(--surface2); color: var(--text); }
+
+  /* Agent grid */
+  .agent-grid {
+    display: grid; grid-template-columns: 1fr 1fr;
+    gap: 8px;
+  }
+  .agent-card {
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 10px 12px;
+    display: flex; align-items: center; gap: 10px;
+  }
+  .agent-dot {
+    width: 8px; height: 8px; border-radius: 50%;
+    background: var(--text-muted); flex-shrink: 0;
+    transition: background 0.3s;
+  }
+  .agent-dot.green { background: var(--green); }
+  .agent-dot.yellow { background: #c8a840; }
+  .agent-info { flex: 1; min-width: 0; }
+  .agent-name { font-size: 12px; font-weight: 600; }
+  .agent-role { font-size: 10px; color: var(--text-dim); margin-top: 1px; }
+  .agent-last { font-size: 10px; color: var(--text-muted); }
+
+  /* Chan state panel */
+  .chan-mood-big {
+    font-size: 28px; font-weight: 700; color: var(--text);
+    margin-bottom: 4px; line-height: 1.2;
+  }
+  .chan-mood-modifier {
+    font-size: 13px; color: var(--text-dim); margin-bottom: 12px;
+  }
+  .chan-row {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 6px 0;
+    border-bottom: 1px solid var(--border);
+    font-size: 12px;
+  }
+  .chan-row:last-child { border-bottom: none; }
+  .chan-row-label { color: var(--text-muted); }
+  .chan-row-value { color: var(--text); font-weight: 500; }
+
+  /* Facts list */
+  .facts-list { display: flex; flex-direction: column; gap: 0; max-height: 240px; overflow-y: auto; }
+  .fact-item {
+    display: flex; align-items: baseline; justify-content: space-between;
+    padding: 6px 0;
+    border-bottom: 1px solid var(--border);
+    font-size: 12px; gap: 8px;
+  }
+  .fact-item:last-child { border-bottom: none; }
+  .fact-text { flex: 1; color: var(--text); line-height: 1.4; }
+  .fact-score { color: var(--text-muted); font-size: 10px; flex-shrink: 0; }
+
+  /* Proxy log table */
+  .proxy-table { width: 100%; border-collapse: collapse; font-size: 11px; }
+  .proxy-table th {
+    text-align: left; padding: 4px 6px;
+    border-bottom: 1px solid var(--border);
+    font-size: 9px; font-weight: 600; letter-spacing: 0.06em;
+    text-transform: uppercase; color: var(--text-muted);
+  }
+  .proxy-table td { padding: 5px 6px; border-bottom: 1px solid rgba(255,255,255,0.03); }
+  .proxy-table tr:last-child td { border-bottom: none; }
+  .proxy-ts { font-family: var(--font-mono); color: var(--text-muted); }
+  .proxy-badge {
+    display: inline-block; border-radius: 4px; padding: 1px 6px;
+    font-size: 9px; font-weight: 700; letter-spacing: 0.04em;
+    text-transform: uppercase;
+  }
+  .proxy-badge.groq { background: rgba(66,135,245,0.18); color: #6ba3f7; }
+  .proxy-badge.xai  { background: rgba(160,100,240,0.18); color: #c07af0; }
+  .proxy-badge.anthropic { background: rgba(220,140,60,0.18); color: #e8a05a; }
+  .proxy-badge.openai { background: rgba(80,200,120,0.15); color: #5dba80; }
+  .proxy-badge.unknown { background: var(--surface2); color: var(--text-muted); }
+  .proxy-offline { color: var(--text-muted); font-size: 12px; text-align: center; padding: 16px 0; }
+
   /* Responsive */
   @media (max-width: 640px) {
     #sidebar { display: none; }
@@ -639,6 +774,10 @@
   <div id="sidebar">
     <div class="sidebar-header">
       <div class="sidebar-title">Messages</div>
+      <div class="tab-switcher">
+        <button class="tab-btn active" id="tab-chat">💬</button>
+        <button class="tab-btn" id="tab-swarm">⬡</button>
+      </div>
     </div>
     <div class="contact-list">
       <div class="contact-item active" id="contact-item">
@@ -657,6 +796,80 @@
       <div class="sidebar-footer-avatar">◈</div>
       <div class="sidebar-footer-name">master</div>
       <button class="logout-btn" id="logout-btn" title="Disconnect">⏻</button>
+    </div>
+  </div>
+
+  <!-- Swarm dashboard -->
+  <div id="swarm-area">
+    <!-- Agent heartbeats (full width) -->
+    <div class="swarm-panel full-width">
+      <div class="swarm-panel-header">Agent Status</div>
+      <div class="agent-grid" id="agent-grid">
+        <div class="agent-card">
+          <div class="agent-dot" id="dot-chan"></div>
+          <div class="agent-info">
+            <div class="agent-name">redacted-chan</div>
+            <div class="agent-role">Relational AI · Telegram</div>
+            <div class="agent-last" id="last-chan">checking…</div>
+          </div>
+        </div>
+        <div class="agent-card">
+          <div class="agent-dot" id="dot-hermes"></div>
+          <div class="agent-info">
+            <div class="agent-name">hermes</div>
+            <div class="agent-role">Dispatcher · sub-agent bus</div>
+            <div class="agent-last" id="last-hermes">unknown</div>
+          </div>
+        </div>
+        <div class="agent-card">
+          <div class="agent-dot" id="dot-smolting"></div>
+          <div class="agent-info">
+            <div class="agent-name">redactedintern</div>
+            <div class="agent-role">smolting · Telegram</div>
+            <div class="agent-last" id="last-smolting">unknown</div>
+          </div>
+        </div>
+        <div class="agent-card">
+          <div class="agent-dot" id="dot-builder"></div>
+          <div class="agent-info">
+            <div class="agent-name">redactedbuilder</div>
+            <div class="agent-role">Builder agent · Telegram</div>
+            <div class="agent-last" id="last-builder">unknown</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="swarm-grid">
+      <!-- Chan state -->
+      <div class="swarm-panel">
+        <div class="swarm-panel-header">redacted-chan State</div>
+        <div id="chan-state-body">
+          <div style="color:var(--text-muted);font-size:12px">loading…</div>
+        </div>
+      </div>
+
+      <!-- Facts -->
+      <div class="swarm-panel">
+        <div class="swarm-panel-header">
+          Known Facts
+          <button class="swarm-refresh-btn" id="facts-refresh-btn">↺ refresh</button>
+        </div>
+        <div class="facts-list" id="facts-list">
+          <div style="color:var(--text-muted);font-size:12px">loading…</div>
+        </div>
+      </div>
+
+      <!-- Proxy activity -->
+      <div class="swarm-panel full-width">
+        <div class="swarm-panel-header">
+          Proxy Activity
+          <button class="swarm-refresh-btn" id="proxy-refresh-btn">↺ refresh</button>
+        </div>
+        <div id="proxy-log-body">
+          <div style="color:var(--text-muted);font-size:12px">loading…</div>
+        </div>
+      </div>
     </div>
   </div>
 
@@ -1233,6 +1446,160 @@ toggleScrub.addEventListener('change', () => {
 });
 toggleEphemeral.addEventListener('change', () => {
   savePrivacyConfig({ephemeral_mode: toggleEphemeral.checked});
+});
+
+// ── Swarm dashboard ──────────────────────────────────────────────────────────
+const swarmArea  = document.getElementById('swarm-area');
+const chatArea   = document.getElementById('chat-area');
+const tabChat    = document.getElementById('tab-chat');
+const tabSwarm   = document.getElementById('tab-swarm');
+
+let _swarmInterval = null;
+let _activeTab = 'chat';
+
+function switchTab(tab) {
+  _activeTab = tab;
+  if (tab === 'swarm') {
+    chatArea.style.display = 'none';
+    swarmArea.classList.add('visible');
+    tabChat.classList.remove('active');
+    tabSwarm.classList.add('active');
+    loadSwarmDashboard();
+  } else {
+    swarmArea.classList.remove('visible');
+    chatArea.style.display = '';
+    tabSwarm.classList.remove('active');
+    tabChat.classList.add('active');
+    if (_swarmInterval) { clearInterval(_swarmInterval); _swarmInterval = null; }
+  }
+}
+
+tabChat.addEventListener('click', () => switchTab('chat'));
+tabSwarm.addEventListener('click', () => switchTab('swarm'));
+
+function _providerBadge(provider) {
+  const p = (provider || 'unknown').toLowerCase();
+  const cls = ['groq','xai','anthropic','openai'].includes(p) ? p : 'unknown';
+  return `<span class="proxy-badge ${cls}">${escHtml(provider || '?')}</span>`;
+}
+
+function _renderChanState(mood, anticipation) {
+  const body = document.getElementById('chan-state-body');
+  if (!mood || mood.error) {
+    body.innerHTML = `<div style="color:var(--text-muted);font-size:12px">${mood ? escHtml(mood.error || 'unavailable') : 'unavailable'}</div>`;
+    document.getElementById('dot-chan').className = 'agent-dot';
+    document.getElementById('last-chan').textContent = 'offline';
+    return;
+  }
+  document.getElementById('dot-chan').className = 'agent-dot green';
+  document.getElementById('last-chan').textContent = 'live';
+
+  const moodLabel    = mood.mood || mood.state || '—';
+  const modifier     = mood.modifier || mood.mood_modifier || '';
+  const phi          = mood.phi_level !== undefined ? mood.phi_level : (mood.phi !== undefined ? mood.phi : null);
+  const antState     = anticipation ? (anticipation.state || anticipation.anticipation || '—') : '—';
+  const hoursSince   = anticipation ? (anticipation.hours_since_last !== undefined ? anticipation.hours_since_last.toFixed(1) + 'h ago' : '—') : '—';
+
+  body.innerHTML = `
+    <div class="chan-mood-big">${escHtml(moodLabel)}</div>
+    ${modifier ? `<div class="chan-mood-modifier">${escHtml(modifier)}</div>` : ''}
+    <div class="chan-row"><span class="chan-row-label">Phi level</span><span class="chan-row-value">${phi !== null ? escHtml(String(phi)) : '—'}</span></div>
+    <div class="chan-row"><span class="chan-row-label">Anticipation</span><span class="chan-row-value">${escHtml(antState)}</span></div>
+    <div class="chan-row"><span class="chan-row-label">Last message</span><span class="chan-row-value">${escHtml(hoursSince)}</span></div>
+  `;
+}
+
+function _renderFacts(data) {
+  const list = document.getElementById('facts-list');
+  const facts = data.facts || data.entries || data || [];
+  if (!Array.isArray(facts) || facts.length === 0) {
+    list.innerHTML = '<div style="color:var(--text-muted);font-size:12px">no facts found</div>';
+    return;
+  }
+  list.innerHTML = facts.slice(0, 15).map(f => {
+    const text    = typeof f === 'string' ? f : (f.fact || f.text || f.content || JSON.stringify(f));
+    const score   = f.resonance !== undefined ? f.resonance : (f.score !== undefined ? f.score : null);
+    return `<div class="fact-item">
+      <span class="fact-text">${escHtml(text)}</span>
+      ${score !== null ? `<span class="fact-score">${Number(score).toFixed(2)}</span>` : ''}
+    </div>`;
+  }).join('');
+}
+
+function _renderProxyLogs(data) {
+  const body = document.getElementById('proxy-log-body');
+  const entries = data.entries || data.logs || data || [];
+  if (!Array.isArray(entries) || entries.length === 0) {
+    body.innerHTML = '<div class="proxy-offline">proxy offline or no log entries</div>';
+    return;
+  }
+  const rows = entries.slice(0, 20).map(e => {
+    const ts      = e.timestamp ? new Date(e.timestamp * 1000).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit',second:'2-digit'}) : (e.ts || '—');
+    const provider = e.provider || e.backend || '?';
+    const model   = e.model || e.model_id || '—';
+    const latency = e.latency_ms !== undefined ? e.latency_ms + 'ms' : (e.duration_ms !== undefined ? e.duration_ms + 'ms' : '—');
+    return `<tr>
+      <td class="proxy-ts">${escHtml(ts)}</td>
+      <td>${_providerBadge(provider)}</td>
+      <td style="color:var(--text-dim)">${escHtml(model)}</td>
+      <td style="color:var(--text-dim);text-align:right">${escHtml(latency)}</td>
+    </tr>`;
+  }).join('');
+  body.innerHTML = `<div style="overflow-x:auto"><table class="proxy-table">
+    <thead><tr><th>Time</th><th>Provider</th><th>Model</th><th style="text-align:right">Latency</th></tr></thead>
+    <tbody>${rows}</tbody>
+  </table></div>`;
+}
+
+async function _fetchSwarmLive() {
+  const auth = {'Authorization': `Bearer ${token}`};
+  const [moodRes, anticipationRes] = await Promise.allSettled([
+    fetch('/chan/mood', {headers: auth}).then(r => r.ok ? r.json() : Promise.reject(r.status)),
+    fetch('/chan/anticipation', {headers: auth}).then(r => r.ok ? r.json() : null),
+  ]);
+  const mood = moodRes.status === 'fulfilled' ? moodRes.value : null;
+  const anticipation = anticipationRes.status === 'fulfilled' ? anticipationRes.value : null;
+  _renderChanState(mood, anticipation);
+}
+
+async function loadSwarmDashboard() {
+  if (_swarmInterval) { clearInterval(_swarmInterval); _swarmInterval = null; }
+  const auth = {'Authorization': `Bearer ${token}`};
+
+  // Kick off all fetches in parallel
+  const [moodRes, anticipationRes, factsRes, proxyRes] = await Promise.allSettled([
+    fetch('/chan/mood',        {headers: auth}).then(r => r.ok ? r.json() : Promise.reject(r.status)),
+    fetch('/chan/anticipation',{headers: auth}).then(r => r.ok ? r.json() : null),
+    fetch('/chan/facts?limit=15',{headers: auth}).then(r => r.ok ? r.json() : null),
+    fetch('/proxy-logs?n=30', {headers: auth}).then(r => r.ok ? r.json() : null),
+  ]);
+
+  const mood        = moodRes.status        === 'fulfilled' ? moodRes.value        : null;
+  const anticipation= anticipationRes.status=== 'fulfilled' ? anticipationRes.value: null;
+  const facts       = factsRes.status       === 'fulfilled' ? factsRes.value       : null;
+  const proxyData   = proxyRes.status       === 'fulfilled' ? proxyRes.value       : null;
+
+  _renderChanState(mood, anticipation);
+  if (facts)     _renderFacts(facts);
+  else           document.getElementById('facts-list').innerHTML = '<div style="color:var(--text-muted);font-size:12px">unavailable</div>';
+  if (proxyData) _renderProxyLogs(proxyData);
+  else           document.getElementById('proxy-log-body').innerHTML = '<div class="proxy-offline">proxy offline</div>';
+
+  // 30s refresh for live panels
+  _swarmInterval = setInterval(() => {
+    if (_activeTab === 'swarm') _fetchSwarmLive();
+    else { clearInterval(_swarmInterval); _swarmInterval = null; }
+  }, 30000);
+}
+
+document.getElementById('facts-refresh-btn').addEventListener('click', async () => {
+  const r = await fetch('/chan/facts?limit=15', {headers: {'Authorization': `Bearer ${token}`}});
+  if (r.ok) _renderFacts(await r.json());
+});
+
+document.getElementById('proxy-refresh-btn').addEventListener('click', async () => {
+  const r = await fetch('/proxy-logs?n=30', {headers: {'Authorization': `Bearer ${token}`}});
+  if (r.ok) _renderProxyLogs(await r.json());
 });
 
 // ── Init ──────────────────────────────────────────────────────────────────────
