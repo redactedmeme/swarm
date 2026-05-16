@@ -1,9 +1,5 @@
-# hermes-bot/requirements.txt
-# REDACTED Swarm Manager — powered by Hermes Agent framework
-hermes-agent[messaging]>=0.13.0
+# hermes-bot/requirements.txt — REDACTED Swarm Manager + Pattern Blue Oracle
 redis>=5.0.0
-
-# Legacy deps (kept for fallback mode via HERMES_MODE=legacy)
 python-telegram-bot[webhooks]==20.7
 aiohttp==3.9.1
 requests==2.31.0

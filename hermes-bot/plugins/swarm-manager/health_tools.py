@@ -20,8 +20,11 @@ AGENT_SERVICE_MAP = {
 
 
 def _get_redis():
-    from .inbox_tools import _get_redis
-    return _get_redis()
+    try:
+        from .inbox_tools import _get_redis as _ir
+    except ImportError:
+        from inbox_tools import _get_redis as _ir
+    return _ir()
 
 
 def _handle_health_check(args: dict) -> str:
