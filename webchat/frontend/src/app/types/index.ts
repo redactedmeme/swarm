@@ -73,6 +73,21 @@ export interface PrivacyConfig {
   ephemeral: boolean
 }
 
+export interface SwarmMessage {
+  id?: string
+  from?: string
+  to?: string
+  type?: string
+  content?: string
+  ts?: string | number
+  [key: string]: unknown
+}
+
+export interface SwarmPendingEntry {
+  count: number
+  items: SwarmMessage[]
+}
+
 export type NavItem = {
   id: string
   label: string
