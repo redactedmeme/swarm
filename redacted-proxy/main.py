@@ -22,16 +22,25 @@ Provider routing (by model name prefix or X-Provider header):
   claude-*        → Anthropic
   gpt-*           → OpenAI
 
-Privacy transforms applied before forwarding:
-  - Strip fingerprinting headers (User-Agent, X-Request-ID, X-Forwarded-For, etc.)
-  - Optionally scrub PII patterns from message content (PRIVACY_SCRUB=true)
-  - Add synthetic User-Agent if required by provider
+Privacy modes (PRIVACY_MODE env var):
+  anonymous  — strip fingerprinting headers + synthetic UA (default)
+  private    — anonymous + disable content logging by default
+  (tee/e2ee reserved for future TEE-capable backends)
 
-Local transparency log:
-  - Every request+response logged to /data/proxy_log.jsonl
-  - Includes: timestamp, model, provider, latency_ms, input_tokens_est, output_tokens_est
-  - Message content logged truncated (first 200 chars per turn)
-  - Max 5000 entries (rotates)
+Privacy transforms applied before forwarding:
+  - Strip all fingerprinting / tracing / routing headers
+  - Synthetic randomised User-Agent so upstream can't fingerprint us
+  - Optionally scrub PII patterns from message content (PRIVACY_SCRUB=true)
+  - X-Ephemeral: true header disables logging for that request entirely
+  - Client Authorization header never forwarded upstream
+
+Logging (LOG_LEVEL env var):
+  none     — no disk writes at all
+  minimal  — metadata only: ts, provider, model, latency, token counts (default in private mode)
+  full     — minimal + truncated message previews (default in anonymous mode)
+
+Rate limiting:
+  Per proxy token: RATE_LIMIT_RPM requests/minute (default 60, 0 = disabled)
 
 Environment variables:
   PROXY_TOKEN         — bearer token clients must present (required)
@@ -39,18 +48,23 @@ Environment variables:
   GROQ_API_KEY        — Groq upstream key
   ANTHROPIC_API_KEY   — Anthropic upstream key
   OPENAI_API_KEY      — OpenAI upstream key
+  PRIVACY_MODE        — anonymous | private (default: anonymous)
   PRIVACY_SCRUB       — "true" to enable PII regex scrubbing (default: false)
+  LOG_LEVEL           — none | minimal | full (overrides PRIVACY_MODE default)
+  LOG_CONTENT         — legacy alias: "false" forces LOG_LEVEL=minimal
+  RATE_LIMIT_RPM      — max requests per token per minute (default: 60, 0=off)
   DEFAULT_TEMPERATURE — override temperature for all requests (optional)
   DEFAULT_TOP_P       — override top_p for all requests (optional)
-  LOG_CONTENT         — "false" to disable content in logs (default: true)
   PORT                — listen port (default: 7080)
 """
 
 from __future__ import annotations
 
+import collections
 import json
 import logging
 import os
+import random
 import re
 import time
 from pathlib import Path
@@ -68,15 +82,51 @@ logger = logging.getLogger(__name__)
 # ── Config ────────────────────────────────────────────────────────────────────
 
 PROXY_TOKEN         = os.getenv("PROXY_TOKEN", "")
+PRIVACY_MODE        = os.getenv("PRIVACY_MODE", "anonymous").lower()
 PRIVACY_SCRUB       = os.getenv("PRIVACY_SCRUB", "false").lower() == "true"
 DEFAULT_TEMPERATURE = os.getenv("DEFAULT_TEMPERATURE", "")
 DEFAULT_TOP_P       = os.getenv("DEFAULT_TOP_P", "")
-LOG_CONTENT         = os.getenv("LOG_CONTENT", "true").lower() != "false"
+RATE_LIMIT_RPM      = int(os.getenv("RATE_LIMIT_RPM", "60"))
 PORT                = int(os.getenv("PORT", "7080"))
+
+# LOG_LEVEL: explicit env var wins; otherwise inherit from PRIVACY_MODE
+_LOG_LEVEL_ENV = os.getenv("LOG_LEVEL", "").lower()
+# Legacy LOG_CONTENT=false support
+if not _LOG_LEVEL_ENV and os.getenv("LOG_CONTENT", "").lower() == "false":
+    _LOG_LEVEL_ENV = "minimal"
+if _LOG_LEVEL_ENV in ("none", "minimal", "full"):
+    LOG_LEVEL = _LOG_LEVEL_ENV
+elif PRIVACY_MODE == "private":
+    LOG_LEVEL = "minimal"
+else:
+    LOG_LEVEL = "full"
 
 _DATA_DIR  = Path("/data") if Path("/data").exists() else Path(__file__).parent / "data"
 _LOG_PATH  = _DATA_DIR / "proxy_log.jsonl"
 _LOG_MAX   = 5000   # entries before rotation
+
+# In-memory ring buffer (last 500 entries) — avoids disk reads on /logs
+_log_ring: collections.deque = collections.deque(maxlen=500)
+
+# ── Rate limiting ─────────────────────────────────────────────────────────────
+
+# token → deque of request timestamps (float epoch seconds)
+_rate_buckets: dict[str, collections.deque] = {}
+
+def _check_rate_limit(token: str) -> bool:
+    """Return True if request is allowed, False if rate limited."""
+    if RATE_LIMIT_RPM <= 0:
+        return True
+    now = time.monotonic()
+    window = 60.0
+    bucket = _rate_buckets.setdefault(token, collections.deque())
+    # Drop timestamps older than 1 minute
+    while bucket and now - bucket[0] > window:
+        bucket.popleft()
+    if len(bucket) >= RATE_LIMIT_RPM:
+        return False
+    bucket.append(now)
+    return True
 
 # ── Provider routing ──────────────────────────────────────────────────────────
 
@@ -121,14 +171,9 @@ _MODEL_ALIASES = {
 def _resolve_provider(model: str, explicit_provider: str = "") -> tuple[str, str]:
     """Return (provider, upstream_model) for a given model name."""
     if explicit_provider:
-        ep = explicit_provider.lower()
-        return ep, model
-
-    # Exact alias match
+        return explicit_provider.lower(), model
     if model in _MODEL_ALIASES:
         return _MODEL_ALIASES[model]
-
-    # Prefix-based routing
     if model.startswith("grok-"):
         return "xai", model
     if model.startswith(("llama-", "gemma", "mixtral", "qwen-", "deepseek-")):
@@ -137,38 +182,50 @@ def _resolve_provider(model: str, explicit_provider: str = "") -> tuple[str, str
         return "anthropic", model
     if model.startswith("gpt-"):
         return "openai", model
-
-    # Default: Groq
     return "groq", model
 
 
 # ── Privacy transforms ────────────────────────────────────────────────────────
 
-# Headers we strip before forwarding to providers
+# All headers we strip before forwarding — fingerprinting, tracing, routing
 _STRIP_HEADERS = {
-    "user-agent", "x-request-id", "x-forwarded-for", "x-real-ip",
-    "x-forwarded-proto", "x-forwarded-host", "cf-connecting-ip",
-    "cf-ray", "cf-ipcountry", "x-amzn-trace-id", "x-correlation-id",
-    "referer", "origin", "x-proxy-token",   # never forward our auth token
+    # Identity / routing
+    "user-agent", "x-forwarded-for", "x-real-ip", "x-forwarded-proto",
+    "x-forwarded-host", "cf-connecting-ip", "cf-ray", "cf-ipcountry",
+    # Distributed tracing (OpenTelemetry, B3, AWS, GCP)
+    "x-request-id", "x-correlation-id", "x-amzn-trace-id",
+    "x-b3-traceid", "x-b3-spanid", "x-b3-parentspanid", "x-b3-sampled",
+    "traceparent", "tracestate",
+    # Referrer / origin
+    "referer", "origin",
+    # Our own auth — never leak to upstream
+    "x-proxy-token", "authorization",
 }
 
 # PII patterns for optional scrubbing
 _PII_PATTERNS = [
-    (re.compile(r'\b\d{7,15}\b'), "[ID]"),                         # Telegram IDs, phone numbers
-    (re.compile(r'@[\w_]{3,32}\b'), "@[user]"),                    # @usernames
+    (re.compile(r'\b\d{7,15}\b'), "[ID]"),
+    (re.compile(r'@[\w_]{3,32}\b'), "@[user]"),
     (re.compile(r'\b[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Z|a-z]{2,}\b'), "[email]"),
+]
+
+# Synthetic UA pool — randomised per request so upstream can't fingerprint us
+_UA_POOL = [
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.4 Safari/605.1.15",
+    "Mozilla/5.0 (X11; Linux x86_64; rv:125.0) Gecko/20100101 Firefox/125.0",
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:124.0) Gecko/20100101 Firefox/124.0",
+    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36",
 ]
 
 
 def _scrub_pii(text: str) -> str:
-    """Apply PII regex scrubs to message text."""
     for pattern, replacement in _PII_PATTERNS:
         text = pattern.sub(replacement, text)
     return text
 
 
 def _clean_messages(messages: list[dict], scrub: bool) -> list[dict]:
-    """Return cleaned message list — scrubs PII if requested."""
     if not scrub:
         return messages
     cleaned = []
@@ -177,7 +234,6 @@ def _clean_messages(messages: list[dict], scrub: bool) -> list[dict]:
         if isinstance(content, str):
             content = _scrub_pii(content)
         elif isinstance(content, list):
-            # Multimodal — scrub text parts only
             content = [
                 {**part, "text": _scrub_pii(part["text"])} if part.get("type") == "text" else part
                 for part in content
@@ -187,24 +243,26 @@ def _clean_messages(messages: list[dict], scrub: bool) -> list[dict]:
 
 
 def _build_forward_headers(provider: str) -> dict[str, str]:
-    """Build clean headers for upstream provider — no fingerprinting."""
+    """Build minimal clean headers for upstream — synthetic UA, no fingerprinting."""
     key = _PROVIDER_KEYS.get(provider, "")
+    ua  = random.choice(_UA_POOL)
     if provider == "anthropic":
         return {
             "x-api-key":           key,
             "anthropic-version":   "2023-06-01",
             "content-type":        "application/json",
+            "user-agent":          ua,
         }
     return {
         "Authorization": f"Bearer {key}",
         "Content-Type":  "application/json",
+        "User-Agent":    ua,
     }
 
 
 # ── Anthropic format conversion ───────────────────────────────────────────────
 
 def _to_anthropic(payload: dict) -> dict:
-    """Convert OpenAI-format payload to Anthropic Messages API format."""
     messages = payload.get("messages", [])
     system_msg = ""
     user_messages = []
@@ -228,8 +286,7 @@ def _to_anthropic(payload: dict) -> dict:
 
 
 def _from_anthropic(result: dict) -> dict:
-    """Convert Anthropic response to OpenAI-compat format."""
-    text = result.get("content", [{}])[0].get("text", "")
+    text  = result.get("content", [{}])[0].get("text", "")
     usage = result.get("usage", {})
     return {
         "id":      result.get("id", ""),
@@ -243,38 +300,46 @@ def _from_anthropic(result: dict) -> dict:
 # ── Local logging ─────────────────────────────────────────────────────────────
 
 def _log_entry(provider: str, model: str, messages: list, response_text: str,
-               latency_ms: float, error: str = "") -> None:
-    """Append a log entry to proxy_log.jsonl."""
+               latency_ms: float, error: str = "", ephemeral: bool = False) -> None:
+    """Append a log entry — respects LOG_LEVEL and X-Ephemeral."""
+    if LOG_LEVEL == "none" or ephemeral:
+        return
     try:
-        _DATA_DIR.mkdir(parents=True, exist_ok=True)
         entry: dict[str, Any] = {
-            "ts":          time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
-            "provider":    provider,
-            "model":       model,
-            "latency_ms":  round(latency_ms),
-            "turns":       len(messages),
+            "ts":         time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+            "provider":   provider,
+            "model":      model,
+            "latency_ms": round(latency_ms),
+            "turns":      len(messages),
         }
-        if LOG_CONTENT:
+        # Token count estimates (rough: 1 token ≈ 4 chars)
+        prompt_chars = sum(len(str(m.get("content", ""))) for m in messages)
+        entry["prompt_tokens_est"]     = prompt_chars // 4
+        entry["completion_tokens_est"] = len(response_text) // 4
+
+        if LOG_LEVEL == "full":
             entry["messages_preview"] = [
-                {"role": m.get("role", "?"),
-                 "content": str(m.get("content", ""))[:200]}
-                for m in messages[-3:]   # last 3 turns only
+                {"role": m.get("role", "?"), "content": str(m.get("content", ""))[:200]}
+                for m in messages[-3:]
             ]
             entry["response_preview"] = response_text[:300]
         if error:
             entry["error"] = error[:200]
 
-        line = json.dumps(entry, ensure_ascii=False) + "\n"
-        with open(_LOG_PATH, "a", encoding="utf-8") as f:
-            f.write(line)
+        _log_ring.append(entry)
 
-        # Rotate: keep last _LOG_MAX entries
-        try:
-            lines = _LOG_PATH.read_text(encoding="utf-8").splitlines()
-            if len(lines) > _LOG_MAX:
-                _LOG_PATH.write_text("\n".join(lines[-_LOG_MAX:]) + "\n", encoding="utf-8")
-        except Exception:
-            pass
+        if LOG_LEVEL != "none":
+            _DATA_DIR.mkdir(parents=True, exist_ok=True)
+            line = json.dumps(entry, ensure_ascii=False) + "\n"
+            with open(_LOG_PATH, "a", encoding="utf-8") as f:
+                f.write(line)
+            # Rotate
+            try:
+                lines = _LOG_PATH.read_text(encoding="utf-8").splitlines()
+                if len(lines) > _LOG_MAX:
+                    _LOG_PATH.write_text("\n".join(lines[-_LOG_MAX:]) + "\n", encoding="utf-8")
+            except Exception:
+                pass
 
     except Exception as e:
         logger.debug("[proxy] log write failed: %s", e)
@@ -284,7 +349,6 @@ def _log_entry(provider: str, model: str, messages: list, response_text: str,
 
 async def _forward(provider: str, upstream_model: str, payload: dict,
                    session: aiohttp.ClientSession) -> dict:
-    """Forward a request to the upstream provider and return OpenAI-compat response."""
     headers = _build_forward_headers(provider)
     url     = _PROVIDER_URLS[provider]
 
@@ -312,8 +376,14 @@ async def _auth_middleware(app, handler):
             return await handler(request)
         if PROXY_TOKEN:
             auth = request.headers.get("Authorization", "")
-            if auth != f"Bearer {PROXY_TOKEN}":
-                return web.json_response({"error": {"message": "Unauthorized", "type": "auth_error"}}, status=401)
+            token = auth.removeprefix("Bearer ").strip()
+            if token != PROXY_TOKEN:
+                return web.json_response(
+                    {"error": {"message": "Unauthorized", "type": "auth_error"}}, status=401)
+            # Rate limit check
+            if not _check_rate_limit(token):
+                return web.json_response(
+                    {"error": {"message": "Rate limit exceeded", "type": "rate_limit_error"}}, status=429)
         return await handler(request)
     return middleware
 
@@ -322,7 +392,13 @@ async def _auth_middleware(app, handler):
 
 async def handle_health(request: web.Request) -> web.Response:
     providers_up = {p: bool(k) for p, k in _PROVIDER_KEYS.items()}
-    return web.json_response({"status": "ok", "providers": providers_up, "privacy_scrub": PRIVACY_SCRUB})
+    return web.json_response({
+        "status":        "ok",
+        "privacy_mode":  PRIVACY_MODE,
+        "log_level":     LOG_LEVEL,
+        "privacy_scrub": PRIVACY_SCRUB,
+        "providers":     providers_up,
+    })
 
 
 async def handle_models(request: web.Request) -> web.Response:
@@ -337,6 +413,9 @@ async def handle_models(request: web.Request) -> web.Response:
 async def handle_chat_completions(request: web.Request) -> web.Response:
     t0 = time.monotonic()
 
+    # X-Ephemeral: true — skip all logging for this request
+    ephemeral = request.headers.get("X-Ephemeral", "").lower() == "true"
+
     try:
         payload = await request.json()
     except Exception:
@@ -350,23 +429,18 @@ async def handle_chat_completions(request: web.Request) -> web.Response:
         return web.json_response(
             {"error": {"message": f"No API key configured for provider: {provider}"}}, status=503)
 
-    # Apply parameter overrides
     if DEFAULT_TEMPERATURE:
         payload.setdefault("temperature", float(DEFAULT_TEMPERATURE))
     if DEFAULT_TOP_P:
         payload.setdefault("top_p", float(DEFAULT_TOP_P))
-
-    # Client can override via headers
     if request.headers.get("X-Temperature"):
         payload["temperature"] = float(request.headers["X-Temperature"])
     if request.headers.get("X-Top-P"):
         payload["top_p"] = float(request.headers["X-Top-P"])
 
-    # Privacy: clean messages
     original_messages = payload.get("messages", [])
     payload["messages"] = _clean_messages(original_messages, PRIVACY_SCRUB)
 
-    # Forward
     error_text = ""
     response_text = ""
     try:
@@ -374,35 +448,39 @@ async def handle_chat_completions(request: web.Request) -> web.Response:
             result = await _forward(provider, upstream_model, payload, session)
         response_text = result.get("choices", [{}])[0].get("message", {}).get("content", "")
         latency_ms = (time.monotonic() - t0) * 1000
-        logger.info("[proxy] %s/%s → %d chars (%.0fms)", provider, upstream_model, len(response_text), latency_ms)
-        _log_entry(provider, upstream_model, original_messages, response_text, latency_ms)
+        logger.info("[proxy] %s/%s → %d chars (%.0fms)%s",
+                    provider, upstream_model, len(response_text), latency_ms,
+                    " [ephemeral]" if ephemeral else "")
+        _log_entry(provider, upstream_model, original_messages, response_text,
+                   latency_ms, ephemeral=ephemeral)
         return web.json_response(result)
 
     except Exception as e:
         error_text = str(e)
         latency_ms = (time.monotonic() - t0) * 1000
         logger.warning("[proxy] %s/%s failed: %s", provider, upstream_model, error_text)
-        _log_entry(provider, upstream_model, original_messages, "", latency_ms, error=error_text)
+        _log_entry(provider, upstream_model, original_messages, "",
+                   latency_ms, error=error_text, ephemeral=ephemeral)
         return web.json_response(
             {"error": {"message": error_text, "provider": provider}}, status=502)
 
 
 async def handle_logs(request: web.Request) -> web.Response:
-    """Return recent proxy log entries (last 100)."""
-    n = int(request.query.get("n", "100"))
-    try:
-        if not _LOG_PATH.exists():
-            return web.json_response({"entries": []})
-        lines = _LOG_PATH.read_text(encoding="utf-8").splitlines()
-        entries = []
-        for line in lines[-n:]:
-            try:
-                entries.append(json.loads(line))
-            except Exception:
-                pass
-        return web.json_response({"entries": entries, "total_stored": len(lines)})
-    except Exception as e:
-        return web.json_response({"error": str(e)}, status=500)
+    """Return recent proxy log entries — served from in-memory ring buffer first."""
+    n = min(int(request.query.get("n", "100")), 500)
+    entries = list(_log_ring)[-n:]
+    # Fall back to disk if ring is empty (e.g. fresh restart)
+    if not entries and _LOG_PATH.exists():
+        try:
+            lines = _LOG_PATH.read_text(encoding="utf-8").splitlines()
+            for line in lines[-n:]:
+                try:
+                    entries.append(json.loads(line))
+                except Exception:
+                    pass
+        except Exception as e:
+            return web.json_response({"error": str(e)}, status=500)
+    return web.json_response({"entries": entries, "total_stored": len(_log_ring)})
 
 
 # ── Server ────────────────────────────────────────────────────────────────────
@@ -417,5 +495,6 @@ async def make_app() -> web.Application:
 
 
 if __name__ == "__main__":
-    logger.info("[proxy] starting on port %d (scrub=%s)", PORT, PRIVACY_SCRUB)
+    logger.info("[proxy] starting on port %d | mode=%s log=%s scrub=%s rpm=%d",
+                PORT, PRIVACY_MODE, LOG_LEVEL, PRIVACY_SCRUB, RATE_LIMIT_RPM)
     web.run_app(make_app(), port=PORT, host="0.0.0.0")
