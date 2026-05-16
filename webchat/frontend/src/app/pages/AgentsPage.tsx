@@ -12,6 +12,7 @@ interface Agent {
   icon: string
   role: string
   description: string
+  llm?: string
   status: 'online' | 'offline' | 'unknown'
   last_seen: string | null
 }
@@ -279,6 +280,9 @@ function AgentCard({ agent, selected, onSelect, pendingCount: pc, pendingItems }
             )}
           </div>
           <p className="text-xs text-muted-foreground mt-0.5 leading-relaxed">{agent.description}</p>
+          {agent.llm && agent.llm !== '—' && (
+            <p className="text-[10px] font-mono text-muted-foreground/50 mt-0.5 truncate">{agent.llm}</p>
+          )}
         </div>
       </div>
 
@@ -291,16 +295,21 @@ function AgentCard({ agent, selected, onSelect, pendingCount: pc, pendingItems }
             className="overflow-hidden"
           >
             <div className="mt-3 pt-3 border-t border-border/50 space-y-2">
-              <span className={cn(
-                'text-xs font-medium',
-                agent.status === 'online' ? 'text-emerald-400' : agent.status === 'offline' ? 'text-red-400' : 'text-zinc-400',
-              )}>
-                {agent.status === 'online' ? '● Online' : agent.status === 'offline' ? '● Offline' : '● Unknown'}
-              </span>
+              <div className="flex items-center justify-between">
+                <span className={cn(
+                  'text-xs font-medium',
+                  agent.status === 'online' ? 'text-emerald-400' : agent.status === 'offline' ? 'text-red-400' : 'text-zinc-400',
+                )}>
+                  {agent.status === 'online' ? '● Online' : agent.status === 'offline' ? '● Offline' : '● Unknown'}
+                </span>
+                {agent.last_seen && (
+                  <span className="text-[10px] text-muted-foreground">{agent.last_seen}</span>
+                )}
+              </div>
               {/* Pending inbox preview */}
               {pendingItems.length > 0 && (
                 <div className="space-y-1">
-                  <p className="text-[10px] text-muted-foreground uppercase tracking-wider">Inbox</p>
+                  <p className="text-[10px] text-muted-foreground uppercase tracking-wider">Inbox ({pendingItems.length})</p>
                   {pendingItems.slice(0, 3).map((item, i) => {
                     const preview = typeof item.content === 'string'
                       ? item.content.slice(0, 80)

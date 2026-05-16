@@ -547,12 +547,12 @@ async def ws_chat(websocket: WebSocket):
 # ── API: agents ───────────────────────────────────────────────────────────────
 
 _AGENTS_CONFIG = [
-    {"id": "chan",    "label": "redacted-chan",    "icon": "⬡",  "role": "core",    "description": "Emotional memory + relational AI"},
-    {"id": "hermes",  "label": "hermes-bot",       "icon": "⚡", "role": "agent",   "description": "Autonomous task agent with web/exec tools"},
-    {"id": "smolting","label": "smolting",          "icon": "🌱", "role": "agent",   "description": "Moltbook TPD trader — Telegram-based"},
-    {"id": "builder", "label": "RedactedBuilder",   "icon": "🔧", "role": "agent",   "description": "Infrastructure + deployment builder"},
-    {"id": "proxy",   "label": "redacted-proxy",    "icon": "🛡",  "role": "infra",   "description": "Privacy-first LLM routing proxy"},
-    {"id": "runtime", "label": "swarm-runtime",     "icon": "⚙",  "role": "infra",   "description": "Sub-agent orchestration runtime"},
+    {"id": "chan",     "redis_id": "redacted-chan", "label": "redacted-chan",    "icon": "⬡",  "role": "core",    "description": "Emotional memory + relational AI",               "llm": "grok-4-1-fast"},
+    {"id": "hermes",   "redis_id": "hermes",        "label": "hermes-bot",       "icon": "⚡", "role": "agent",   "description": "Autonomous task agent with web/exec/search tools", "llm": "claude-haiku-4-5"},
+    {"id": "smolting", "redis_id": "smolting",      "label": "smolting",          "icon": "🌱", "role": "agent",   "description": "Moltbook TPD trader — Telegram-based",             "llm": "llama-3.1-8b-instant"},
+    {"id": "builder",  "redis_id": "builder",       "label": "RedactedBuilder",   "icon": "🔧", "role": "agent",   "description": "Infrastructure + deployment builder",              "llm": "claude-haiku-4-5"},
+    {"id": "proxy",    "redis_id": None,            "label": "redacted-proxy",    "icon": "🛡",  "role": "infra",   "description": "Privacy-first LLM routing proxy",                  "llm": "—"},
+    {"id": "runtime",  "redis_id": "runtime",       "label": "swarm-runtime",     "icon": "⚙",  "role": "infra",   "description": "Sub-agent orchestration runtime",                  "llm": "—"},
 ]
 
 
@@ -560,19 +560,51 @@ _AGENTS_CONFIG = [
 async def api_agents(request: Request):
     authorization = request.headers.get("Authorization", "")
     _validate_token(authorization)
+
+    # Fetch Redis heartbeat data for all agents
+    heartbeat_map: dict[str, dict] = {}
+    try:
+        async with httpx.AsyncClient(timeout=8.0) as client:
+            hb_resp = await client.get(
+                f"{INTERNAL_URL}/proxy/heartbeats",
+                headers={"Authorization": f"Bearer {DATA_PROXY_TOKEN}"},
+            )
+        hb_data = hb_resp.json()
+        for entry in hb_data.get("agents", []):
+            heartbeat_map[entry["id"]] = entry
+    except Exception:
+        pass
+
     agents = []
     for cfg in _AGENTS_CONFIG:
-        status = "unknown"
-        last_seen = None
-        if cfg["id"] == "chan":
-            try:
-                async with httpx.AsyncClient(timeout=5.0) as client:
-                    r = await client.get(f"{INTERNAL_URL}/proxy/mood",
-                                         headers={"Authorization": f"Bearer {DATA_PROXY_TOKEN}"})
-                status = "online" if r.status_code == 200 else "offline"
-            except Exception:
-                status = "offline"
-        agents.append({**cfg, "status": status, "last_seen": last_seen})
+        rid = cfg.get("redis_id")
+        hb = heartbeat_map.get(rid) if rid else None
+        if hb:
+            status = "online" if hb.get("online") else "offline"
+            age_s = hb.get("age_s")
+            if age_s is not None:
+                if age_s < 60:
+                    last_seen = f"{age_s}s ago"
+                elif age_s < 3600:
+                    last_seen = f"{age_s // 60}m ago"
+                else:
+                    last_seen = f"{age_s // 3600}h ago"
+            else:
+                last_seen = "never"
+        else:
+            status = "unknown"
+            last_seen = None
+
+        agents.append({
+            "id": cfg["id"],
+            "label": cfg["label"],
+            "icon": cfg["icon"],
+            "role": cfg["role"],
+            "description": cfg["description"],
+            "llm": cfg["llm"],
+            "status": status,
+            "last_seen": last_seen,
+        })
     return {"agents": agents}
 
 
