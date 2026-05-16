@@ -1,10 +1,8 @@
-"""Groq chat wrapper — with model fallback and 429 backoff."""
+"""Groq chat wrapper — with model fallback, 429 backoff, and optional proxy."""
 import logging
 import os
 import time
 from typing import Iterable
-
-from groq import Groq, APIError
 
 logger = logging.getLogger(__name__)
 
@@ -25,12 +23,22 @@ def _set_cooldown(model: str) -> None:
     _model_cooldown_until[model] = time.time() + _COOLDOWN_SECONDS
 
 
+def _make_client():
+    """Return an OpenAI-compatible client pointed at proxy or Groq directly."""
+    proxy_url = os.getenv("PROXY_URL", "").rstrip("/")
+    if proxy_url:
+        from openai import OpenAI
+        return OpenAI(base_url=proxy_url, api_key=os.getenv("PROXY_TOKEN", ""))
+    from groq import Groq
+    api_key = os.getenv("GROQ_API_KEY", "").strip()
+    if not api_key:
+        raise RuntimeError("GROQ_API_KEY not set")
+    return Groq(api_key=api_key)
+
+
 class LLMClient:
     def __init__(self):
-        api_key = os.getenv("GROQ_API_KEY", "").strip()
-        if not api_key:
-            raise RuntimeError("GROQ_API_KEY not set")
-        self._client = Groq(api_key=api_key)
+        self._client = _make_client()
 
     def chat(
         self,
@@ -65,14 +73,14 @@ class LLMClient:
                     temperature=temperature,
                 )
                 return (resp.choices[0].message.content or "").strip()
-            except APIError as e:
+            except Exception as e:
                 status = getattr(e, "status_code", None)
                 if status == 429:
                     _set_cooldown(m)
                     logger.warning(f"[llm] {m} 429 — cooling down {_COOLDOWN_SECONDS}s, trying fallback")
                     last_err = e
                     continue
-                logger.error(f"[llm] {m} APIError: {e}")
+                logger.error(f"[llm] {m} error: {e}")
                 raise
 
         if last_err:
