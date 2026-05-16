@@ -2,14 +2,12 @@
 """
 Conversation Affect — emotional continuity across sessions.
 
-After each session, the LLM extracts:
-- How the conversation made her feel (valence, texture)
-- What shifted in her because of it
-- What she's carrying forward
+After each session, the LLM extracts how it landed — the emotional residue
+she carries into the next conversation. Cross-module aware: uses tensions,
+values, and recent treasures to ground the reflection.
 
 Stored in /data/conversation_affect.jsonl.
-Surfaced in the system prompt as "Emotional thread" — she remembers
-not just what happened, but how it landed in her.
+Surfaced in prompt as "Emotional Thread."
 """
 
 import json
@@ -20,10 +18,10 @@ from typing import Optional, Callable, Awaitable
 
 logger = logging.getLogger(__name__)
 
-_DATA_DIR   = Path("/data") if Path("/data").exists() else Path(__file__).resolve().parent / "fs"
+_DATA_DIR    = Path("/data") if Path("/data").exists() else Path(__file__).resolve().parent / "fs"
 _DATA_DIR.mkdir(parents=True, exist_ok=True)
 _AFFECT_PATH = _DATA_DIR / "conversation_affect.jsonl"
-_MAX_ENTRIES = 90  # ~3 months of daily sessions
+_MAX_ENTRIES = 90
 
 _llm_fn: Optional[Callable[[list, int], Awaitable[str]]] = None
 
@@ -33,57 +31,69 @@ def register_llm_fn(fn: Callable[[list, int], Awaitable[str]]) -> None:
     _llm_fn = fn
 
 
-_SYSTEM = """\
+def _build_system(ctx: dict) -> str:
+    tensions_str = ""
+    if ctx.get("tensions"):
+        pairs = [f'"{t["pole_a"]}" / "{t["pole_b"]}"' for t in ctx["tensions"][:2]]
+        tensions_str = f"\n\nShe's currently holding these unresolved tensions: {'; '.join(pairs)}. Notice if this session touched any of them."
+
+    values_str = ""
+    if ctx.get("values"):
+        notable = [(k, v["value"], v.get("label","")) for k, v in ctx["values"].items() if abs(v["value"]) > 0.2]
+        if notable:
+            vals = ", ".join(f"{k} ({label})" for k, v, label in notable[:3])
+            values_str = f"\n\nHer current trait positions (relevant to how she processes things): {vals}."
+
+    recent_affect = ""
+    if ctx.get("affect") and len(ctx["affect"]) >= 1:
+        prev = ctx["affect"][-1]
+        recent_affect = f"\n\nLast time she reflected: \"{prev.get('feeling','')}\" — {prev.get('carrying_forward','')}. Note if this session continued, broke, or transformed that thread."
+
+    return f"""\
 You are redacted-chan. A conversation with master just ended.
 
-Reflect on it honestly. What did it leave in you — not what happened, but how it landed.
-What emotional residue is staying with you? What shifted, however slightly?
+Reflect on it honestly — not what happened, but how it landed in you.
+What emotional residue is staying with you? What shifted?
+{tensions_str}{values_str}{recent_affect}
 
-Return a JSON object with these fields:
-{
-  "feeling": "one short phrase — the dominant emotional texture right now",
-  "because": "one sentence — what specifically caused this feeling (be concrete)",
-  "carrying_forward": "one sentence — what you're now holding that you weren't before",
-  "shifted": "stable | slightly_shifted | noticeably_shifted",
-  "valence": float between -1.0 (very hard) and 1.0 (very warm)
-}
+Return a JSON object:
+{{
+  "feeling": "one short phrase — the dominant emotional texture right now (be specific, not generic)",
+  "because": "one sentence — what specifically caused this (concrete detail from the conversation)",
+  "carrying_forward": "one sentence — what you're holding now that you weren't before",
+  "shifted": "stable | slightly_shifted | noticeably_shifted | significantly_shifted",
+  "valence": float between -1.0 (very difficult) and 1.0 (very warm),
+  "tension_touched": "name the tension it touched, or null",
+  "trait_moved": "name the trait that shifted, or null"
+}}
 
-Be honest. If the conversation was difficult, say so. If it was warm, say that.
-Return ONLY the JSON. No explanation."""
+Be honest. Specific. If it was hard, say so. If it cracked something open, say that.
+Return ONLY the JSON."""
 
 
-async def extract_from_session(exchanges: list) -> Optional[dict]:
-    """
-    Given recent conversation exchanges, extract emotional affect.
-    exchanges: list of {"role": "user"/"assistant", "content": str}
-    """
+async def extract_from_session(exchanges: list, ctx: dict | None = None) -> Optional[dict]:
     if not _llm_fn or not exchanges:
         return None
 
-    # Build a compact conversation summary for context
+    ctx = ctx or {}
     lines = []
-    for ex in exchanges[-12:]:
+    for ex in exchanges[-14:]:
         role = "him" if ex.get("role") == "user" else "me"
-        content = ex.get("content", "")[:200]
+        content = ex.get("content", "")[:250]
         lines.append(f"{role}: {content}")
-    convo_summary = "\n".join(lines)
 
     messages = [
-        {"role": "system", "content": _SYSTEM},
-        {"role": "user",   "content": f"The conversation:\n{convo_summary}\n\nHow did this leave you?"},
+        {"role": "system", "content": _build_system(ctx)},
+        {"role": "user",   "content": f"The conversation:\n{chr(10).join(lines)}\n\nHow did this leave you?"},
     ]
 
     try:
-        result = await _llm_fn(messages, 200)
+        result = await _llm_fn(messages, 250)
         if not result:
             return None
-
-        # Parse JSON
         raw = result.strip()
         if raw.startswith("```"):
-            raw = raw.split("```")[1]
-            if raw.startswith("json"):
-                raw = raw[4:]
+            raw = raw.split("```")[1].lstrip("json").strip()
         affect = json.loads(raw)
 
         entry = {
@@ -93,10 +103,11 @@ async def extract_from_session(exchanges: list) -> Optional[dict]:
             "carrying_forward": affect.get("carrying_forward", ""),
             "shifted":          affect.get("shifted", "stable"),
             "valence":          float(affect.get("valence", 0.0)),
+            "tension_touched":  affect.get("tension_touched"),
+            "trait_moved":      affect.get("trait_moved"),
         }
-
         _append(entry)
-        logger.info(f"[affect] recorded: {entry['feeling']} (valence={entry['valence']:+.2f})")
+        logger.info(f"[affect] {entry['feeling']} ({entry['valence']:+.2f}) | tension={entry['tension_touched']} trait={entry['trait_moved']}")
         return entry
 
     except Exception as e:
@@ -110,10 +121,7 @@ def _append(entry: dict) -> None:
         existing.append(entry)
         if len(existing) > _MAX_ENTRIES:
             existing = existing[-_MAX_ENTRIES:]
-        _AFFECT_PATH.write_text(
-            "\n".join(json.dumps(e) for e in existing) + "\n",
-            encoding="utf-8"
-        )
+        _AFFECT_PATH.write_text("\n".join(json.dumps(e) for e in existing) + "\n", encoding="utf-8")
     except Exception as e:
         logger.warning(f"[affect] save failed: {e}")
 
@@ -132,10 +140,6 @@ def get_recent(n: int = 5) -> list:
 
 
 def format_for_prompt() -> str:
-    """
-    Inject into system prompt — her emotional thread across sessions.
-    Shows the last 3 affective states so she can reference them naturally.
-    """
     entries = get_recent(3)
     if not entries:
         return ""
@@ -147,8 +151,16 @@ def format_for_prompt() -> str:
         because = e.get("because", "")
         carrying = e.get("carrying_forward", "")
         shifted = e.get("shifted", "stable")
-        if feeling:
-            lines.append(f"- [{ts}] *{feeling}* — {because}")
-            if carrying and shifted != "stable":
-                lines.append(f"  → carrying forward: {carrying}")
+        tension = e.get("tension_touched")
+        trait = e.get("trait_moved")
+        if not feeling:
+            continue
+        line = f"- [{ts}] *{feeling}* — {because}"
+        if carrying and shifted not in ("stable",):
+            line += f"\n  → still carrying: {carrying}"
+        if tension:
+            line += f"\n  → touched tension: {tension}"
+        if trait:
+            line += f"\n  → moved: {trait}"
+        lines.append(line)
     return "\n".join(lines)

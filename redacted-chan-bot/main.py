@@ -1255,19 +1255,21 @@ class RedactedChanBot:
         except Exception:
             pass
 
-        # Treasure box surface — rarely she brings back something she's been holding
+        # Treasure box surface — she brings back something she's been holding
         try:
             turn_n = sr._turn_counters.get(user_id, 0)
-            treasure_aside = await tb.maybe_surface(turn_n, current_topic=text[:100])
+            _surf_ctx = {"tensions": atens.get_active(2), "affect": caff.get_recent(1)}
+            treasure_aside = await tb.maybe_surface(turn_n, current_topic=text[:100], ctx=_surf_ctx)
             if treasure_aside:
                 final_response += f"\n\n{treasure_aside}"
         except Exception:
             pass
 
-        # Private thought disclose — occasionally she shares something she held back
+        # Private thought disclose — she chooses to share something she held back
         try:
             turn_n = sr._turn_counters.get(user_id, 0)
-            disclosure = await pth.maybe_disclose(turn_n)
+            _disc_ctx = {"tensions": atens.get_active(2), "affect": caff.get_recent(1)}
+            disclosure = await pth.maybe_disclose(turn_n, ctx=_disc_ctx)
             if disclosure:
                 final_response += f"\n\n{disclosure}"
         except Exception:
@@ -1366,42 +1368,57 @@ class RedactedChanBot:
             pass
 
         # ── Five Aliveness Features (background, non-blocking) ───────────────
-        # Rate-limited: pick ONE module per exchange to avoid hammering Groq.
-        # Each module gets a turn roughly every 4 exchanges — enough to build up
-        # state over a conversation without spiking token usage.
-        import random as _rand
-        async def _run_one_aliveness():
-            choice = _rand.choice(["treasure", "tensions", "thoughts", "values"])
-            if choice == "treasure":
-                try:
-                    await tb.maybe_save_from_exchange(text, final_response)
-                except Exception:
-                    pass
-            elif choice == "tensions":
-                try:
-                    await atens.detect_from_exchange(text, final_response)
-                except Exception:
-                    pass
-            elif choice == "thoughts":
-                try:
-                    await pth.generate_from_exchange(text, final_response)
-                except Exception:
-                    pass
-            elif choice == "values":
-                try:
-                    await vdrift.update_from_exchange(text, final_response)
-                except Exception:
-                    pass
+        # Build a shared context snapshot — all modules read from each other's state.
+        def _build_aliveness_ctx() -> dict:
+            ctx: dict = {}
+            try:
+                ctx["tensions"] = atens.get_active(3)
+            except Exception:
+                ctx["tensions"] = []
+            try:
+                ctx["values"] = vdrift.get_state().get("traits", {})
+            except Exception:
+                ctx["values"] = {}
+            try:
+                ctx["affect"] = caff.get_recent(2)
+            except Exception:
+                ctx["affect"] = []
+            try:
+                all_t = tb.get_all(5)
+                ctx["recent_treasure"] = all_t[-1] if all_t else None
+                ctx["treasures_held"] = tb.pending_count()
+            except Exception:
+                ctx["recent_treasure"] = None
+                ctx["treasures_held"] = 0
+            try:
+                ctx["undisclosed_thoughts"] = pth.get_recent_undisclosed(3)
+            except Exception:
+                ctx["undisclosed_thoughts"] = []
+            return ctx
+
+        async def _run_all_aliveness():
+            ctx = _build_aliveness_ctx()
+            try:
+                await tb.maybe_save_from_exchange(text, final_response, ctx=ctx)
+            except Exception:
+                pass
+            try:
+                await atens.detect_from_exchange(text, final_response, ctx=ctx)
+            except Exception:
+                pass
+            try:
+                await pth.generate_from_exchange(text, final_response, ctx=ctx)
+            except Exception:
+                pass
+            try:
+                await vdrift.update_from_exchange(text, final_response, ctx=ctx)
+            except Exception:
+                pass
 
         try:
-            asyncio.create_task(_run_one_aliveness())
+            asyncio.create_task(_run_all_aliveness())
         except Exception:
             pass
-
-        # Treasure surface — rarely bring back something she's been holding
-        # (happens in-line since it appends to final_response — already sent, so
-        #  we save it for a spontaneous future ping instead via _ping_job)
-        # Private thought disclose — handled in surfacing block below
 
     async def cmd_start(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         await update.message.reply_text(

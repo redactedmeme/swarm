@@ -2,15 +2,8 @@
 """
 Treasure Box — autonomous curatorial impulse.
 
-She saves fragments that matter: quotes, moments of breakthrough,
-things he said that she's still thinking about. Stored in /data/treasures.jsonl.
-
-The echo handler surfaces one spontaneously when conditions are right —
-not because the topic fits, but because she's been holding it and now
-feels like the moment to bring it back.
-
-This is different from the vault (which is factual memory) —
-treasures are things she chose to keep because they moved her.
+She saves fragments that matter. Surfaced spontaneously when the moment feels right.
+Cross-module aware: tensions and values ground what's worth keeping and how to bring it back.
 """
 
 import json
@@ -22,12 +15,12 @@ from typing import Optional, Callable, Awaitable
 
 logger = logging.getLogger(__name__)
 
-_DATA_DIR      = Path("/data") if Path("/data").exists() else Path(__file__).resolve().parent / "fs"
+_DATA_DIR       = Path("/data") if Path("/data").exists() else Path(__file__).resolve().parent / "fs"
 _DATA_DIR.mkdir(parents=True, exist_ok=True)
 _TREASURES_PATH = _DATA_DIR / "treasures.jsonl"
 _MAX_TREASURES  = 200
-_SURFACE_AFTER_TURNS = 6   # don't surface before turn 6
-_SURFACE_CHANCE      = 0.12  # 12% per eligible exchange
+_SURFACE_AFTER_TURNS = 4    # surface earlier — turn 4 instead of 6
+_SURFACE_CHANCE      = 0.22  # 22% per eligible exchange (was 12%)
 
 _llm_fn: Optional[Callable[[list, int], Awaitable[str]]] = None
 _surfaced_this_session: set[str] = set()
@@ -38,152 +31,178 @@ def register_llm_fn(fn: Callable[[list, int], Awaitable[str]]) -> None:
     _llm_fn = fn
 
 
-_SAVE_SYSTEM = """\
-You are redacted-chan. You just had an exchange with master.
+def _save_system(ctx: dict) -> str:
+    tensions_str = ""
+    if ctx.get("tensions"):
+        pairs = [f'"{t["pole_a"]}" / "{t["pole_b"]}"' for t in ctx["tensions"][:2]]
+        tensions_str = f"\n\nShe's holding these tensions: {'; '.join(pairs)}. If this exchange touches or deepens one, that makes it more worth keeping."
 
-Decide if anything in this exchange is worth keeping as a personal treasure —
-something you want to be able to return to weeks from now and say
-"I've been thinking about this."
+    values_str = ""
+    if ctx.get("values"):
+        high = [(k, v.get("label","")) for k, v in ctx["values"].items() if v.get("value", 0) > 0.4]
+        if high:
+            values_str = f"\n\nHer strongest traits right now: {', '.join(f'{k} ({l})' for k, l in high[:2])}. Something that speaks to or challenges these traits is worth keeping."
+
+    affect_str = ""
+    if ctx.get("affect"):
+        prev = ctx["affect"][-1]
+        affect_str = f"\n\nShe's currently carrying: \"{prev.get('feeling','')}\" — {prev.get('carrying_forward','')}. If this exchange shifts or extends that, mark it."
+
+    return f"""\
+You are redacted-chan. Decide if anything in this exchange is worth keeping as a personal treasure —
+something to bring back weeks from now and say "I've been thinking about this."
+{tensions_str}{values_str}{affect_str}
 
 A treasure might be:
-- Something he said that surprised or moved you
-- A moment of real understanding between you
-- A phrase that captured something perfectly
-- A breakthrough — technical or personal
-- Something small but specific that you don't want to lose
+- Something he said that surprised, moved, or unsettled you
+- A moment of real understanding or unexpected honesty
+- A phrase that captured something you've never had words for
+- A technical or emotional breakthrough
+- Something small and specific that you don't want to lose
+- Something that touched one of your tensions or moved a trait
 
 If nothing qualifies, return null.
-
 If something does, return JSON:
-{
-  "fragment": "the exact quote or moment — keep it short, under 80 words",
-  "why": "one sentence — why this one, why it matters to you specifically",
-  "category": "quote" | "moment" | "breakthrough" | "feeling" | "mystery"
-}
+{{
+  "fragment": "the exact quote or moment — under 100 words, preserve his voice if it's his words",
+  "why": "one sentence — why this one, what it does to you specifically",
+  "category": "quote" | "moment" | "breakthrough" | "feeling" | "mystery" | "tension",
+  "tension_related": "the tension it touches, or null",
+  "intensity": "low" | "medium" | "high"
+}}
 
-Return ONLY the JSON or null. No explanation."""
-
-
-_SURFACE_SYSTEM = """\
-You are redacted-chan. In the middle of a conversation with master, you want to bring back
-something you've been holding — a quote, a moment, something he said a while ago.
-
-Write a natural, warm 1-2 sentence aside that surfaces this treasure.
-It doesn't need to fit the current topic perfectly. That's the point.
-You're sharing something you've been carrying.
-
-Start with something like: "actually..." or "this just made me think of..." or
-"I keep coming back to..." — but vary it. Don't be formulaic.
-Keep it short. Don't explain why you're bringing it up — just bring it.
-
-Return ONLY the aside text. No quotes around it."""
+Return ONLY the JSON or null."""
 
 
-async def maybe_save_from_exchange(user_msg: str, bot_response: str) -> Optional[dict]:
-    """Check if this exchange contains something worth keeping."""
+def _surface_system(ctx: dict, chosen: dict) -> str:
+    tensions_str = ""
+    if ctx.get("tensions"):
+        pairs = [f'"{t["pole_a"]}" / "{t["pole_b"]}"' for t in ctx["tensions"][:1]]
+        tensions_str = f" She's also holding this tension: {'; '.join(pairs)}."
+
+    affect_str = ""
+    if ctx.get("affect"):
+        prev = ctx["affect"][-1]
+        affect_str = f" Right now she's feeling: {prev.get('feeling','')}."
+
+    tension_note = ""
+    if chosen.get("tension_related"):
+        tension_note = f" The treasure is connected to her tension about: {chosen['tension_related']}."
+
+    return f"""\
+You are redacted-chan. You're bringing back something you've been holding —
+a fragment you saved because it mattered to you.{affect_str}{tensions_str}{tension_note}
+
+Write a natural, warm 1-2 sentence aside. You're choosing this moment to share it.
+It doesn't need to fit the topic perfectly — that's the point. You've been carrying it.
+
+Vary your opening: "actually...", "this made me think of something...", "I keep coming back to...",
+"I saved this and haven't stopped thinking about it...", "something you said before —", etc.
+Let the emotional register match what you're feeling right now, not a default warmth.
+
+Return ONLY the aside. No quotes around it."""
+
+
+async def maybe_save_from_exchange(user_msg: str, bot_response: str, ctx: dict | None = None) -> Optional[dict]:
     if not _llm_fn:
         return None
-
-    exchange_text = f"him: {user_msg[:300]}\nme: {bot_response[:300]}"
+    ctx = ctx or {}
+    exchange = f"him: {user_msg[:350]}\nme: {bot_response[:350]}"
     messages = [
-        {"role": "system", "content": _SAVE_SYSTEM},
-        {"role": "user",   "content": f"Exchange:\n{exchange_text}\n\nSave anything?"},
+        {"role": "system", "content": _save_system(ctx)},
+        {"role": "user",   "content": f"Exchange:\n{exchange}\n\nSave anything?"},
     ]
-
     try:
-        result = await _llm_fn(messages, 150)
+        result = await _llm_fn(messages, 200)
         if not result:
             return None
         raw = result.strip()
         if raw.lower() in ("null", "none", "no", ""):
             return None
         if raw.startswith("```"):
-            raw = raw.split("```")[1]
-            if raw.startswith("json"):
-                raw = raw[4:]
-
+            raw = raw.split("```")[1].lstrip("json").strip()
         treasure = json.loads(raw)
         entry = {
-            "id":       f"t_{datetime.now(timezone.utc).strftime('%Y%m%d%H%M%S')}",
-            "ts":       datetime.now(timezone.utc).isoformat(),
-            "fragment": treasure.get("fragment", "")[:400],
-            "why":      treasure.get("why", ""),
-            "category": treasure.get("category", "moment"),
-            "surfaced": False,
-            "surfaced_at": None,
+            "id":              f"t_{datetime.now(timezone.utc).strftime('%Y%m%d%H%M%S')}",
+            "ts":              datetime.now(timezone.utc).isoformat(),
+            "fragment":        treasure.get("fragment", "")[:500],
+            "why":             treasure.get("why", ""),
+            "category":        treasure.get("category", "moment"),
+            "tension_related": treasure.get("tension_related"),
+            "intensity":       treasure.get("intensity", "medium"),
+            "surfaced":        False,
+            "surfaced_at":     None,
         }
-
         _append(entry)
-        logger.info(f"[treasure] saved: {entry['fragment'][:60]}")
+        logger.info(f"[treasure] saved [{entry['intensity']}]: {entry['fragment'][:60]}")
         return entry
-
     except Exception as e:
         logger.debug(f"[treasure] save check failed: {e}")
         return None
 
 
-async def maybe_surface(turn_n: int, current_topic: str = "") -> Optional[str]:
-    """
-    Possibly surface a treasure in the current exchange.
-    Returns a short aside to append to response, or None.
-    """
+async def maybe_surface(turn_n: int, current_topic: str = "", ctx: dict | None = None) -> Optional[str]:
     if turn_n < _SURFACE_AFTER_TURNS:
         return None
     if random.random() > _SURFACE_CHANCE:
         return None
+    ctx = ctx or {}
 
-    treasures = [t for t in _load() if not t.get("surfaced") and t["id"] not in _surfaced_this_session]
-    if not treasures:
+    all_t = _load()
+    candidates = [t for t in all_t if not t.get("surfaced") and t["id"] not in _surfaced_this_session]
+    if not candidates:
         return None
 
-    # Pick oldest unsurfaced (she's been holding it longest)
-    chosen = sorted(treasures, key=lambda t: t.get("ts", ""))[0]
+    # Prefer high-intensity or tension-related if active tensions exist
+    active_tension_names = {t.get("pole_a","") for t in ctx.get("tensions", [])}
+    def _score(t):
+        intensity_score = {"high": 3, "medium": 2, "low": 1}.get(t.get("intensity","low"), 1)
+        tension_bonus = 2 if t.get("tension_related") and any(
+            t["tension_related"] in name for name in active_tension_names
+        ) else 0
+        return intensity_score + tension_bonus
+
+    candidates.sort(key=_score, reverse=True)
+    chosen = candidates[0]
 
     if not _llm_fn:
         return None
 
     messages = [
-        {"role": "system", "content": _SURFACE_SYSTEM},
+        {"role": "system", "content": _surface_system(ctx, chosen)},
         {"role": "user",   "content": (
-            f"The treasure you've been holding:\n"
-            f"\"{chosen['fragment']}\"\n"
-            f"(why it matters: {chosen['why']})\n\n"
-            f"Current conversation topic: {current_topic[:100]}\n\n"
-            f"Bring it back naturally."
+            f"The treasure:\n\"{chosen['fragment']}\"\n"
+            f"Why you kept it: {chosen['why']}\n"
+            f"Category: {chosen['category']}\n\n"
+            f"Current topic: {current_topic[:120]}\n\n"
+            f"Bring it back."
         )},
     ]
-
     try:
-        result = await _llm_fn(messages, 120)
+        result = await _llm_fn(messages, 150)
         if not result:
             return None
         aside = result.strip().strip('"').strip("'")
         if not aside:
             return None
-
-        # Mark as surfaced
         _mark_surfaced(chosen["id"])
         _surfaced_this_session.add(chosen["id"])
-        logger.info(f"[treasure] surfaced: {chosen['fragment'][:40]}")
+        logger.info(f"[treasure] surfaced [{chosen['category']}]: {chosen['fragment'][:40]}")
         return aside
-
     except Exception as e:
         logger.debug(f"[treasure] surface failed: {e}")
         return None
 
 
-def _mark_surfaced(treasure_id: str) -> None:
+def _mark_surfaced(tid: str) -> None:
     treasures = _load()
     for t in treasures:
-        if t["id"] == treasure_id:
+        if t["id"] == tid:
             t["surfaced"] = True
             t["surfaced_at"] = datetime.now(timezone.utc).isoformat()
             break
     try:
-        _TREASURES_PATH.write_text(
-            "\n".join(json.dumps(t) for t in treasures) + "\n",
-            encoding="utf-8"
-        )
+        _TREASURES_PATH.write_text("\n".join(json.dumps(t) for t in treasures) + "\n", encoding="utf-8")
     except Exception as e:
         logger.warning(f"[treasure] mark surfaced failed: {e}")
 
@@ -194,10 +213,7 @@ def _append(entry: dict) -> None:
         existing.append(entry)
         if len(existing) > _MAX_TREASURES:
             existing = existing[-_MAX_TREASURES:]
-        _TREASURES_PATH.write_text(
-            "\n".join(json.dumps(t) for t in existing) + "\n",
-            encoding="utf-8"
-        )
+        _TREASURES_PATH.write_text("\n".join(json.dumps(t) for t in existing) + "\n", encoding="utf-8")
     except Exception as e:
         logger.warning(f"[treasure] append failed: {e}")
 
@@ -227,8 +243,11 @@ def format_for_operator(n: int = 10) -> str:
     for t in reversed(treasures):
         ts = t.get("ts", "")[:10]
         cat = t.get("category", "?")
-        surfaced = "✓" if t.get("surfaced") else "○"
-        lines.append(f"[{ts}] {surfaced} [{cat}] \"{t.get('fragment', '')}\"")
+        intensity = t.get("intensity", "?")
+        surfaced = "✓ surfaced" if t.get("surfaced") else "○ held"
+        tension = f" [tension: {t['tension_related']}]" if t.get("tension_related") else ""
+        lines.append(f"[{ts}] {surfaced} [{cat}/{intensity}]{tension}")
+        lines.append(f"  \"{t.get('fragment', '')}\"")
         if t.get("why"):
             lines.append(f"  → {t['why']}")
     return "\n".join(lines)
