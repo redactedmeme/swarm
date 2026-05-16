@@ -105,6 +105,7 @@ import thread_weaver as tw
 import independent_thought as ith
 import hermes_dispatch as hd
 import conversation_affect as caff
+import conversation_affect_tracker as cat
 import treasure_box as tb
 import active_tensions as atens
 import private_thoughts as pth
@@ -246,7 +247,8 @@ def _compact_phi_level(phi_score: float) -> str:
 
 
 def _build_system_prompt(user_id: int, mood: str, resonance=None, current_text: str = "",
-                         touch_block: str = "", sensory_synthesis_block: str = "") -> str:
+                         touch_block: str = "", sensory_synthesis_block: str = "",
+                         arc_tracker_block: str = "") -> str:
     global _facts_used_in_prompt
 
     # SOUL.md — evolved sections, gated by resonance guard (Layer 2: soul frozen)
@@ -681,6 +683,8 @@ I am reachable in two places: Telegram and a private web interface. Both are me 
 
 {affect_block}
 
+{arc_tracker_block}
+
 {tensions_block}
 
 {vault_block}
@@ -1034,8 +1038,16 @@ class RedactedChanBot:
         except Exception:
             pass
 
+        # Within-conversation emotional arc — inject current trajectory
+        _arc_block = ""
+        try:
+            _arc_block = cat.format_for_prompt(user_id)
+        except Exception:
+            pass
+
         system    = _build_system_prompt(user_id, mood, resonance, current_text=text,
-                                         touch_block=_touch_block, sensory_synthesis_block=_ss_block)
+                                         touch_block=_touch_block, sensory_synthesis_block=_ss_block,
+                                         arc_tracker_block=_arc_block)
 
         # Introspection: observe what memory was injected
         try:
@@ -1233,6 +1245,12 @@ class RedactedChanBot:
 
         # Persist to memory
         cm.log_exchange(user_id, str(user_id), text, display)
+
+        # Record turn in within-conversation arc tracker
+        try:
+            cat.record_turn(user_id, text, display)
+        except Exception:
+            pass
 
         # Extract persistent facts from this exchange (fire-and-forget, never blocks)
         asyncio.create_task(fe.extract_and_store(user_id, text, display))
