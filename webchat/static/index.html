@@ -461,8 +461,12 @@ async function sendMessage() {
   setStatus('connected');
 
   try {
+    const controller = new AbortController();
+    const fetchTimeout = setTimeout(() => controller.abort(), 95000);
+
     const res = await fetch('/chat', {
       method: 'POST',
+      signal: controller.signal,
       headers: {
         'Content-Type': 'application/json',
         'Authorization': `Bearer ${token}`,
@@ -473,6 +477,7 @@ async function sendMessage() {
         history: history.slice(0, -1),  // history excluding the just-added message
       }),
     });
+    clearTimeout(fetchTimeout);
 
     if (res.status === 401) {
       logout();
@@ -512,7 +517,11 @@ async function sendMessage() {
 
   } catch (err) {
     setWaiting(false);
-    appendBot('(connection lost)');
+    if (err.name === 'AbortError') {
+      appendBot('(she took too long to respond — try again)');
+    } else {
+      appendBot('(connection lost)');
+    }
     setStatus('disconnected');
   }
 }
