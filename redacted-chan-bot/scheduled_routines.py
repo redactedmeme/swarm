@@ -950,8 +950,15 @@ async def run_private_creation() -> None:
 # ── Routine 16: Heartbeat ─────────────────────────────────────────────────────
 
 async def run_heartbeat() -> None:
-    """Send a lightweight heartbeat signal during silence. Alternates with contextual pings."""
+    """Send a lightweight heartbeat signal during silence. Also pings swarm Redis."""
     try:
+        # Swarm inbox heartbeat — lets Hermes know we're alive
+        try:
+            import swarm_inbox
+            swarm_inbox.heartbeat("redacted-chan", {"service": "redacted-chan-bot"})
+        except Exception as hb_e:
+            logger.debug(f"[routines] swarm heartbeat failed (non-critical): {hb_e}")
+
         import autonomous_ping as ap
         if _last_conversation_ts is not None:
             silence_h = (datetime.now(timezone.utc) - _last_conversation_ts).total_seconds() / 3600
