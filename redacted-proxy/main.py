@@ -145,6 +145,7 @@ _PROVIDER_URLS = {
     "groq":      "https://api.groq.com/openai/v1/chat/completions",
     "anthropic": "https://api.anthropic.com/v1/messages",
     "openai":    "https://api.openai.com/v1/chat/completions",
+    "venice":    "https://api.venice.ai/api/v1/chat/completions",
 }
 
 _PROVIDER_KEYS = {
@@ -152,6 +153,13 @@ _PROVIDER_KEYS = {
     "groq":      os.getenv("GROQ_API_KEY", ""),
     "anthropic": os.getenv("ANTHROPIC_API_KEY", ""),
     "openai":    os.getenv("OPENAI_API_KEY", ""),
+    "venice":    os.getenv("VENICE_API_KEY", ""),
+}
+
+_VENICE_MODELS = {
+    "gemma-4-uncensored", "mistral-31-24b", "mistral-small-3-2-24b-instruct",
+    "qwen-2-5-vl", "llama-3-3-70b", "nous-hermes-3-nitro", "venice-uncensored",
+    "lfm-40b",
 }
 
 _MODEL_ALIASES = {
@@ -175,6 +183,13 @@ _MODEL_ALIASES = {
     # OpenAI
     "gpt-4o":                   ("openai",    "gpt-4o"),
     "gpt-4o-mini":              ("openai",    "gpt-4o-mini"),
+    # Venice
+    "gemma-4-uncensored":                 ("venice", "gemma-4-uncensored"),
+    "mistral-31-24b":                     ("venice", "mistral-31-24b"),
+    "mistral-small-3-2-24b-instruct":     ("venice", "mistral-small-3-2-24b-instruct"),
+    "venice-uncensored":                  ("venice", "venice-uncensored"),
+    "nous-hermes-3-nitro":                ("venice", "nous-hermes-3-nitro"),
+    "lfm-40b":                            ("venice", "lfm-40b"),
 }
 
 
@@ -184,6 +199,8 @@ def _resolve_provider(model: str, explicit_provider: str = "") -> tuple[str, str
         return explicit_provider.lower(), model
     if model in _MODEL_ALIASES:
         return _MODEL_ALIASES[model]
+    if model in _VENICE_MODELS:
+        return "venice", model
     if model.startswith("grok-"):
         return "xai", model
     if model.startswith(("llama-", "gemma", "mixtral", "qwen-", "deepseek-")):
