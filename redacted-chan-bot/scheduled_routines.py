@@ -495,11 +495,28 @@ async def auto_vault_from_session() -> None:
         if saved:
             logger.info(f"[routines] auto-vault: saved {saved} moment(s) from session")
 
-        # Conversation affect — extract emotional residue from the session
+        # Conversation affect — extract emotional residue from the session (cross-module ctx)
         try:
             import conversation_affect as caff
             caff.register_llm_fn(_llm_fn)
-            affect = await caff.extract_from_session(exchanges)
+            _affect_ctx: dict = {}
+            try:
+                import active_tensions as _atens
+                _affect_ctx["tensions"] = _atens.get_active(3)
+            except Exception:
+                pass
+            try:
+                import values_drift as _vdrift
+                _affect_ctx["values"] = _vdrift.get_state().get("traits", {})
+            except Exception:
+                pass
+            try:
+                import treasure_box as _tb
+                all_t = _tb.get_all(3)
+                _affect_ctx["recent_treasure"] = all_t[-1] if all_t else None
+            except Exception:
+                pass
+            affect = await caff.extract_from_session(exchanges, ctx=_affect_ctx)
             if affect:
                 logger.info(f"[routines] affect: {affect.get('feeling', '')} ({affect.get('valence', 0):+.2f})")
         except Exception as e:
