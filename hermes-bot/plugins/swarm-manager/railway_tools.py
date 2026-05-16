@@ -185,14 +185,35 @@ mutation Redeploy($serviceId: String!, $environmentId: String!) {
 
 
 def _handle_railway_restart(args: dict) -> str:
+    # serviceInstanceRedeploy requires a Railway personal API token with write scope.
+    # Neither the backboard API token nor the CLI token has this permission.
+    # Set RAILWAY_WRITE_TOKEN to enable this feature.
+    write_token = os.getenv("RAILWAY_WRITE_TOKEN", "")
     service = args.get("service", "")
     err = _validate_service(service)
     if err:
         return json.dumps({"status": "error", "error": err})
 
+    if not write_token:
+        return json.dumps({
+            "status": "unavailable",
+            "message": (
+                "serviceInstanceRedeploy requires a Railway personal API token with write scope. "
+                "Set RAILWAY_WRITE_TOKEN to enable. See Account Settings → API Tokens."
+            ),
+        })
+
     svc_id = SERVICE_MAP[service]
     try:
-        _gql(_REDEPLOY_MUTATION, {"serviceId": svc_id, "environmentId": ENV_ID})
+        token_backup = os.environ.get("RAILWAY_API_TOKEN", "")
+        os.environ["RAILWAY_API_TOKEN"] = write_token
+        try:
+            _gql(_REDEPLOY_MUTATION, {"serviceId": svc_id, "environmentId": ENV_ID})
+        finally:
+            if token_backup:
+                os.environ["RAILWAY_API_TOKEN"] = token_backup
+            else:
+                os.environ.pop("RAILWAY_API_TOKEN", None)
         return json.dumps({"status": "ok", "service": service, "message": "Redeployment triggered"})
     except Exception as e:
         logger.error("[railway] Restart failed for %s: %s", service, e)

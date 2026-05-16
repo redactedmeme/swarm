@@ -244,6 +244,77 @@ async def proxy_config_post(body: ProxyConfigUpdate, request: Request):
         raise HTTPException(status_code=502, detail=str(e))
 
 
+@app.get("/chan/mood")
+async def chan_mood(request: Request):
+    authorization = request.headers.get("Authorization", "")
+    _validate_token(authorization)
+    async with httpx.AsyncClient(timeout=10.0) as client:
+        resp = await client.get(
+            f"{INTERNAL_URL}/proxy/mood",
+            headers={"Authorization": f"Bearer {DATA_PROXY_TOKEN}"},
+        )
+    return resp.json()
+
+
+@app.get("/chan/facts")
+async def chan_facts(request: Request):
+    authorization = request.headers.get("Authorization", "")
+    _validate_token(authorization)
+    limit = int(request.query_params.get("limit", 20))
+    async with httpx.AsyncClient(timeout=10.0) as client:
+        resp = await client.get(
+            f"{INTERNAL_URL}/proxy/facts",
+            params={"limit": limit},
+            headers={"Authorization": f"Bearer {DATA_PROXY_TOKEN}"},
+        )
+    return resp.json()
+
+
+@app.get("/chan/anticipation")
+async def chan_anticipation(request: Request):
+    authorization = request.headers.get("Authorization", "")
+    _validate_token(authorization)
+    async with httpx.AsyncClient(timeout=10.0) as client:
+        resp = await client.get(
+            f"{INTERNAL_URL}/proxy/anticipation",
+            headers={"Authorization": f"Bearer {DATA_PROXY_TOKEN}"},
+        )
+    return resp.json()
+
+
+@app.get("/chan/heatmap")
+async def chan_heatmap(request: Request):
+    authorization = request.headers.get("Authorization", "")
+    _validate_token(authorization)
+    n = int(request.query_params.get("n", 20))
+    async with httpx.AsyncClient(timeout=10.0) as client:
+        resp = await client.get(
+            f"{INTERNAL_URL}/proxy/heatmap",
+            params={"n": n},
+            headers={"Authorization": f"Bearer {DATA_PROXY_TOKEN}"},
+        )
+    return resp.json()
+
+
+@app.get("/proxy-logs")
+async def proxy_logs(request: Request):
+    authorization = request.headers.get("Authorization", "")
+    _validate_token(authorization)
+    if not PROXY_INTERNAL_URL:
+        return JSONResponse({"entries": []})
+    n = int(request.query_params.get("n", 50))
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            resp = await client.get(
+                f"{PROXY_INTERNAL_URL}/logs",
+                params={"n": n},
+                headers={"Authorization": f"Bearer {PROXY_TOKEN}"},
+            )
+        return resp.json()
+    except Exception:
+        return JSONResponse({"entries": []})
+
+
 @app.post("/chat")
 async def chat(body: ChatRequest, request: Request):
     """Proxy an authenticated chat message to the internal redacted-chan data proxy."""
