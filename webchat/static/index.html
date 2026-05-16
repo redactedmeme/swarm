@@ -486,7 +486,7 @@
 
     <div id="attachment-strip"></div>
     <div class="input-area">
-      <input type="file" id="file-input" accept=".txt,.md,.pdf,.py,.js,.ts,.json,.csv" style="display:none">
+      <input type="file" id="file-input" accept=".txt,.md,.pdf,.py,.js,.ts,.json,.csv,.jpg,.jpeg,.png,.gif,.webp" style="display:none">
       <button id="attach-btn" title="Attach file">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
           <path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/>
@@ -514,6 +514,7 @@ let waiting         = false;
 let msgCount        = 0;
 let attachmentText  = '';   // extracted file text
 let attachmentName  = '';   // filename for display
+let attachmentImage = '';   // base64 data URL for image attachments
 let ttsActive       = null; // currently speaking button element
 
 // ── DOM refs ──────────────────────────────────────────────────────────────────
@@ -718,26 +719,38 @@ fileInput.addEventListener('change', async () => {
     });
     if (!res.ok) { appendSystem('upload failed'); return; }
     const data = await res.json();
-    attachmentText = data.text || '';
-    attachmentName = file.name;
-    showAttachment();
+    attachmentName = data.filename || file.name;
+    if (data.type === 'image') {
+      attachmentImage = data.data_url || '';
+      attachmentText  = '';
+    } else {
+      attachmentText  = data.text || '';
+      attachmentImage = '';
+    }
+    showAttachment(data.type === 'image' ? attachmentImage : null);
   } catch {
     appendSystem('upload failed');
   }
 });
 
-function showAttachment() {
+function showAttachment(dataUrl) {
   attachStrip.innerHTML = '';
   const chip = document.createElement('div');
   chip.className = 'attachment-chip';
-  chip.innerHTML = `📎 ${escHtml(attachmentName)} <button onclick="clearAttachment()" title="Remove">✕</button>`;
+  if (dataUrl) {
+    // Image preview
+    chip.innerHTML = `<img src="${dataUrl}" style="height:40px;border-radius:4px;object-fit:cover"> ${escHtml(attachmentName)} <button onclick="clearAttachment()" title="Remove">✕</button>`;
+  } else {
+    chip.innerHTML = `📎 ${escHtml(attachmentName)} <button onclick="clearAttachment()" title="Remove">✕</button>`;
+  }
   attachStrip.appendChild(chip);
   attachStrip.classList.add('visible');
 }
 
 function clearAttachment() {
-  attachmentText = '';
-  attachmentName = '';
+  attachmentText  = '';
+  attachmentName  = '';
+  attachmentImage = '';
   attachStrip.innerHTML = '';
   attachStrip.classList.remove('visible');
 }
@@ -834,10 +847,11 @@ async function sendMessage() {
   msgInput.style.height = 'auto';
   sendBtn.disabled = true;
 
-  // Prepend any attached file content
+  // Prepend any attached file text; capture image before clearing
   const fullText = attachmentText
     ? `[Attached file: ${attachmentName}]\n${attachmentText}\n\n${text}`
     : text;
+  const imageData = attachmentImage;
   clearAttachment();
 
   appendMessage('user', text);
@@ -860,6 +874,7 @@ async function sendMessage() {
         message: fullText,
         session_id: sessionId,
         history: history.slice(0, -1),
+        image_data: imageData,
       }),
     });
     clearTimeout(abortTimer);
