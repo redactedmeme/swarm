@@ -8,7 +8,7 @@ to the redacted-chan-bot internal data proxy.
 Environment variables required:
   WEB_PASSWORD            — password users enter on the login screen
   WEB_SECRET              — secret key for signing JWT tokens
-  REDACTED_CHAN_INTERNAL_URL — e.g. http://redacted-chan-bot.railway.internal:8080
+  REDACTED_CHAN_INTERNAL_URL — e.g. http://localhost:8080
   DATA_PROXY_TOKEN        — bearer token for the internal data proxy
 """
 
@@ -33,7 +33,7 @@ logger = logging.getLogger(__name__)
 
 WEB_PASSWORD = os.getenv("WEB_PASSWORD", "")
 WEB_SECRET = os.getenv("WEB_SECRET", "changeme")
-INTERNAL_URL = os.getenv("REDACTED_CHAN_INTERNAL_URL", "http://redacted-chan-bot.railway.internal:8080")
+INTERNAL_URL = os.getenv("REDACTED_CHAN_INTERNAL_URL", "http://localhost:8080")
 DATA_PROXY_TOKEN = os.getenv("DATA_PROXY_TOKEN", "")
 
 JWT_ALGORITHM = "HS256"

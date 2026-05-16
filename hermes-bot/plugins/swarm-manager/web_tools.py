@@ -21,7 +21,7 @@ _BLOCKED_HOST_PATTERNS = [
     "10.",
     "192.168.",
     "0.0.0.0",
-    ".railway.internal",
+    ".internal",
     "metadata.",
 ]
 

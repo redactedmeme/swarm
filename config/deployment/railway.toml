@@ -24,11 +24,11 @@
   healthcheckInterval = 30
   healthcheckTimeout = 10
   # Dashboard: add volume mount at /root/.ollama (persistent model storage)
-  # Private network: accessible as http://ollama-backend.railway.internal:11434
+  # Private network: accessible as http://ollama-backend.internal:11434
 
 # Swarm worker: persistent Python daemon (summon_agent in loop mode)
 [services.swarm-worker]
-  startCommand = "python lib/python/summon_agent.py --agent agents/characters/RedactedIntern.character.json --mode persistent --ollama-host http://ollama-backend.railway.internal:11434"
+  startCommand = "python lib/python/summon_agent.py --agent agents/characters/RedactedIntern.character.json --mode persistent --ollama-host http://ollama-backend.internal:11434"
   healthcheckPath = "/health"            # If you add a simple Flask/endpoint for liveness; otherwise omit or use custom script
   healthcheckInterval = 60
   healthcheckTimeout = 30
@@ -55,7 +55,7 @@
   # 1. Expose port 8080 publicly (at least temporarily for initial OAuth callback if tunneling not used)
   # 2. Add persistent volume mount at /root/.phantom-mcp (or adjust to /home/node/.phantom-mcp) → persists session.json
   # 3. Set required env var: PHANTOM_APP_ID=your_app_id_from_phantom_portal
-  # Private network: swarm-worker can reach it at http://phantom-mcp.railway.internal:8080
+  # Private network: swarm-worker can reach it at http://phantom-mcp.internal:8080
 
 # Shared environment variable defaults (override/fill secrets in dashboard)
 [environment]

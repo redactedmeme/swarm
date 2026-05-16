@@ -40,8 +40,9 @@ smolting-telegram-bot/fs/clawtask_dispatch_results.json
 smolting-telegram-bot/fs/pattern_blue_state.json
 smolting-telegram-bot/fs/kernel_state.json
 
-# Keep smolting logs (seed data for GnosisAccelerator)
-!fs/logs/
+# Runtime logs (contain internal hostnames / operational data — not for public repo)
+fs/logs/
+fs/manifold_submissions.log
 
 # ── Node / Bun ────────────────────────────────────────────────────────────────
 node_modules/

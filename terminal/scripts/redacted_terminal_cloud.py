@@ -31,7 +31,7 @@ MAX_CYCLES = int(os.getenv("MAX_CYCLES", "0")) or None          # 0 = unlimited
 SLEEP_BASE = int(os.getenv("SLEEP_BASE", "600"))               # seconds
 TEMPERATURE = float(os.getenv("TEMPERATURE", "0.65"))          # lower = less pondering
 MAX_TOKENS = int(os.getenv("MAX_TOKENS", "600"))
-OLLAMA_HOST = os.getenv("OLLAMA_HOST", "http://ollama-backend.railway.internal:11434")
+OLLAMA_HOST = os.getenv("OLLAMA_HOST", "http://localhost:11434")
 
 PROVIDERS = {
     "groq": {

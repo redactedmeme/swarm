@@ -10,29 +10,40 @@ import requests
 
 logger = logging.getLogger("swarm-manager.railway")
 
-RAILWAY_API = "https://backboard.railway.com/graphql/v2"
-ENV_ID = "b07b0204-16f5-4063-9a24-f3b6dfe45e53"
+RAILWAY_API = os.getenv("RAILWAY_API_URL", "https://backboard.railway.com/graphql/v2")
+ENV_ID = os.getenv("RAILWAY_ENV_ID", "")
 
-SERVICE_MAP = {
-    "redacted-chan-bot":       "87d03512-83fc-4169-844f-2625030e4135",
-    "smolting-telegram-bot":   "2d6387ab-5e20-44fa-87c9-0045fbabfff1",
-    "hermes-bot":              "54fb26d2-def4-4a70-9a7a-a900f3418ed6",
-    "swarm-runtime":           "9f910ac1-7fa8-49ab-a30f-5a10db7d3d8a",
-    "redactedbuilder-bot":     "9e700bcc-fc26-49f0-a1a1-625d065885da",
-    "redacted-website":        "4f55d261-2235-4f89-9d6e-03f5da6b3eca",
-    "redacted-dashboard":      "879c2780-65d4-459b-955e-3e2f85b47bec",
-}
+def _build_service_map() -> dict:
+    """Build service map from environment variables. Each service ID is set via RAILWAY_SERVICE_<NAME> env var."""
+    names = [
+        "redacted-chan-bot",
+        "smolting-telegram-bot",
+        "hermes-bot",
+        "swarm-runtime",
+        "redactedbuilder-bot",
+        "redacted-website",
+        "redacted-dashboard",
+    ]
+    result = {}
+    for name in names:
+        env_key = "RAILWAY_SERVICE_" + name.upper().replace("-", "_")
+        svc_id = os.getenv(env_key, "")
+        if svc_id:
+            result[name] = svc_id
+    return result
+
+SERVICE_MAP: dict = _build_service_map()
 
 
 def _token() -> str:
-    return os.getenv("RAILWAY_TOKEN", "")
+    return os.getenv("RAILWAY_API_TOKEN", "") or os.getenv("RAILWAY_TOKEN", "")
 
 
 def _gql(query: str, variables: dict | None = None, timeout: int = 20) -> dict:
     """Execute a Railway GraphQL query. Returns parsed JSON or raises."""
     token = _token()
     if not token:
-        raise RuntimeError("RAILWAY_TOKEN not set")
+        raise RuntimeError("RAILWAY_API_TOKEN not set")
     resp = requests.post(
         RAILWAY_API,
         json={"query": query, "variables": variables or {}},

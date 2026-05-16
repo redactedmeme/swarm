@@ -7,7 +7,7 @@ Phase 2+ (EXECUTE_TRADES=true):  execute arbs as Jito bundles.
 Env vars required:
   SOLANA_PRIVATE_KEY  — 64-byte base58 keypair
   HELIUS_API_KEY      — for Solana RPC
-  REDIS_URL           — redis://swarm-redis.railway.internal:6379
+  REDIS_URL           — Redis connection URL (e.g. redis://localhost:6379)
   EXECUTE_TRADES      — "true" to enable execution (default: false)
 """
 
