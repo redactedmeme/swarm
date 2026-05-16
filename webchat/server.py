@@ -12,18 +12,22 @@ Environment variables required:
   DATA_PROXY_TOKEN        — bearer token for the internal data proxy
 """
 
+import asyncio
+import json
 import os
 import time
 import logging
+import uuid
 from collections import defaultdict
 from datetime import datetime, timezone, timedelta
+from pathlib import Path
+from typing import AsyncIterator
 
 import httpx
 import jwt
-from fastapi import FastAPI, Request, Response, HTTPException
+from fastapi import FastAPI, Request, HTTPException, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, JSONResponse
-from fastapi.staticfiles import StaticFiles
+from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from pydantic import BaseModel
 
 logging.basicConfig(level=logging.INFO)
@@ -98,21 +102,13 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Mount static files (index.html etc.)
-app.mount("/static", StaticFiles(directory="static"), name="static")
-
+_STATIC_DIR = Path("static")
 
 # ── Routes ────────────────────────────────────────────────────────────────────
 
 @app.get("/health")
 async def health():
     return {"status": "ok"}
-
-
-@app.get("/")
-async def root():
-    """Serve the main chat UI."""
-    return FileResponse("static/index.html")
 
 
 class LoginRequest(BaseModel):
@@ -127,8 +123,9 @@ async def login(body: LoginRequest):
     if body.password != WEB_PASSWORD:
         raise HTTPException(status_code=401, detail="wrong password")
     token = _mint_token()
+    session_id = str(uuid.uuid4())
     logger.info("[webchat] login success")
-    return {"token": token}
+    return {"token": token, "session_id": session_id}
 
 
 _IMAGE_EXTS = {".jpg", ".jpeg", ".png", ".gif", ".webp"}
@@ -159,7 +156,7 @@ async def upload(request: Request):
         mime = _IMAGE_MIME.get(ext, "image/jpeg")
         data_url = f"data:{mime};base64,{b64}"
         logger.info(f"[webchat] image upload: {filename} ({len(content_bytes)} bytes)")
-        return {"filename": filename, "type": "image", "data_url": data_url, "text": ""}
+        return {"name": filename, "type": "image", "data": data_url}
 
     # Text files (512 KB max)
     content_bytes = await file.read(max_size=512 * 1024)
@@ -189,7 +186,7 @@ async def upload(request: Request):
 
     text = text[:8000]
     logger.info(f"[webchat] text upload: {filename} → {len(text)} chars")
-    return {"filename": filename, "type": "text", "text": text, "data_url": ""}
+    return {"name": filename, "type": "text", "data": text}
 
 
 class ChatRequest(BaseModel):
@@ -352,3 +349,255 @@ async def chat(body: ChatRequest, request: Request):
     except Exception as e:
         logger.error(f"[webchat] internal API error: {e}")
         return JSONResponse({"error": "redacted-chan is unavailable"}, status_code=503)
+
+
+# ── SSE streaming chat ────────────────────────────────────────────────────────
+
+async def _stream_text(text: str, chunk_size: int = 4) -> AsyncIterator[str]:
+    """Yield SSE events by splitting text into small word-boundary chunks."""
+    words = text.split(" ")
+    buf: list[str] = []
+    for word in words:
+        buf.append(word)
+        if len(buf) >= chunk_size:
+            chunk = " ".join(buf) + " "
+            yield f"data: {json.dumps({'delta': chunk})}\n\n"
+            buf = []
+            await asyncio.sleep(0.01)
+    if buf:
+        yield f"data: {json.dumps({'delta': ' '.join(buf)})}\n\n"
+    yield f"data: {json.dumps({'done': True})}\n\n"
+
+
+@app.post("/chat/stream")
+async def chat_stream(body: ChatRequest, request: Request):
+    """Streaming SSE variant of /chat. Returns text/event-stream."""
+    authorization = request.headers.get("Authorization", "")
+    _validate_token(authorization)
+
+    client_ip = request.client.host if request.client else "unknown"
+    if not _check_rate_limit(client_ip):
+        raise HTTPException(status_code=429, detail="rate limit exceeded")
+
+    payload = {
+        "message": body.message,
+        "session_id": body.session_id,
+        "history": body.history,
+        "image_data": body.image_data,
+    }
+    headers = {
+        "Authorization": f"Bearer {DATA_PROXY_TOKEN}",
+        "Content-Type": "application/json",
+    }
+
+    try:
+        async with httpx.AsyncClient(timeout=95.0) as client:
+            resp = await client.post(f"{INTERNAL_URL}/proxy/chat", json=payload, headers=headers)
+        if resp.status_code != 200:
+            async def _err():
+                yield f"data: {json.dumps({'error': 'unavailable'})}\n\n"
+            return StreamingResponse(_err(), media_type="text/event-stream")
+        data = resp.json()
+        response_text = data.get("response", "")
+        session_id = data.get("session_id", body.session_id)
+        # Prepend session_id as first event
+        async def _gen():
+            yield f"data: {json.dumps({'session_id': session_id})}\n\n"
+            async for chunk in _stream_text(response_text):
+                yield chunk
+        return StreamingResponse(_gen(), media_type="text/event-stream", headers={
+            "Cache-Control": "no-cache",
+            "X-Accel-Buffering": "no",
+        })
+    except httpx.TimeoutException:
+        async def _timeout():
+            yield f"data: {json.dumps({'error': 'timeout'})}\n\n"
+        return StreamingResponse(_timeout(), media_type="text/event-stream")
+    except Exception as e:
+        logger.error(f"[webchat] stream error: {e}")
+        async def _exc():
+            yield f"data: {json.dumps({'error': str(e)})}\n\n"
+        return StreamingResponse(_exc(), media_type="text/event-stream")
+
+
+# ── WebSocket chat ─────────────────────────────────────────────────────────────
+
+@app.websocket("/ws/chat")
+async def ws_chat(websocket: WebSocket):
+    """WebSocket chat channel — token passed as query param ?token=..."""
+    token = websocket.query_params.get("token", "")
+    try:
+        jwt.decode(token, WEB_SECRET, algorithms=[JWT_ALGORITHM])
+    except jwt.InvalidTokenError:
+        await websocket.close(code=4001)
+        return
+
+    await websocket.accept()
+    try:
+        while True:
+            raw = await websocket.receive_text()
+            try:
+                body = json.loads(raw)
+            except json.JSONDecodeError:
+                await websocket.send_json({"error": "invalid json"})
+                continue
+
+            payload = {
+                "message": body.get("message", ""),
+                "session_id": body.get("session_id", ""),
+                "history": body.get("history", []),
+                "image_data": body.get("image_data", ""),
+            }
+            headers = {
+                "Authorization": f"Bearer {DATA_PROXY_TOKEN}",
+                "Content-Type": "application/json",
+            }
+            try:
+                async with httpx.AsyncClient(timeout=95.0) as client:
+                    resp = await client.post(f"{INTERNAL_URL}/proxy/chat", json=payload, headers=headers)
+                data = resp.json()
+                response_text = data.get("response", "")
+                session_id = data.get("session_id", payload["session_id"])
+                # Stream tokens over WS
+                words = response_text.split(" ")
+                buf: list[str] = []
+                for word in words:
+                    buf.append(word)
+                    if len(buf) >= 4:
+                        await websocket.send_json({"delta": " ".join(buf) + " "})
+                        buf = []
+                        await asyncio.sleep(0.01)
+                if buf:
+                    await websocket.send_json({"delta": " ".join(buf)})
+                await websocket.send_json({"done": True, "session_id": session_id})
+            except Exception as e:
+                await websocket.send_json({"error": str(e)})
+    except WebSocketDisconnect:
+        pass
+
+
+# ── API: agents ───────────────────────────────────────────────────────────────
+
+_AGENTS_CONFIG = [
+    {"id": "chan",    "label": "redacted-chan",    "icon": "⬡",  "role": "core",    "description": "Emotional memory + relational AI"},
+    {"id": "hermes",  "label": "hermes-bot",       "icon": "⚡", "role": "agent",   "description": "Autonomous task agent with web/exec tools"},
+    {"id": "smolting","label": "smolting",          "icon": "🌱", "role": "agent",   "description": "Moltbook TPD trader — Telegram-based"},
+    {"id": "builder", "label": "RedactedBuilder",   "icon": "🔧", "role": "agent",   "description": "Infrastructure + deployment builder"},
+    {"id": "proxy",   "label": "redacted-proxy",    "icon": "🛡",  "role": "infra",   "description": "Privacy-first LLM routing proxy"},
+    {"id": "runtime", "label": "swarm-runtime",     "icon": "⚙",  "role": "infra",   "description": "Sub-agent orchestration runtime"},
+]
+
+
+@app.get("/api/agents")
+async def api_agents(request: Request):
+    authorization = request.headers.get("Authorization", "")
+    _validate_token(authorization)
+    agents = []
+    for cfg in _AGENTS_CONFIG:
+        status = "unknown"
+        last_seen = None
+        if cfg["id"] == "chan":
+            try:
+                async with httpx.AsyncClient(timeout=5.0) as client:
+                    r = await client.get(f"{INTERNAL_URL}/proxy/mood",
+                                         headers={"Authorization": f"Bearer {DATA_PROXY_TOKEN}"})
+                status = "online" if r.status_code == 200 else "offline"
+            except Exception:
+                status = "offline"
+        agents.append({**cfg, "status": status, "last_seen": last_seen})
+    return {"agents": agents}
+
+
+# ── API: modes ────────────────────────────────────────────────────────────────
+
+_AVAILABLE_MODES = [
+    {"id": "standard",  "label": "Standard",  "description": "Default balanced mode",           "icon": "💬"},
+    {"id": "focused",   "label": "Focused",   "description": "Minimal context, faster replies",  "icon": "🎯"},
+    {"id": "deep",      "label": "Deep",      "description": "Full memory + arc context active", "icon": "🌊"},
+    {"id": "creative",  "label": "Creative",  "description": "Higher temperature, exploratory",  "icon": "🎨"},
+]
+
+_current_mode = {"active": "standard"}
+
+
+@app.get("/api/modes")
+async def api_modes_get(request: Request):
+    authorization = request.headers.get("Authorization", "")
+    _validate_token(authorization)
+    return {"modes": _AVAILABLE_MODES, "active": _current_mode["active"]}
+
+
+class ModeUpdate(BaseModel):
+    mode: str
+
+
+@app.post("/api/modes")
+async def api_modes_set(body: ModeUpdate, request: Request):
+    authorization = request.headers.get("Authorization", "")
+    _validate_token(authorization)
+    valid_ids = {m["id"] for m in _AVAILABLE_MODES}
+    if body.mode not in valid_ids:
+        raise HTTPException(status_code=400, detail=f"unknown mode: {body.mode}")
+    _current_mode["active"] = body.mode
+    return {"active": body.mode}
+
+
+# ── API: tool approval queue ──────────────────────────────────────────────────
+
+_tool_queue: list[dict] = []
+
+
+@app.get("/api/tools/pending")
+async def api_tools_pending(request: Request):
+    authorization = request.headers.get("Authorization", "")
+    _validate_token(authorization)
+    return {"pending": _tool_queue}
+
+
+class ToolDecision(BaseModel):
+    tool_id: str
+    approved: bool
+    reason: str = ""
+
+
+@app.post("/api/tools/decide")
+async def api_tools_decide(body: ToolDecision, request: Request):
+    authorization = request.headers.get("Authorization", "")
+    _validate_token(authorization)
+    global _tool_queue
+    _tool_queue = [t for t in _tool_queue if t.get("id") != body.tool_id]
+    logger.info(f"[webchat] tool decision: {body.tool_id} → {'approved' if body.approved else 'rejected'}")
+    return {"ok": True}
+
+
+# ── API: settings (alias for proxy-config) ─────────────────────────────────────
+
+@app.get("/api/settings")
+async def api_settings_get(request: Request):
+    authorization = request.headers.get("Authorization", "")
+    _validate_token(authorization)
+    if not PROXY_INTERNAL_URL:
+        return {"proxy_configured": False, "mode": "standard"}
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            resp = await client.get(
+                f"{PROXY_INTERNAL_URL}/config",
+                headers={"Authorization": f"Bearer {PROXY_TOKEN}"},
+            )
+        return {**resp.json(), "proxy_configured": True}
+    except Exception:
+        return {"proxy_configured": False}
+
+
+# ── SPA catch-all — must be registered LAST ───────────────────────────────────
+
+@app.get("/{full_path:path}")
+async def serve_spa(full_path: str):
+    """Serve React build assets; fall back to index.html for client-side routes."""
+    candidate = _STATIC_DIR / full_path
+    if candidate.is_file():
+        return FileResponse(candidate)
+    index = _STATIC_DIR / "index.html"
+    if index.exists():
+        return FileResponse(index)
+    return JSONResponse({"detail": "not found"}, status_code=404)

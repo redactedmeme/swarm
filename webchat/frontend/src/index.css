@@ -1,0 +1,131 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --background: 240 10% 4%;
+    --foreground: 240 5% 90%;
+    --card: 240 8% 7%;
+    --card-foreground: 240 5% 90%;
+    --popover: 240 8% 7%;
+    --popover-foreground: 240 5% 90%;
+    --primary: 245 60% 60%;
+    --primary-foreground: 0 0% 100%;
+    --secondary: 240 6% 12%;
+    --secondary-foreground: 240 5% 75%;
+    --muted: 240 6% 12%;
+    --muted-foreground: 240 5% 50%;
+    --accent: 245 50% 55%;
+    --accent-foreground: 0 0% 100%;
+    --destructive: 0 62% 50%;
+    --destructive-foreground: 0 0% 100%;
+    --border: 240 6% 14%;
+    --input: 240 6% 12%;
+    --ring: 245 60% 60%;
+    --radius: 0.625rem;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+
+  html {
+    @apply bg-background text-foreground;
+    color-scheme: dark;
+  }
+
+  body {
+    @apply bg-background text-foreground font-sans antialiased;
+    min-height: 100dvh;
+  }
+
+  #root {
+    @apply h-dvh flex;
+  }
+
+  ::-webkit-scrollbar {
+    width: 4px;
+    height: 4px;
+  }
+
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  ::-webkit-scrollbar-thumb {
+    @apply bg-border rounded-full;
+  }
+
+  ::-webkit-scrollbar-thumb:hover {
+    @apply bg-muted-foreground;
+  }
+
+  ::selection {
+    background: hsl(var(--primary) / 0.3);
+    color: hsl(var(--foreground));
+  }
+}
+
+@layer utilities {
+  .glow-primary {
+    box-shadow: 0 0 8px hsl(var(--primary) / 0.4), 0 0 20px hsl(var(--primary) / 0.15);
+  }
+
+  .glow-sm {
+    box-shadow: 0 0 4px hsl(var(--primary) / 0.3);
+  }
+
+  .text-gradient {
+    background: linear-gradient(135deg, hsl(var(--primary)), hsl(var(--accent)));
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
+
+  .bg-noise {
+    background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)' opacity='0.03'/%3E%3C/svg%3E");
+  }
+
+  .prose-chat {
+    @apply text-sm leading-relaxed;
+  }
+
+  .prose-chat p {
+    @apply mb-2 last:mb-0;
+  }
+
+  .prose-chat code {
+    @apply font-mono text-xs bg-secondary px-1.5 py-0.5 rounded;
+  }
+
+  .prose-chat pre {
+    @apply font-mono text-xs bg-secondary rounded-lg p-3 my-2 overflow-x-auto;
+  }
+
+  .prose-chat pre code {
+    @apply bg-transparent p-0;
+  }
+
+  .prose-chat strong {
+    @apply font-semibold text-foreground;
+  }
+
+  .prose-chat em {
+    @apply italic text-muted-foreground;
+  }
+
+  .prose-chat ul {
+    @apply list-disc list-inside my-1 space-y-0.5;
+  }
+
+  .prose-chat ol {
+    @apply list-decimal list-inside my-1 space-y-0.5;
+  }
+
+  .prose-chat a {
+    @apply text-primary underline underline-offset-2;
+  }
+}
