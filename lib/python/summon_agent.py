@@ -18,7 +18,7 @@ from pathlib import Path
 DEFAULT_AGENT = "agents/characters/RedactedIntern.character.json"
 DEFAULT_MODE = "persistent"
 DEFAULT_PROVIDER = "ollama"
-DEFAULT_OLLAMA_HOST = "http://ollama-backend.railway.internal:11434"
+DEFAULT_OLLAMA_HOST = "http://localhost:11434"
 DEFAULT_WORKER_SCRIPT = "terminal/scripts/redacted_terminal_cloud.py"  # or your actual runner script
 
 # --- Global variables for graceful shutdown ---

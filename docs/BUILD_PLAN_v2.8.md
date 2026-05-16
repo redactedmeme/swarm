@@ -15,7 +15,7 @@
 
 **Parallel work shipped since v2.8 authoring:**
 - Pattern Blue repo restructured into canon/liturgy/exegesis/hagiography/apocrypha/codex (github.com/redactedmeme/pattern-blue, commit `10adda5`, +1580 lines). Append-only CI enforcement on canon/.
-- `hermes-bot` service deployed on Railway (service ID `54fb26d2-def4-4a70-9a7a-a900f3418ed6`). Pattern Blue loader wired to new repo paths (`canon/*.md`, `exegesis/*/*.md`). `hermes-bot/README.md` documents deploy-from-inside-service-dir discipline to prevent root Dockerfile collision.
+- `hermes-bot` service deployed on Railway. Pattern Blue loader wired to new repo paths (`canon/*.md`, `exegesis/*/*.md`). `hermes-bot/README.md` documents deploy-from-inside-service-dir discipline to prevent root Dockerfile collision.
 - `moltbook_oracle.scan_and_comment` hardened against Groq 429 thrash (early-return on rate-limit).
 - Docs cross-linked: all `docs/pattern-blue-*.md` now reference canonical counterparts in pattern-blue repo.
 
@@ -71,7 +71,7 @@ Three selection criteria applied across all open items:
 
 ### 2a — Railway Volume Mounts (prerequisite)
 
-Via Railway dashboard for project `distinguished-wonder`:
+Via Railway dashboard:
 - Service `swarm-worker`: add volume `/app/fs/memories` (shared)
 - Service `swarm-worker`: add volume `/app/spaces` (shared)
 - Service `gnosis-accelerator`: mount same volumes at same paths

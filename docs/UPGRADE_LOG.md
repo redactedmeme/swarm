@@ -663,7 +663,7 @@ Full static recreation of the redacted.meme landing page served locally via Flas
 
 Migrated redacted.meme from Namecheap WordPress to a Flask static server on Railway.
 
-**New Railway service**: `redacted-website` in project `distinguished-wonder`
+**New Railway service**: `redacted-website`
 - Start command: `python website/serve.py` (files land at `/app/website/` on `railway up`)
 - Restart policy: `ON_FAILURE`, max retries: 5
 - Public URL: `https://redacted-website-production.up.railway.app`
