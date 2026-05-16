@@ -5,7 +5,7 @@ Autonomous Moltbook agent for redactedintern.
 Three scheduled loops:
   1. reply_to_notifications()  — every 20 min: reply to comments on our posts
   2. scan_and_comment()        — every 45 min: find + comment on interesting posts
-  3. autonomous_post()         — every 6h: publish original content, rotating submolts
+  3. autonomous_post()         — every 6h (21600s): publish original content, rotating submolts
 
 Engaged post IDs are persisted to ENGAGED_FILE so we don't double-comment after restarts.
 
