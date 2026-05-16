@@ -58,12 +58,16 @@ export interface AgentHeartbeat {
 }
 
 export interface ProxyLogEntry {
-  timestamp: string
+  ts?: string          // actual field from proxy (/logs returns "ts")
+  timestamp?: string   // alias some consumers use
   provider: string
   model: string
   latency_ms: number
+  prompt_tokens_est?: number
+  completion_tokens_est?: number
   tokens?: number
   cached?: boolean
+  error?: string
 }
 
 export interface PrivacyConfig {
