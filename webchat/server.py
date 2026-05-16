@@ -160,7 +160,7 @@ async def chat(body: ChatRequest, request: Request):
 
     try:
         async with httpx.AsyncClient(timeout=90.0) as client:
-            resp = await client.post(f"{INTERNAL_URL}/chat", json=payload, headers=headers)
+            resp = await client.post(f"{INTERNAL_URL}/proxy/chat", json=payload, headers=headers)
         if resp.status_code != 200:
             logger.warning(f"[webchat] internal API returned {resp.status_code}")
             return JSONResponse({"error": "redacted-chan is unavailable"}, status_code=503)

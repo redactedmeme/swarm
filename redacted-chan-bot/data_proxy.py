@@ -331,7 +331,7 @@ async def start(port: int = 8080):
     app.router.add_get("/proxy/mood", handle_mood)
     app.router.add_get("/proxy/anticipation", handle_anticipation)
     app.router.add_get("/proxy/history", handle_history)
-    app.router.add_post("/chat", handle_chat)
+    app.router.add_post("/proxy/chat", handle_chat)
 
     runner = web.AppRunner(app)
     await runner.setup()
