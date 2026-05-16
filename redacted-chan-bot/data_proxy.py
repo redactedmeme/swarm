@@ -145,6 +145,56 @@ async def handle_anticipation(request):
     })
 
 
+async def handle_swarm_activity(request):
+    """Read recent swarm messages from Redis swarm:all list."""
+    n = int(request.query.get("n", "60"))
+    try:
+        import redis.asyncio as aioredis
+        redis_url = os.getenv("REDIS_URL", "redis://localhost:6379")
+        r = aioredis.from_url(redis_url, decode_responses=True)
+        ids = await r.lrange("swarm:all", -n, -1)
+        messages = []
+        for msg_id in ids:
+            raw = await r.get(f"swarm:msg:{msg_id}")
+            if raw:
+                try:
+                    messages.append(json.loads(raw))
+                except Exception:
+                    messages.append({"id": msg_id, "content": raw[:300]})
+        await r.aclose()
+        messages.reverse()  # newest first
+        return web.json_response({"messages": messages})
+    except Exception as e:
+        logger.warning(f"[data_proxy] swarm_activity redis error: {e}")
+        return web.json_response({"messages": [], "error": str(e)})
+
+
+async def handle_swarm_pending(request):
+    """Read pending inbox counts + sample items per agent from Redis."""
+    _AGENTS = ["redacted-chan", "hermes", "smolting", "builder", "runtime"]
+    try:
+        import redis.asyncio as aioredis
+        redis_url = os.getenv("REDIS_URL", "redis://localhost:6379")
+        r = aioredis.from_url(redis_url, decode_responses=True)
+        results: dict = {}
+        for agent in _AGENTS:
+            key = f"swarm:pending:{agent}"
+            count = await r.llen(key)
+            raw_items = await r.lrange(key, 0, 9)
+            items = []
+            for item in raw_items:
+                try:
+                    items.append(json.loads(item))
+                except Exception:
+                    items.append({"content": item[:300]})
+            results[agent] = {"count": count, "items": items}
+        await r.aclose()
+        return web.json_response({"pending": results})
+    except Exception as e:
+        logger.warning(f"[data_proxy] swarm_pending redis error: {e}")
+        return web.json_response({"pending": {}, "error": str(e)})
+
+
 async def handle_heartbeats(request):
     """Read swarm:heartbeat:{agent} keys from Redis and return age + status for each agent."""
     import time
@@ -383,6 +433,8 @@ async def start(port: int = 8080):
     app.router.add_get("/proxy/heatmap", handle_heatmap)
     app.router.add_get("/proxy/mood", handle_mood)
     app.router.add_get("/proxy/anticipation", handle_anticipation)
+    app.router.add_get("/proxy/swarm/activity", handle_swarm_activity)
+    app.router.add_get("/proxy/swarm/pending", handle_swarm_pending)
     app.router.add_get("/proxy/heartbeats", handle_heartbeats)
     app.router.add_get("/proxy/history", handle_history)
     app.router.add_post("/proxy/chat", handle_chat)

@@ -279,6 +279,38 @@ async def chan_anticipation(request: Request):
     return resp.json()
 
 
+@app.get("/api/swarm/activity")
+async def api_swarm_activity(request: Request):
+    authorization = request.headers.get("Authorization", "")
+    _validate_token(authorization)
+    n = int(request.query_params.get("n", 60))
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            resp = await client.get(
+                f"{INTERNAL_URL}/proxy/swarm/activity",
+                params={"n": n},
+                headers={"Authorization": f"Bearer {DATA_PROXY_TOKEN}"},
+            )
+        return resp.json()
+    except Exception as e:
+        return JSONResponse({"messages": [], "error": str(e)})
+
+
+@app.get("/api/swarm/pending")
+async def api_swarm_pending(request: Request):
+    authorization = request.headers.get("Authorization", "")
+    _validate_token(authorization)
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            resp = await client.get(
+                f"{INTERNAL_URL}/proxy/swarm/pending",
+                headers={"Authorization": f"Bearer {DATA_PROXY_TOKEN}"},
+            )
+        return resp.json()
+    except Exception as e:
+        return JSONResponse({"pending": {}, "error": str(e)})
+
+
 @app.get("/chan/heartbeats")
 async def chan_heartbeats(request: Request):
     authorization = request.headers.get("Authorization", "")
