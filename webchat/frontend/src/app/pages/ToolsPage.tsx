@@ -1,8 +1,10 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { motion, AnimatePresence } from 'framer-motion'
-import { Wrench, CheckCircle2, XCircle, Clock, AlertTriangle } from 'lucide-react'
+import { Wrench, CheckCircle2, XCircle, Clock, AlertTriangle, Inbox } from 'lucide-react'
 import { toast } from 'sonner'
 import { cn } from '@/app/lib/utils'
+import { apiGetSwarmPending } from '@/app/lib/api'
+import type { SwarmMessage } from '@/app/types'
 
 interface PendingTool {
   id: string
@@ -34,12 +36,12 @@ async function decideTools(body: { tool_id: string; approved: boolean; reason?: 
 }
 
 const CATALOG = [
-  { id: 'web_fetch',     name: 'web_fetch',     agent: 'hermes', icon: '🌐', description: 'Fetch and parse URLs (SSRF-guarded)' },
-  { id: 'web_search',    name: 'web_search',    agent: 'hermes', icon: '🔍', description: 'DuckDuckGo search via lite API' },
-  { id: 'python_exec',   name: 'python_exec',   agent: 'hermes', icon: '🐍', description: 'Sandboxed Python execution (EXEC_ENABLED)' },
-  { id: 'skill_recall',  name: 'skill_recall',  agent: 'hermes', icon: '🧠', description: 'Recall stored skill solutions by keyword' },
-  { id: 'railway_deploy',name: 'railway_deploy',agent: 'hermes', icon: '🚂', description: 'Deploy or query Railway services' },
-  { id: 'redis_pub',     name: 'redis_pub',     agent: 'runtime',icon: '📨', description: 'Publish to SwarmInbox for agent routing' },
+  { id: 'web_fetch',     name: 'web_fetch',     agent: 'hermes',  icon: '🌐', description: 'Fetch and parse URLs (SSRF-guarded)' },
+  { id: 'web_search',    name: 'web_search',    agent: 'hermes',  icon: '🔍', description: 'DuckDuckGo search via lite API' },
+  { id: 'python_exec',   name: 'python_exec',   agent: 'hermes',  icon: '🐍', description: 'Sandboxed Python execution (EXEC_ENABLED)' },
+  { id: 'skill_recall',  name: 'skill_recall',  agent: 'hermes',  icon: '🧠', description: 'Recall stored skill solutions by keyword' },
+  { id: 'railway_deploy',name: 'railway_deploy',agent: 'hermes',  icon: '🚂', description: 'Deploy or query Railway services' },
+  { id: 'redis_pub',     name: 'redis_pub',     agent: 'runtime', icon: '📨', description: 'Publish to SwarmInbox for agent routing' },
 ]
 
 export default function ToolsPage() {
@@ -49,15 +51,22 @@ export default function ToolsPage() {
     queryFn: fetchPending,
     refetchInterval: 5_000,
   })
+  const { data: swarmData } = useQuery({
+    queryKey: ['swarm-pending'],
+    queryFn: apiGetSwarmPending,
+    refetchInterval: 10_000,
+  })
 
   const decide = useMutation({
     mutationFn: decideTools,
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['tools-pending'] })
+      refetch()
     },
   })
 
   const pending = data?.pending ?? []
+  const hermesPending = swarmData?.pending?.hermes ?? { count: 0, items: [] }
 
   async function approve(tool: PendingTool) {
     try {
@@ -84,7 +93,7 @@ export default function ToolsPage() {
           <Wrench size={18} className="text-primary" />
           <h1 className="text-base font-semibold text-foreground">Tools</h1>
           <div className="h-px flex-1 bg-border" />
-          <span className="text-xs text-muted-foreground">Auto-refreshes every 5s</span>
+          <span className="text-xs text-muted-foreground">Auto-refreshes every 5–10s</span>
         </div>
 
         {/* HITL Approval Queue */}
@@ -158,8 +167,50 @@ export default function ToolsPage() {
           )}
         </Section>
 
+        {/* Hermes Inbox (Redis swarm:pending:hermes) */}
+        <Section
+          title={`Hermes Inbox${hermesPending.count > 0 ? ` · ${hermesPending.count}` : ''}`}
+          icon={<Inbox size={14} className={hermesPending.count > 0 ? 'text-cyan-400' : 'text-muted-foreground'} />}
+          className="mt-4"
+        >
+          {hermesPending.count === 0 ? (
+            <div className="flex items-center gap-2 py-4 justify-center">
+              <CheckCircle2 size={14} className="text-emerald-500" />
+              <p className="text-sm text-muted-foreground">Hermes inbox is empty</p>
+            </div>
+          ) : (
+            <div className="space-y-2">
+              {hermesPending.items.map((item: SwarmMessage, i: number) => {
+                const content = typeof item.content === 'string'
+                  ? item.content
+                  : JSON.stringify(item.content ?? item)
+                return (
+                  <div key={i} className="bg-secondary/40 border border-border rounded-lg p-3 text-xs">
+                    <div className="flex items-center gap-2 mb-1">
+                      {item.from && (
+                        <span className="text-cyan-400 font-medium">{item.from}</span>
+                      )}
+                      {item.type && (
+                        <span className="text-[10px] px-1.5 py-0.5 rounded border bg-secondary text-muted-foreground border-border">
+                          {item.type}
+                        </span>
+                      )}
+                      {item.ts && (
+                        <span className="text-muted-foreground/50 text-[10px] ml-auto">
+                          {new Date(typeof item.ts === 'number' ? item.ts * 1000 : item.ts).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                        </span>
+                      )}
+                    </div>
+                    <p className="text-foreground/70 leading-relaxed line-clamp-3">{content.slice(0, 300)}</p>
+                  </div>
+                )
+              })}
+            </div>
+          )}
+        </Section>
+
         {/* Tool Catalog */}
-        <Section title="Tool Catalog" icon={<Wrench size={14} className="text-muted-foreground" />} className="mt-6">
+        <Section title="Tool Catalog" icon={<Wrench size={14} className="text-muted-foreground" />} className="mt-4">
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             {CATALOG.map((tool, i) => (
               <motion.div

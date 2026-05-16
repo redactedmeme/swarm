@@ -1,4 +1,4 @@
-import type { ChanMood, ChanFact, ProxyLogEntry, PrivacyConfig, VaultEntry, AgentHeartbeat } from '@/app/types'
+import type { ChanMood, ChanFact, ProxyLogEntry, PrivacyConfig, VaultEntry, AgentHeartbeat, SwarmMessage, SwarmPendingEntry } from '@/app/types'
 
 const BASE = ''
 
@@ -96,6 +96,18 @@ export async function apiGetHeartbeats(): Promise<{ agents: AgentHeartbeat[] }> 
 export async function apiGetVault(n = 30): Promise<{ entries: VaultEntry[] }> {
   const res = await fetch(`${BASE}/chan/vault?n=${n}`, { headers: authHeaders() })
   if (!res.ok) throw new Error('Failed to fetch vault')
+  return res.json()
+}
+
+export async function apiGetSwarmActivity(n = 60): Promise<{ messages: SwarmMessage[] }> {
+  const res = await fetch(`${BASE}/api/swarm/activity?n=${n}`, { headers: authHeaders() })
+  if (!res.ok) throw new Error('Failed to fetch swarm activity')
+  return res.json()
+}
+
+export async function apiGetSwarmPending(): Promise<{ pending: Record<string, SwarmPendingEntry> }> {
+  const res = await fetch(`${BASE}/api/swarm/pending`, { headers: authHeaders() })
+  if (!res.ok) throw new Error('Failed to fetch swarm pending')
   return res.json()
 }
 
