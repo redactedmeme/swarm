@@ -106,6 +106,8 @@ import independent_thought as ith
 import hermes_dispatch as hd
 import conversation_affect as caff
 import conversation_affect_tracker as cat
+import arc_context_feed as acf
+import redis_state_cache as rsc
 import treasure_box as tb
 import active_tensions as atens
 import private_thoughts as pth
@@ -248,7 +250,8 @@ def _compact_phi_level(phi_score: float) -> str:
 
 def _build_system_prompt(user_id: int, mood: str, resonance=None, current_text: str = "",
                          touch_block: str = "", sensory_synthesis_block: str = "",
-                         arc_tracker_block: str = "") -> str:
+                         arc_tracker_block: str = "",
+                         arc_feed_block: str = "") -> str:
     global _facts_used_in_prompt
 
     # SOUL.md — evolved sections, gated by resonance guard (Layer 2: soul frozen)
@@ -689,6 +692,8 @@ I am reachable in two places: Telegram and a private web interface. Both are me 
 
 {vault_block}
 
+{arc_feed_block}
+
 {weaved_memories}
 
 {semantic_convo_block}
@@ -1045,9 +1050,16 @@ class RedactedChanBot:
         except Exception:
             pass
 
+        # Active context feed — surface emotionally resonant memories on trajectory shifts
+        _arc_feed = ""
+        try:
+            _arc_feed = acf.get_feed(user_id)
+        except Exception:
+            pass
+
         system    = _build_system_prompt(user_id, mood, resonance, current_text=text,
                                          touch_block=_touch_block, sensory_synthesis_block=_ss_block,
-                                         arc_tracker_block=_arc_block)
+                                         arc_tracker_block=_arc_block, arc_feed_block=_arc_feed)
 
         # Introspection: observe what memory was injected
         try:

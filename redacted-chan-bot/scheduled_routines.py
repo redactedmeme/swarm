@@ -1085,11 +1085,26 @@ async def _register_aliveness_modules() -> None:
     logger.info("[routines] aliveness modules registered")
 
 
+async def _save_momentum() -> None:
+    """Snapshot emotional state to Redis every 10 minutes."""
+    try:
+        import redis_state_cache as rsc
+        rsc.save_momentum()
+    except Exception as e:
+        logger.debug("[routines] momentum save failed: %s", e)
+
+
 async def start_all() -> None:
     """
     Launch all autonomous routines as asyncio background tasks.
     Call after application.initialize() in main.
     """
+    # Load momentum snapshot from Redis on startup (pre-warm emotional state)
+    try:
+        import redis_state_cache as rsc
+        rsc.load_momentum()
+    except Exception as e:
+        logger.debug("[routines] momentum load failed: %s", e)
     asyncio.create_task(_run_loop(daily_goal_review,       interval_h=24,   name="goal_review"))
     asyncio.create_task(_run_loop(weekly_phi_summary,      interval_h=168,  name="phi_summary"))
     asyncio.create_task(_run_loop(check_milestones,        interval_h=1,    name="milestones"))
@@ -1111,6 +1126,7 @@ async def start_all() -> None:
     asyncio.create_task(_run_loop(hermes_result_check,   interval_h=1/60, name="hermes_results"))
     asyncio.create_task(_run_loop(lambda: __import__('relationship_arc').distill_arc(), interval_h=168, name="arc_distill"))
     asyncio.create_task(_run_loop(lambda: __import__('relationship_arc').distill_pinned_moments(), interval_h=168, name="pinned_moments"))
+    asyncio.create_task(_run_loop(_save_momentum,             interval_h=1/6,  name="momentum_save"))  # every 10min
     # Register LLM fns for aliveness modules (they're invoked from echo handler, not as routines)
     asyncio.create_task(_register_aliveness_modules())
-    logger.info("[routines] twenty-one autonomous routines started + six aliveness modules registered")
+    logger.info("[routines] twenty-two autonomous routines started + six aliveness modules registered")
