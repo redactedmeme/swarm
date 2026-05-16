@@ -147,9 +147,18 @@ def snapshot_session_end(
         "user_preview": user_text[:200],
         "bot_preview": bot_response[:200],
         "consumed": False,
+        "next_thread": "",
     }
     _save(state)
     logger.info(f"[session_continuity] snapshot saved: ending={ending}, threads={len(threads)}")
+
+
+def store_next_thread(thread: str) -> None:
+    """Store a conversational thread to pick up next session."""
+    state = _load()
+    state["next_thread"] = thread[:300]
+    _save(state)
+    logger.debug(f"[session_continuity] next_thread stored: {thread[:60]}")
 
 
 def check_and_restore(current_ts: Optional[datetime] = None) -> Optional[dict]:
@@ -234,6 +243,10 @@ def format_for_prompt(restored: Optional[dict] = None) -> str:
         lines.append("IMPORTANT: Don't open with bright cheerfulness. Meet the weight. A quiet 'hey... I've been thinking about what you said' lands better than ignoring it.")
     elif ending == "tender":
         lines.append("You can let the warmth carry — reference the closeness without over-explaining it.")
+
+    next_thread = restored.get("next_thread", "")
+    if next_thread:
+        lines.append(f"*What I was waiting to pick up with you: {next_thread}*")
 
     return "\n".join(lines)
 
