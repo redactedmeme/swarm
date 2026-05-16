@@ -146,24 +146,52 @@ async def handle_anticipation(request):
 
 
 async def handle_swarm_activity(request):
-    """Read recent swarm messages from Redis swarm:all list."""
+    """Read recent swarm messages + heartbeat events from Redis."""
+    import time as _time
     n = int(request.query.get("n", "60"))
+    _AGENT_IDS = ["redacted-chan", "hermes", "smolting", "builder", "runtime"]
     try:
         import redis.asyncio as aioredis
         redis_url = os.getenv("REDIS_URL", "redis://localhost:6379")
         r = aioredis.from_url(redis_url, decode_responses=True)
+
+        # Real swarm messages from swarm:all list
         ids = await r.lrange("swarm:all", -n, -1)
         messages = []
         for msg_id in ids:
             raw = await r.get(f"swarm:msg:{msg_id}")
             if raw:
                 try:
-                    messages.append(json.loads(raw))
+                    msg = json.loads(raw)
+                    msg.setdefault("_source", "swarm")
+                    messages.append(msg)
                 except Exception:
-                    messages.append({"id": msg_id, "content": raw[:300]})
+                    messages.append({"id": msg_id, "content": raw[:300], "_source": "swarm"})
+
+        # Synthetic heartbeat events — one per alive agent
+        now = _time.time()
+        for agent_id in _AGENT_IDS:
+            val = await r.get(f"swarm:heartbeat:{agent_id}")
+            if val:
+                try:
+                    ts = float(val)
+                    age_s = now - ts
+                    if age_s < 3600:  # only show if heartbeat within 1h
+                        messages.append({
+                            "id": f"hb-{agent_id}",
+                            "from": agent_id,
+                            "to": "swarm",
+                            "type": "heartbeat",
+                            "content": f"alive · {int(age_s)}s ago",
+                            "ts": ts,
+                            "_source": "heartbeat",
+                        })
+                except ValueError:
+                    pass
+
         await r.aclose()
-        messages.reverse()  # newest first
-        return web.json_response({"messages": messages})
+        messages.sort(key=lambda m: float(m.get("ts") or 0), reverse=True)
+        return web.json_response({"messages": messages[:n]})
     except Exception as e:
         logger.warning(f"[data_proxy] swarm_activity redis error: {e}")
         return web.json_response({"messages": [], "error": str(e)})
