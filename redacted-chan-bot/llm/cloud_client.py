@@ -1,4 +1,4 @@
-# smolting-telegram-bot/llm/cloud_client.py
+# redacted-chan-bot/llm/cloud_client.py
 import os
 import asyncio
 import aiohttp
@@ -8,6 +8,11 @@ from typing import Optional, Dict, Any
 # Model used exclusively for /alpha — fast xAI inference regardless of LLM_PROVIDER
 ALPHA_XAI_MODEL = os.getenv("ALPHA_XAI_MODEL", "grok-4-1-fast")
 ALPHA_XAI_BASE  = "https://api.x.ai/v1"
+
+# Privacy proxy — when set, ALL completions route through redacted-proxy instead of hitting
+# providers directly. Proxy handles provider routing, PII scrubbing, and local logging.
+_PROXY_URL   = os.getenv("PROXY_URL", "").rstrip("/")
+_PROXY_TOKEN = os.getenv("PROXY_TOKEN", "")
 
 
 class CloudLLMClient:
@@ -48,14 +53,56 @@ class CloudLLMClient:
         return urls.get(self.provider, "")
     
     async def chat_completion(self, messages: list, model: str = None, max_tokens: int = None) -> str:
-        """Chat completion with cloud LLM"""
+        """Chat completion with cloud LLM — routes through privacy proxy if PROXY_URL is set."""
         max_tokens = max_tokens or self._default_max_tokens
+
+        # Route through redacted-proxy if configured
+        if _PROXY_URL:
+            return await self._proxy_completion(messages, model, max_tokens=max_tokens)
+
         if self.provider in ("openai", "xai", "groq", "together", "venice"):
             return await self._openai_completion(messages, model, max_tokens=max_tokens)
         elif self.provider == "anthropic":
             return await self._anthropic_completion(messages, model, max_tokens=max_tokens)
         else:
             raise ValueError(f"Unsupported provider: {self.provider}. Set LLM_PROVIDER to openai, xai, groq, anthropic, together, or venice.")
+
+    async def _proxy_completion(self, messages: list, model: str = None, max_tokens: int = None) -> str:
+        """Route completion through redacted-proxy (privacy layer)."""
+        # Determine model to request
+        if model is None:
+            if self.provider == "xai":
+                model = os.getenv("XAI_MODEL", "grok-4-1-fast")
+            elif self.provider == "groq":
+                model = os.getenv("GROQ_MODEL", "llama-3.1-8b-instant")
+            elif self.provider == "anthropic":
+                model = "claude-3-haiku-20240307"
+            else:
+                model = "llama-3.1-8b-instant"
+
+        payload = {
+            "model": model,
+            "messages": messages,
+            "temperature": self._default_temperature,
+            "max_tokens": max_tokens or 1000,
+        }
+        headers = {
+            "Authorization": f"Bearer {_PROXY_TOKEN}",
+            "Content-Type": "application/json",
+            # Tell proxy which provider to use for this request
+            "X-Provider": self.provider,
+        }
+        async with aiohttp.ClientSession() as session:
+            async with session.post(
+                f"{_PROXY_URL}/v1/chat/completions",
+                json=payload,
+                headers=headers,
+                timeout=aiohttp.ClientTimeout(total=90),
+            ) as response:
+                result = await response.json(content_type=None)
+                if "choices" not in result:
+                    raise ValueError(f"Proxy error: {result.get('error', result)}")
+                return result["choices"][0]["message"]["content"]
     
     async def _openai_completion(self, messages: list, model: str = None, max_tokens: int = None) -> str:
         """OpenAI GPT completion (also used for xAI/Grok OpenAI-compatible API)"""
