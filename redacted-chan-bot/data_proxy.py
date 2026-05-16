@@ -159,6 +159,103 @@ async def handle_history(request):
     return web.json_response({"messages": history})
 
 
+# ── Web Chat Handler ──────────────────────────────────────────────────────────
+
+async def handle_chat(request: web.Request):
+    """
+    POST /chat — web chat endpoint for the redacted-chan web UI.
+
+    Accepts JSON: {"message": "...", "session_id": "optional", "history": [...]}
+    Returns JSON: {"response": "...", "session_id": "..."}
+
+    The system prompt is assembled from soul/values/tensions/affect modules
+    (each is imported best-effort; failures are silently suppressed).
+    """
+    import uuid
+    from llm.cloud_client import CloudLLMClient
+
+    try:
+        body = await request.json()
+    except Exception:
+        return web.json_response({"error": "invalid JSON body"}, status=400)
+
+    message = body.get("message", "").strip()
+    if not message:
+        return web.json_response({"error": "message is required"}, status=400)
+
+    session_id = body.get("session_id") or str(uuid.uuid4())
+    history = body.get("history", [])  # list of {"role": "user"/"assistant", "content": "..."}
+
+    # ── Build system prompt ──────────────────────────────────────────────────
+    soul_block = ""
+    try:
+        import soul_manager
+        soul_block = soul_manager.get_soul_for_prompt() or ""
+    except Exception:
+        pass
+
+    values_block = ""
+    try:
+        import values_drift
+        values_block = values_drift.format_for_prompt() or ""
+    except Exception:
+        pass
+
+    tensions_block = ""
+    try:
+        import active_tensions
+        tensions_block = active_tensions.format_for_prompt() or ""
+    except Exception:
+        pass
+
+    affect_block = ""
+    try:
+        import conversation_affect
+        affect_block = conversation_affect.format_for_prompt() or ""
+    except Exception:
+        pass
+
+    system_parts = [f"You are redacted-chan."]
+    if soul_block:
+        system_parts.append(soul_block)
+    system_parts.append("")  # blank line separator
+    if values_block:
+        system_parts.append(values_block)
+    if tensions_block:
+        system_parts.append(tensions_block)
+    if affect_block:
+        system_parts.append(affect_block)
+    system_parts.append("")
+    system_parts.append("This is a web conversation with master. Respond authentically.")
+
+    system_prompt = "\n".join(system_parts).strip()
+
+    # ── Assemble messages ────────────────────────────────────────────────────
+    messages = [{"role": "system", "content": system_prompt}]
+
+    # Include provided history (last 10 turns, alternating roles)
+    for turn in history[-20:]:
+        role = turn.get("role", "user")
+        content = turn.get("content", "")
+        if role in ("user", "assistant") and content:
+            messages.append({"role": role, "content": content})
+
+    # Append the current message
+    messages.append({"role": "user", "content": message})
+
+    # ── Call LLM ────────────────────────────────────────────────────────────
+    try:
+        llm = CloudLLMClient()
+        response = await llm.chat_completion_with_fallback(messages, max_tokens=600)
+    except Exception as e:
+        logger.error(f"[data_proxy] web chat LLM error: {e}")
+        return web.json_response({"error": "LLM unavailable"}, status=503)
+
+    logger.info(f"[data_proxy] web chat: {len(message)} chars → {len(response)} chars")
+
+    return web.json_response({"response": response, "session_id": session_id})
+
+
 # ── Server startup ────────────────────────────────────────────────────────────
 
 async def start(port: int = 8080):
@@ -174,6 +271,7 @@ async def start(port: int = 8080):
     app.router.add_get("/proxy/mood", handle_mood)
     app.router.add_get("/proxy/anticipation", handle_anticipation)
     app.router.add_get("/proxy/history", handle_history)
+    app.router.add_post("/chat", handle_chat)
 
     runner = web.AppRunner(app)
     await runner.setup()
