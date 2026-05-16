@@ -129,9 +129,15 @@ async def login(body: LoginRequest):
     return {"token": token}
 
 
+_IMAGE_EXTS = {".jpg", ".jpeg", ".png", ".gif", ".webp"}
+_IMAGE_MIME = {
+    ".jpg": "image/jpeg", ".jpeg": "image/jpeg",
+    ".png": "image/png", ".gif": "image/gif", ".webp": "image/webp",
+}
+
 @app.post("/upload")
 async def upload(request: Request):
-    """Accept a file upload, extract text, return JSON."""
+    """Accept a file upload. Images → base64 data URL. Text files → extracted text."""
     authorization = request.headers.get("Authorization", "")
     _validate_token(authorization)
 
@@ -141,21 +147,30 @@ async def upload(request: Request):
         raise HTTPException(status_code=400, detail="no file")
 
     filename = file.filename or "file"
-    content_bytes = await file.read(max_size=512 * 1024)  # 512 KB max
+    ext = "." + filename.rsplit(".", 1)[-1].lower() if "." in filename else ""
 
+    # Images — return as base64 data URL (4 MB max)
+    if ext in _IMAGE_EXTS:
+        content_bytes = await file.read(max_size=4 * 1024 * 1024)
+        import base64
+        b64 = base64.b64encode(content_bytes).decode("ascii")
+        mime = _IMAGE_MIME.get(ext, "image/jpeg")
+        data_url = f"data:{mime};base64,{b64}"
+        logger.info(f"[webchat] image upload: {filename} ({len(content_bytes)} bytes)")
+        return {"filename": filename, "type": "image", "data_url": data_url, "text": ""}
+
+    # Text files (512 KB max)
+    content_bytes = await file.read(max_size=512 * 1024)
     text = ""
-    if filename.endswith((".txt", ".md", ".py", ".js", ".ts", ".json", ".csv")):
+    if ext in (".txt", ".md", ".py", ".js", ".ts", ".json", ".csv"):
         try:
             text = content_bytes.decode("utf-8", errors="replace")
         except Exception:
             text = ""
-    elif filename.endswith(".pdf"):
+    elif ext == ".pdf":
         try:
-            import io
             import re as _re
-            # Basic PDF text extraction without external deps
             raw = content_bytes.decode("latin-1", errors="replace")
-            # Extract text between BT/ET markers
             chunks = _re.findall(r'BT\s*(.*?)\s*ET', raw, _re.DOTALL)
             parts = []
             for chunk in chunks:
@@ -170,16 +185,16 @@ async def upload(request: Request):
         except Exception:
             text = ""
 
-    # Truncate to ~8k chars
     text = text[:8000]
-    logger.info(f"[webchat] upload: {filename} → {len(text)} chars")
-    return {"filename": filename, "text": text}
+    logger.info(f"[webchat] text upload: {filename} → {len(text)} chars")
+    return {"filename": filename, "type": "text", "text": text, "data_url": ""}
 
 
 class ChatRequest(BaseModel):
     message: str
     session_id: str = ""
     history: list = []
+    image_data: str = ""   # base64 data URL for image attachments
 
 
 @app.post("/chat")
@@ -199,6 +214,7 @@ async def chat(body: ChatRequest, request: Request):
         "message": body.message,
         "session_id": body.session_id,
         "history": body.history,
+        "image_data": body.image_data,
     }
     headers = {
         "Authorization": f"Bearer {DATA_PROXY_TOKEN}",

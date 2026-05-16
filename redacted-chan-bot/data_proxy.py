@@ -185,6 +185,7 @@ async def handle_chat(request: web.Request):
 
     session_id = body.get("session_id") or str(uuid.uuid4())
     history = body.get("history", [])  # list of {"role": "user"/"assistant", "content": "..."}
+    image_data = body.get("image_data", "")  # base64 data URL, optional
 
     # ── Build system prompt ──────────────────────────────────────────────────
     soul_block = ""
@@ -285,8 +286,17 @@ async def handle_chat(request: web.Request):
         if role in ("user", "assistant") and content:
             messages.append({"role": role, "content": content})
 
-    # Current message
-    messages.append({"role": "user", "content": message})
+    # Current message — multimodal if image attached
+    if image_data and image_data.startswith("data:image/"):
+        messages.append({
+            "role": "user",
+            "content": [
+                {"type": "image_url", "image_url": {"url": image_data}},
+                {"type": "text", "text": message},
+            ],
+        })
+    else:
+        messages.append({"role": "user", "content": message})
 
     # ── Call LLM ────────────────────────────────────────────────────────────
     try:
