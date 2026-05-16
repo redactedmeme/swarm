@@ -2638,7 +2638,7 @@ def main():
                                             name="mb_reply_notifications")
         application.job_queue.run_repeating(_mb_scan,  interval=2700, first=600,
                                             name="mb_scan_and_comment")
-        application.job_queue.run_repeating(_mb_post,  interval=1800, first=300,
+        application.job_queue.run_repeating(_mb_post,  interval=21600, first=300,
                                             name="mb_autonomous_post")
 
         # Performance tracker — seed in background (15s API timeout must not block /health)
