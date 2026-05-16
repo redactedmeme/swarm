@@ -57,6 +57,7 @@ export default function DashboardPage() {
   const logs = useQuery({ queryKey: ['proxy-logs'], queryFn: apiGetProxyLogs, refetchInterval: 30_000 })
   const vault = useQuery({ queryKey: ['vault'], queryFn: () => apiGetVault(30), refetchInterval: 120_000 })
 
+  // proxy /logs returns { entries: [...] } with field "ts", not "logs"/"timestamp"
   const proxyData = logs.data?.logs ?? (logs.data as { entries?: typeof logs.data.logs })?.entries
   const providerStats = useMemo(() => computeProviderStats(proxyData ?? []), [proxyData])
   const totalCalls = providerStats.reduce((s, p) => s + p.calls, 0)
