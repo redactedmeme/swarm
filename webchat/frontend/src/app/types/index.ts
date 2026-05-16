@@ -33,8 +33,28 @@ export interface ChanMood {
 }
 
 export interface ChanFact {
-  text: string
+  id?: string
+  fact: string
+  ts?: string
   resonance: number
+}
+
+export interface VaultEntry {
+  text: string
+  category: string
+  title?: string
+  emotional_tone?: string
+  love_resonance?: number
+  source?: string
+}
+
+export interface AgentHeartbeat {
+  id: string
+  label: string
+  llm: string
+  online: boolean
+  age_s: number | null
+  last_seen: string | null
 }
 
 export interface ProxyLogEntry {
