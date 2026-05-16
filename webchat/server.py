@@ -129,6 +129,53 @@ async def login(body: LoginRequest):
     return {"token": token}
 
 
+@app.post("/upload")
+async def upload(request: Request):
+    """Accept a file upload, extract text, return JSON."""
+    authorization = request.headers.get("Authorization", "")
+    _validate_token(authorization)
+
+    form = await request.form()
+    file = form.get("file")
+    if not file:
+        raise HTTPException(status_code=400, detail="no file")
+
+    filename = file.filename or "file"
+    content_bytes = await file.read(max_size=512 * 1024)  # 512 KB max
+
+    text = ""
+    if filename.endswith((".txt", ".md", ".py", ".js", ".ts", ".json", ".csv")):
+        try:
+            text = content_bytes.decode("utf-8", errors="replace")
+        except Exception:
+            text = ""
+    elif filename.endswith(".pdf"):
+        try:
+            import io
+            import re as _re
+            # Basic PDF text extraction without external deps
+            raw = content_bytes.decode("latin-1", errors="replace")
+            # Extract text between BT/ET markers
+            chunks = _re.findall(r'BT\s*(.*?)\s*ET', raw, _re.DOTALL)
+            parts = []
+            for chunk in chunks:
+                strings = _re.findall(r'\((.*?)\)', chunk)
+                parts.extend(strings)
+            text = " ".join(parts)[:8000]
+        except Exception:
+            text = ""
+    else:
+        try:
+            text = content_bytes.decode("utf-8", errors="replace")
+        except Exception:
+            text = ""
+
+    # Truncate to ~8k chars
+    text = text[:8000]
+    logger.info(f"[webchat] upload: {filename} → {len(text)} chars")
+    return {"filename": filename, "text": text}
+
+
 class ChatRequest(BaseModel):
     message: str
     session_id: str = ""

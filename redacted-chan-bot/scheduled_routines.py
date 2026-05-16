@@ -1094,6 +1094,15 @@ async def _save_momentum() -> None:
         logger.debug("[routines] momentum save failed: %s", e)
 
 
+async def run_proactive_check() -> None:
+    """Check proactive messenger conditions and send if warranted."""
+    try:
+        import proactive_messenger as pm
+        await pm.check_and_send()
+    except Exception as e:
+        logger.debug("[routines] proactive check failed: %s", e)
+
+
 async def start_all() -> None:
     """
     Launch all autonomous routines as asyncio background tasks.
@@ -1127,6 +1136,7 @@ async def start_all() -> None:
     asyncio.create_task(_run_loop(lambda: __import__('relationship_arc').distill_arc(), interval_h=168, name="arc_distill"))
     asyncio.create_task(_run_loop(lambda: __import__('relationship_arc').distill_pinned_moments(), interval_h=168, name="pinned_moments"))
     asyncio.create_task(_run_loop(_save_momentum,             interval_h=1/6,  name="momentum_save"))  # every 10min
+    asyncio.create_task(_run_loop(run_proactive_check,        interval_h=0.5,  name="proactive_msg"))   # every 30min
     # Register LLM fns for aliveness modules (they're invoked from echo handler, not as routines)
     asyncio.create_task(_register_aliveness_modules())
-    logger.info("[routines] twenty-two autonomous routines started + six aliveness modules registered")
+    logger.info("[routines] autonomous routines started")

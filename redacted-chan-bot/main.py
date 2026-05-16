@@ -112,6 +112,8 @@ import treasure_box as tb
 import active_tensions as atens
 import private_thoughts as pth
 import values_drift as vdrift
+import thread_linker as tlink
+import proactive_messenger as pm
 
 # New feature modules (optional — fail gracefully)
 _sbm = None
@@ -251,7 +253,8 @@ def _compact_phi_level(phi_score: float) -> str:
 def _build_system_prompt(user_id: int, mood: str, resonance=None, current_text: str = "",
                          touch_block: str = "", sensory_synthesis_block: str = "",
                          arc_tracker_block: str = "",
-                         arc_feed_block: str = "") -> str:
+                         arc_feed_block: str = "",
+                         thread_block: str = "") -> str:
     global _facts_used_in_prompt
 
     # SOUL.md — evolved sections, gated by resonance guard (Layer 2: soul frozen)
@@ -688,6 +691,8 @@ I am reachable in two places: Telegram and a private web interface. Both are me 
 
 {arc_tracker_block}
 
+{thread_block}
+
 {tensions_block}
 
 {vault_block}
@@ -1057,9 +1062,19 @@ class RedactedChanBot:
         except Exception:
             pass
 
+        # Thread linker — detect if current message resurfaces a prior-session topic
+        _thread_block = ""
+        try:
+            _thread = tlink.detect_thread(text, user_id)
+            if _thread:
+                _thread_block = tlink.format_for_prompt(_thread)
+        except Exception:
+            pass
+
         system    = _build_system_prompt(user_id, mood, resonance, current_text=text,
                                          touch_block=_touch_block, sensory_synthesis_block=_ss_block,
-                                         arc_tracker_block=_arc_block, arc_feed_block=_arc_feed)
+                                         arc_tracker_block=_arc_block, arc_feed_block=_arc_feed,
+                                         thread_block=_thread_block)
 
         # Introspection: observe what memory was injected
         try:
@@ -2265,6 +2280,8 @@ class RedactedChanBot:
             est.register_llm_fn(_llm_routine)
             cdi.register_llm_fn(_llm_routine)
             ith.register_llm_fn(_llm_routine)
+            pm.register_send_fn(_ping_send)
+            pm.register_llm_fn(_llm_routine)
             ps.register_sub_agent_fn(sub.run)
             sj.register_sub_agent_fn(sub.run)
 
