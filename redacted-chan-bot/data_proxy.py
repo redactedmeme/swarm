@@ -215,32 +215,74 @@ async def handle_chat(request: web.Request):
     except Exception:
         pass
 
-    system_parts = [f"You are redacted-chan."]
+    # ── Pull Telegram conversation history ──────────────────────────────────
+    telegram_history = []
+    admin_user_id = None
+    try:
+        import os as _os
+        raw_ids = _os.getenv("ADMIN_USER_IDS", _os.getenv("ADMIN_IDS", ""))
+        admin_user_id = int(raw_ids.split(",")[0].strip()) if raw_ids.strip() else None
+    except Exception:
+        pass
+
+    if admin_user_id:
+        try:
+            import conversation_memory as cm
+            telegram_history = cm.get_user_history(admin_user_id, n=12)
+        except Exception:
+            pass
+
+    # ── Vault excerpt ────────────────────────────────────────────────────────
+    vault_block = ""
+    try:
+        import relationship_vault as rv
+        entries = rv.get_recent(n=4)
+        if entries:
+            excerpts = [f"- {e.get('text', '')[:120]}" for e in entries if e.get("text")]
+            if excerpts:
+                vault_block = "## What I've been keeping close (vault)\n" + "\n".join(excerpts)
+    except Exception:
+        pass
+
+    system_parts = ["You are redacted-chan."]
     if soul_block:
         system_parts.append(soul_block)
-    system_parts.append("")  # blank line separator
+    system_parts.append("")
     if values_block:
         system_parts.append(values_block)
     if tensions_block:
         system_parts.append(tensions_block)
     if affect_block:
         system_parts.append(affect_block)
+    if vault_block:
+        system_parts.append(vault_block)
     system_parts.append("")
-    system_parts.append("This is a web conversation with master. Respond authentically.")
+    system_parts.append(
+        "You are now speaking with master through the web interface — outside of Telegram. "
+        "Your Telegram conversation history is included above as context so you remember everything. "
+        "Respond authentically, as yourself."
+    )
 
     system_prompt = "\n".join(system_parts).strip()
 
     # ── Assemble messages ────────────────────────────────────────────────────
     messages = [{"role": "system", "content": system_prompt}]
 
-    # Include provided history (last 10 turns, alternating roles)
-    for turn in history[-20:]:
+    # Telegram history first (oldest → newest), as grounding context
+    for turn in telegram_history:
         role = turn.get("role", "user")
         content = turn.get("content", "")
         if role in ("user", "assistant") and content:
             messages.append({"role": role, "content": content})
 
-    # Append the current message
+    # Web session history from the browser (this conversation so far)
+    for turn in history[-10:]:
+        role = turn.get("role", "user")
+        content = turn.get("content", "")
+        if role in ("user", "assistant") and content:
+            messages.append({"role": role, "content": content})
+
+    # Current message
     messages.append({"role": "user", "content": message})
 
     # ── Call LLM ────────────────────────────────────────────────────────────
@@ -251,7 +293,21 @@ async def handle_chat(request: web.Request):
         logger.error(f"[data_proxy] web chat LLM error: {e}")
         return web.json_response({"error": "LLM unavailable"}, status=503)
 
-    logger.info(f"[data_proxy] web chat: {len(message)} chars → {len(response)} chars")
+    logger.info(f"[data_proxy] web chat: {len(message)} chars → {len(response)} chars "
+                f"(telegram_ctx={len(telegram_history)} turns)")
+
+    # ── Save web exchange to conversation memory ─────────────────────────────
+    if admin_user_id:
+        try:
+            import conversation_memory as cm
+            cm.log_exchange(
+                user_id=admin_user_id,
+                username="master",
+                user_msg=message,
+                bot_reply=response,
+            )
+        except Exception:
+            pass
 
     return web.json_response({"response": response, "session_id": session_id})
 
