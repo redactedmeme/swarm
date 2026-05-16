@@ -7,13 +7,15 @@ import MessageBubble from '@/app/components/Chat/MessageBubble'
 import ChatInput from '@/app/components/Chat/ChatInput'
 import TypingIndicator from '@/app/components/Chat/TypingIndicator'
 import ChanHeader from '@/app/components/Chat/ChanHeader'
+import type { ChatAgent } from '@/app/components/Chat/ChanHeader'
 import CommandPalette from '@/app/components/CommandPalette'
 
 export default function ChatPage() {
   const messages = useChatStore((s) => s.messages)
   const isWaiting = useChatStore((s) => s.isWaiting)
   const clearMessages = useChatStore((s) => s.clearMessages)
-  const { sendMessage, handleUpload, pendingAttachments, removeAttachment } = useStreamingChat()
+  const [selectedAgent, setSelectedAgent] = useState<ChatAgent>('chan')
+  const { sendMessage, handleUpload, pendingAttachments, removeAttachment } = useStreamingChat(selectedAgent)
   const bottomRef = useRef<HTMLDivElement>(null)
   const [paletteOpen, setPaletteOpen] = useState(false)
 
@@ -29,7 +31,11 @@ export default function ChatPage() {
 
   return (
     <div className="flex flex-col h-full min-h-0">
-      <ChanHeader onPaletteOpen={() => setPaletteOpen(true)} />
+      <ChanHeader
+        onPaletteOpen={() => setPaletteOpen(true)}
+        selectedAgent={selectedAgent}
+        onSelectAgent={setSelectedAgent}
+      />
 
       {/* Message list */}
       <div className="flex-1 overflow-y-auto px-4 py-4">
@@ -47,7 +53,7 @@ export default function ChatPage() {
               ⬡
             </motion.div>
             <div>
-              <p className="text-muted-foreground text-sm">Start a conversation with redacted-chan.</p>
+              <p className="text-muted-foreground text-sm">Start a conversation with {selectedAgent === 'hermes' ? 'hermes-bot' : 'redacted-chan'}.</p>
               <p className="text-muted-foreground/50 text-xs mt-1">
                 Press <kbd className="px-1.5 py-0.5 rounded border border-border text-[10px] font-mono">⌘K</kbd> for commands
               </p>
