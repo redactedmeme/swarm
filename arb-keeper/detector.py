@@ -1,12 +1,17 @@
 """
-detector.py — Inventory-based rebalancing detector (Uniswap v2 / AMM style).
+detector.py — Rebalancing detector supporting two strategy modes:
 
-Strategy: maintain a target ratio (default 50% SOL / 50% TOKEN by value).
-When the portfolio drifts beyond REBALANCE_TOLERANCE, compute the trade that
-brings us back to the target ratio and return it as a RebalanceOrder.
+  inventory (default / backward-compat):
+    Classic Uniswap v2 / CPMM full-range logic. Rebalance when the portfolio
+    ratio (SOL vs TOKEN by value) drifts beyond REBALANCE_TOLERANCE.
 
-This is passive market-making, not pure arb — we earn the LP spread by
-providing liquidity-like behavior at the pool price.
+  virtual_clmm / virtual_dlmm:
+    Off-chain concentrated liquidity emulation (Raydium CLMM / Meteora DLMM
+    style). The bot tracks a VirtualPosition in memory. Rebalances are
+    triggered primarily when price exits the virtual range, not on every ratio
+    drift. Inside the range, smaller ratio drift thresholds apply.
+
+Select the mode with STRATEGY_MODE env var (default: inventory).
 """
 
 import logging
@@ -16,8 +21,18 @@ from typing import Optional
 
 import config
 from price_feed import PriceSnapshot
+from virtual_position import (
+    VirtualPosition,
+    create_virtual_position,
+    recenter_position,
+    simulate_clmm_quote,
+)
 
 log = logging.getLogger(__name__)
+
+# Module-level virtual position state (one position per process).
+# Re-created / re-centered after each rebalance trade.
+_virtual_pos: Optional[VirtualPosition] = None
 
 
 @dataclass
@@ -85,6 +100,17 @@ def compute_rebalance_delta(
 
 
 def find_opportunity(
+    snapshot: PriceSnapshot,
+    sol_balance: float,
+    token_balance_raw: int = 0,
+) -> Optional[RebalanceOrder]:
+    """Dispatch to the correct strategy based on STRATEGY_MODE."""
+    if config.STRATEGY_MODE in ('virtual_clmm', 'virtual_dlmm'):
+        return _find_opportunity_virtual(snapshot, sol_balance, token_balance_raw)
+    return _find_opportunity_inventory(snapshot, sol_balance, token_balance_raw)
+
+
+def _find_opportunity_inventory(
     snapshot: PriceSnapshot,
     sol_balance: float,
     token_balance_raw: int = 0,
@@ -168,6 +194,155 @@ def find_opportunity(
         f'Tokens: {token_amount/10**config.TOKEN_DECIMALS:.4f}'
     )
     return order
+
+
+def _find_opportunity_virtual(
+    snapshot: PriceSnapshot,
+    sol_balance: float,
+    token_balance_raw: int = 0,
+) -> Optional[RebalanceOrder]:
+    """
+    Virtual CLMM/DLMM strategy:
+      1. Ensure a VirtualPosition exists (create on first call).
+      2. Check if current price is inside or outside the virtual range.
+      3. OUT-OF-RANGE → strong rebalance signal (re-center trade required).
+      4. IN-RANGE → only rebalance if ratio drift exceeds a tighter threshold
+         (half of REBALANCE_TOLERANCE, since the range already caps our exposure).
+    """
+    global _virtual_pos
+
+    price = snapshot.mid_price_sol_per_token
+    if price <= 0:
+        log.debug('Price is zero — skipping')
+        return None
+
+    total_sol = sol_balance + (token_balance_raw / 10**config.TOKEN_DECIMALS) * price
+
+    # ── Initialise virtual position on first call ────────────────────────────
+    if _virtual_pos is None:
+        _virtual_pos = create_virtual_position(
+            center_price=price,
+            range_bps=config.VIRTUAL_RANGE_BPS,
+            strategy=config.VIRTUAL_STRATEGY,
+            mode=config.STRATEGY_MODE,
+            bin_step_bps=config.VIRTUAL_BIN_STEP_BPS,
+            capital_sol=total_sol,
+        )
+
+    pos = _virtual_pos
+    in_range = pos.lower_price <= price <= pos.upper_price
+    range_status = pos.range_status(price)
+
+    # ── Virtual quote (for logging / future fee simulation) ──────────────────
+    vq = simulate_clmm_quote(price, pos, config.PROBE_SOL, is_buy=True)
+
+    log.debug(
+        f'[{config.STRATEGY_MODE.upper()}] {range_status} | '
+        f'range=[{pos.lower_price:.8f}, {pos.upper_price:.8f}] '
+        f'±{config.VIRTUAL_RANGE_BPS/2:.0f}bps | '
+        f'virtual_slippage={vq["slippage_vs_mid_pct"]:.4f}% '
+        f'strategy={pos.strategy}'
+    )
+
+    # Compute ratio deviation (same as inventory path)
+    token_bal_whole = token_balance_raw / 10**config.TOKEN_DECIMALS
+    token_value_sol = token_bal_whole * price
+    total_value_sol = sol_balance + token_value_sol
+    if total_value_sol <= 0:
+        return None
+    current_ratio = token_value_sol / total_value_sol
+    deviation = abs(current_ratio - config.TARGET_RATIO)
+
+    # ── Decision logic ───────────────────────────────────────────────────────
+    if not in_range:
+        # Price has left the virtual range — always rebalance (recenter signal).
+        log.info(
+            f'[{config.STRATEGY_MODE.upper()}] Price {range_status} — '
+            f'rebalance to recenter virtual position'
+        )
+    else:
+        # Inside range — only rebalance if ratio has drifted significantly.
+        # Use half the normal tolerance (range keeps us tighter).
+        inner_tol = config.REBALANCE_TOLERANCE * 0.5
+        if deviation < inner_tol:
+            log.debug(
+                f'[{config.STRATEGY_MODE.upper()}] Virtual range ±{config.VIRTUAL_RANGE_BPS/2:.0f}bps '
+                f'({range_status}), deviation={deviation*100:.2f}% < {inner_tol*100:.2f}% — no rebalance'
+            )
+            return None
+        log.info(
+            f'[{config.STRATEGY_MODE.upper()}] In-range but ratio drift {deviation*100:.2f}% '
+            f'exceeds inner tolerance {inner_tol*100:.2f}% — rebalancing'
+        )
+
+    # ── Build the order (same math as inventory path) ────────────────────────
+    delta_sol, _, is_buy_token = compute_rebalance_delta(sol_balance, token_balance_raw, price)
+
+    if is_buy_token:
+        trade_sol = min(delta_sol, config.MAX_TRADE_SOL, sol_balance * 0.5)
+    else:
+        trade_sol = min(delta_sol, config.MAX_TRADE_SOL)
+
+    if trade_sol < config.MIN_TRADE_SOL:
+        log.debug(f'Trade too small: {trade_sol*1000:.3f} mSOL — skipping')
+        return None
+
+    if is_buy_token:
+        sol_lamports = int(trade_sol * config.SOL_LAMPORTS)
+        from dex.raydium_cpmm import quote_swap_base_input, WSOL_MINT
+        token_out, _ = quote_swap_base_input(snapshot.pool, WSOL_MINT, sol_lamports)
+        token_amount = token_out
+    else:
+        token_amount = int((trade_sol / price) * 10**config.TOKEN_DECIMALS)
+        token_amount = min(token_amount, token_balance_raw)
+        trade_sol = (token_amount / 10**config.TOKEN_DECIMALS) * price
+        sol_lamports = int(trade_sol * config.SOL_LAMPORTS)
+
+    if token_amount <= 0:
+        return None
+
+    order = RebalanceOrder(
+        is_buy_token=is_buy_token,
+        sol_amount=trade_sol,
+        sol_lamports=sol_lamports,
+        token_amount=token_amount,
+        sol_balance=sol_balance,
+        token_balance_raw=token_balance_raw,
+        total_value_sol=total_value_sol,
+        current_ratio=current_ratio,
+        target_ratio=config.TARGET_RATIO,
+        deviation=deviation,
+        price_sol_per_token=price,
+        pool=snapshot.pool,
+    )
+
+    log.info(
+        f'[{config.STRATEGY_MODE.upper()}] {order.describe()} | '
+        f'virtual_range=[{pos.lower_price:.8f}, {pos.upper_price:.8f}] '
+        f'virtual_slippage={vq["slippage_vs_mid_pct"]:.4f}%'
+    )
+    return order
+
+
+def notify_trade_executed(new_price: float, total_sol: float) -> None:
+    """
+    Call this after a rebalance trade lands to re-center the virtual position.
+    No-op in inventory mode.
+    """
+    global _virtual_pos
+    if config.STRATEGY_MODE not in ('virtual_clmm', 'virtual_dlmm'):
+        return
+    if not config.REBALANCE_ON_RANGE_EXIT:
+        return
+    if _virtual_pos is None:
+        return
+    old_count = _virtual_pos.rebalance_count
+    _virtual_pos = recenter_position(_virtual_pos, new_price, config.VIRTUAL_RANGE_BPS, capital_sol=total_sol)
+    log.info(
+        f'[{config.STRATEGY_MODE.upper()}] Virtual position re-centered at {new_price:.8f} '
+        f'(rebalance #{old_count + 1}) '
+        f'new range=[{_virtual_pos.lower_price:.8f}, {_virtual_pos.upper_price:.8f}]'
+    )
 
 
 # Alias so main.py / logger.py / executor.py that reference ArbOpportunity still work
