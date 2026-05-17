@@ -15,7 +15,6 @@ export function useStreamingChat(agent: ChatAgent = 'chan') {
     pendingAttachments,
     isWaiting,
     addUserMessage,
-    addMessage,
     startStreamingMessage,
     appendStreamingChunk,
     finalizeStreamingMessage,
@@ -29,7 +28,11 @@ export function useStreamingChat(agent: ChatAgent = 'chan') {
     async (file: File) => {
       try {
         const result = await apiUpload(file)
-        const attachment: Attachment = { type: result.type, name: result.name, data: result.data }
+        const attachment: Attachment = {
+          type: result.type === 'image' ? 'image' : 'file',
+          name: result.name,
+          data: result.data,
+        }
         addAttachment(attachment)
       } catch {
         toast.error('Upload failed')
@@ -153,7 +156,7 @@ export function useStreamingChat(agent: ChatAgent = 'chan') {
     },
     [
       agent, messages, pendingAttachments, isWaiting, sessionId, token,
-      addUserMessage, addMessage, startStreamingMessage, appendStreamingChunk,
+      addUserMessage, startStreamingMessage, appendStreamingChunk,
       finalizeStreamingMessage, setWaiting, clearAttachments, setSessionId,
     ],
   )
