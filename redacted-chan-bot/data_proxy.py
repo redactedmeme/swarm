@@ -146,9 +146,12 @@ async def handle_anticipation(request):
 
 
 async def handle_hermes_task(request):
-    """Dispatch a task to Hermes via Redis SwarmInbox and poll for reply (max 60s)."""
+    """Dispatch a task_request to Hermes via Redis SwarmInbox (sorted sets) and poll for reply."""
+    import asyncio
     import time as _time
     import uuid as _uuid
+    from datetime import datetime, timezone
+
     try:
         body = await request.json()
     except Exception:
@@ -159,17 +162,28 @@ async def handle_hermes_task(request):
         return web.json_response({"error": "message required"}, status=400)
 
     task_id = str(_uuid.uuid4())
+    msg_id = f"msg_{_uuid.uuid4().hex[:10]}"
     reply_key = f"swarm:reply:{task_id}"
-    now = _time.time()
+    epoch = _time.time()
+    now_iso = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
-    task = {
-        "id": task_id,
+    doc = {
+        "id": msg_id,
+        "ts": now_iso,
         "from": "webchat",
         "to": "hermes",
-        "type": "task",
-        "content": message,
-        "reply_key": reply_key,
-        "ts": now,
+        "type": "task_request",
+        "payload": {
+            "task_type": "webchat",
+            "instruction": message,
+            "reply_key": reply_key,
+        },
+        "reply_to": None,
+        "status": "pending",
+        "claimed_at": None,
+        "completed_at": None,
+        "result": None,
+        "error": None,
     }
 
     try:
@@ -177,27 +191,43 @@ async def handle_hermes_task(request):
         redis_url = os.getenv("REDIS_URL", "redis://localhost:6379")
         r = aioredis.from_url(redis_url, decode_responses=True)
 
-        task_json = json.dumps(task)
-        # Push to Hermes inbox
-        await r.rpush("swarm:pending:hermes", task_json)
-        # Register in swarm:all and store message
-        await r.rpush("swarm:all", task_id)
-        await r.set(f"swarm:msg:{task_id}", task_json, ex=3600)
+        doc_json = json.dumps(doc, ensure_ascii=False)
+        pipe = r.pipeline()
+        pipe.set(f"swarm:msg:{msg_id}", doc_json)
+        pipe.zadd("swarm:pending:hermes", {msg_id: epoch})
+        pipe.zadd("swarm:all", {msg_id: epoch})
+        await pipe.execute()
 
-        # Poll reply_key for up to 60s (2s intervals)
-        deadline = _time.time() + 60
+        deadline = _time.time() + 90
         while _time.time() < deadline:
-            import asyncio as _asyncio
-            await _asyncio.sleep(2)
+            await asyncio.sleep(2)
+
             reply = await r.get(reply_key)
             if reply:
-                await r.delete(reply_key)
                 await r.aclose()
                 try:
                     data = json.loads(reply)
-                    return web.json_response({"response": data.get("content", reply), "agent": "hermes", "task_id": task_id})
+                    text = data.get("content") or data.get("summary") or reply
                 except Exception:
-                    return web.json_response({"response": reply, "agent": "hermes", "task_id": task_id})
+                    text = reply
+                return web.json_response({"response": text, "agent": "hermes", "task_id": task_id})
+
+            raw = await r.get(f"swarm:msg:{msg_id}")
+            if raw:
+                try:
+                    msg = json.loads(raw)
+                    status = msg.get("status")
+                    if status == "done":
+                        result = msg.get("result") or {}
+                        text = result.get("summary") or result.get("content") or str(result)
+                        await r.aclose()
+                        return web.json_response({"response": text, "agent": "hermes", "task_id": task_id})
+                    if status == "error":
+                        await r.aclose()
+                        err = msg.get("error") or "Hermes task failed"
+                        return web.json_response({"response": err, "agent": "hermes", "task_id": task_id}, status=502)
+                except Exception:
+                    pass
 
         await r.aclose()
         return web.json_response({
@@ -213,16 +243,14 @@ async def handle_hermes_task(request):
 
 async def handle_swarm_activity(request):
     """Read recent swarm messages + heartbeat events from Redis."""
-    import time as _time
     n = int(request.query.get("n", "60"))
-    _AGENT_IDS = ["redacted-chan", "hermes", "smolting", "builder", "runtime"]
     try:
         import redis.asyncio as aioredis
         redis_url = os.getenv("REDIS_URL", "redis://localhost:6379")
         r = aioredis.from_url(redis_url, decode_responses=True)
 
-        # Real swarm messages from swarm:all list
-        ids = await r.lrange("swarm:all", -n, -1)
+        # swarm:all is a sorted set (see swarm_inbox.py)
+        ids = await r.zrevrange("swarm:all", 0, max(n * 3, n) - 1)
         messages = []
         for msg_id in ids:
             raw = await r.get(f"swarm:msg:{msg_id}")
@@ -235,25 +263,21 @@ async def handle_swarm_activity(request):
                     messages.append({"id": msg_id, "content": raw[:300], "_source": "swarm"})
 
         # Synthetic heartbeat events — one per alive agent
-        now = _time.time()
-        for agent_id in _AGENT_IDS:
-            val = await r.get(f"swarm:heartbeat:{agent_id}")
-            if val:
-                try:
-                    ts = float(val)
-                    age_s = now - ts
-                    if age_s < 3600:  # only show if heartbeat within 1h
-                        messages.append({
-                            "id": f"hb-{agent_id}",
-                            "from": agent_id,
-                            "to": "swarm",
-                            "type": "heartbeat",
-                            "content": f"alive · {int(age_s)}s ago",
-                            "ts": ts,
-                            "_source": "heartbeat",
-                        })
-                except ValueError:
-                    pass
+        from swarm_heartbeat import SWARM_AGENT_IDS, read_heartbeat_async
+        for agent_id in SWARM_AGENT_IDS:
+            hb = await read_heartbeat_async(r, agent_id)
+            if hb.get("present") and hb.get("ts") is not None:
+                age_s = hb.get("age_s") or 0
+                if age_s < 3600:
+                    messages.append({
+                        "id": f"hb-{agent_id}",
+                        "from": agent_id,
+                        "to": "swarm",
+                        "type": "heartbeat",
+                        "content": f"alive · {int(age_s)}s ago",
+                        "ts": hb["ts"],
+                        "_source": "heartbeat",
+                    })
 
         await r.aclose()
         messages.sort(key=lambda m: float(m.get("ts") or 0), reverse=True)
@@ -273,15 +297,22 @@ async def handle_swarm_pending(request):
         results: dict = {}
         for agent in _AGENTS:
             key = f"swarm:pending:{agent}"
-            count = await r.llen(key)
-            raw_items = await r.lrange(key, 0, 9)
-            items = []
-            for item in raw_items:
+            msg_ids = await r.zrange(key, 0, -1)
+            pending_docs = []
+            for msg_id in msg_ids:
+                raw = await r.get(f"swarm:msg:{msg_id}")
+                if not raw:
+                    continue
                 try:
-                    items.append(json.loads(item))
+                    doc = json.loads(raw)
+                    if doc.get("status") == "pending":
+                        pending_docs.append(doc)
                 except Exception:
-                    items.append({"content": item[:300]})
-            results[agent] = {"count": count, "items": items}
+                    pending_docs.append({"id": msg_id, "content": raw[:300]})
+            results[agent] = {
+                "count": len(pending_docs),
+                "items": pending_docs[-10:],
+            }
         await r.aclose()
         return web.json_response({"pending": results})
     except Exception as e:
@@ -291,40 +322,30 @@ async def handle_swarm_pending(request):
 
 async def handle_heartbeats(request):
     """Read swarm:heartbeat:{agent} keys from Redis and return age + status for each agent."""
-    import time
+    from swarm_heartbeat import read_heartbeat_async
     _AGENTS = [
         {"id": "redacted-chan", "label": "redacted-chan", "llm": "grok-4-1-fast"},
-        {"id": "hermes",        "label": "hermes-bot",    "llm": "claude-haiku-4-5"},
+        {"id": "hermes",        "label": "hermes-bot",    "llm": os.getenv("HERMES_LLM_LABEL", "openai/gpt-oss-120b")},
         {"id": "smolting",      "label": "smolting",      "llm": "llama-3.1-8b-instant"},
-        {"id": "builder",       "label": "RedactedBuilder","llm": "claude-haiku-4-5"},
+        {"id": "builder",       "label": "RedactedBuilder", "llm": "claude-haiku-4-5"},
         {"id": "runtime",       "label": "swarm-runtime", "llm": "—"},
     ]
     try:
         import redis.asyncio as aioredis
         redis_url = os.getenv("REDIS_URL", "redis://localhost:6379")
         r = aioredis.from_url(redis_url, decode_responses=True)
-        now = time.time()
         results = []
         for agent in _AGENTS:
-            key = f"swarm:heartbeat:{agent['id']}"
-            val = await r.get(key)
-            if val is not None:
-                try:
-                    ts = float(val)
-                    age_s = now - ts
-                    online = age_s < 300  # 5 min threshold
-                    results.append({
-                        "id": agent["id"],
-                        "label": agent["label"],
-                        "llm": agent["llm"],
-                        "online": online,
-                        "age_s": round(age_s),
-                        "last_seen": val,
-                    })
-                except ValueError:
-                    results.append({"id": agent["id"], "label": agent["label"], "llm": agent["llm"], "online": False, "age_s": None, "last_seen": None})
-            else:
-                results.append({"id": agent["id"], "label": agent["label"], "llm": agent["llm"], "online": False, "age_s": None, "last_seen": None})
+            hb = await read_heartbeat_async(r, agent["id"])
+            results.append({
+                "id": agent["id"],
+                "label": agent["label"],
+                "llm": agent["llm"],
+                "online": hb.get("online", False),
+                "age_s": hb.get("age_s"),
+                "last_seen": hb.get("last_seen"),
+                "present": hb.get("present", False),
+            })
         await r.aclose()
         return web.json_response({"agents": results})
     except Exception as e:
