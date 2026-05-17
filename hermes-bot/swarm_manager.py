@@ -239,8 +239,8 @@ async def _run_agent_loop(instruction: str, msg_id: str, task_type: str, service
 
 # ── Main polling loop ─────────────────────────────────────────────────────────
 
-POLL_INTERVAL = 60  # seconds
-ALLOWED_SENDERS = {"redacted-chan"}
+POLL_INTERVAL = int(os.getenv("SWARM_MANAGER_POLL_SEC", "15"))
+ALLOWED_SENDERS = {"redacted-chan", "webchat"}
 
 
 async def _process_message(msg: dict) -> None:
