@@ -204,6 +204,52 @@ _MODEL_ALIASES = {
     "lfm-40b":                            ("venice", "lfm-40b"),
 }
 
+# Model equivalence — fallback cascade when primary provider is unavailable
+# Used for intelligent failover when provider hits TPD/quotas
+_MODEL_EQUIVALENTS: dict[str, list[str]] = {
+    "grok-4-1-fast":             ["llama-3.3-70b", "claude-opus", "gpt-4o"],
+    "grok-3-fast":               ["llama-3.3-70b", "gemma-4-uncensored"],
+    "llama-3.3-70b":             ["gpt-4o", "claude-opus", "grok-4-1-fast"],
+    "llama-3.1-8b-instant":      ["gemma2-9b-it", "gpt-4o-mini", "claude-haiku"],
+    "claude-opus":               ["gpt-4o", "llama-3.3-70b"],
+    "claude-sonnet":             ["gpt-4o", "llama-3.1-8b"],
+    "claude-haiku":              ["gpt-4o-mini", "llama-3.1-8b-instant"],
+    "gpt-4o":                    ["claude-opus", "llama-3.3-70b"],
+    "gpt-4o-mini":               ["claude-haiku", "llama-3.1-8b-instant"],
+    "gemma-4-uncensored":        ["llama-3.3-70b", "gpt-4o"],
+    "nous-hermes-3-nitro":       ["llama-3.3-70b", "gpt-4o"],
+}
+
+# Provider pricing (USD per 1M tokens) — estimated; used for cost tracking
+_PROVIDER_COSTS: dict[str, dict[str, float]] = {
+    "xai": {
+        "grok-4-1-fast": {"input": 5.0, "output": 15.0},
+        "grok-3-fast": {"input": 1.5, "output": 6.0},
+        "grok-3": {"input": 1.0, "output": 4.0},
+    },
+    "groq": {
+        "llama-3.3-70b-versatile": {"input": 0.05, "output": 0.1},
+        "llama-3.1-8b-instant": {"input": 0.05, "output": 0.1},
+        "gemma2-9b-it": {"input": 0.05, "output": 0.1},
+        "mixtral-8x7b-32768": {"input": 0.05, "output": 0.1},
+        "openai/gpt-oss-120b": {"input": 0.5, "output": 1.0},
+    },
+    "anthropic": {
+        "claude-opus-4-5": {"input": 3.0, "output": 15.0},
+        "claude-sonnet-4-5": {"input": 3.0, "output": 15.0},
+        "claude-3-haiku-20240307": {"input": 0.25, "output": 1.25},
+    },
+    "openai": {
+        "gpt-4o": {"input": 5.0, "output": 15.0},
+        "gpt-4o-mini": {"input": 0.15, "output": 0.6},
+    },
+    "venice": {
+        "gemma-4-uncensored": {"input": 0.1, "output": 0.1},
+        "mistral-31-24b": {"input": 0.08, "output": 0.08},
+        "nous-hermes-3-nitro": {"input": 0.1, "output": 0.1},
+    },
+}
+
 
 def _resolve_provider(model: str, explicit_provider: str = "") -> tuple[str, str]:
     """Return (provider, upstream_model) for a given model name."""
@@ -339,10 +385,23 @@ def _from_anthropic(result: dict) -> dict:
     }
 
 
+# ── Cost estimation ──────────────────────────────────────────────────────────
+
+def _estimate_cost_usd(provider: str, model: str, input_tokens: int, output_tokens: int) -> float:
+    """Estimate USD cost for a request based on provider pricing."""
+    try:
+        costs = _PROVIDER_COSTS.get(provider, {}).get(model, {"input": 0.0, "output": 0.0})
+        input_cost = (input_tokens / 1_000_000) * costs.get("input", 0.0)
+        output_cost = (output_tokens / 1_000_000) * costs.get("output", 0.0)
+        return round(input_cost + output_cost, 6)
+    except Exception:
+        return 0.0
+
+
 # ── Local logging ─────────────────────────────────────────────────────────────
 
 def _log_entry(provider: str, model: str, messages: list, response_text: str,
-               latency_ms: float, error: str = "", ephemeral: bool = False) -> None:
+               latency_ms: float, error: str = "", ephemeral: bool = False, cost_usd: float = 0.0) -> None:
     """Append a log entry — respects LOG_LEVEL, EPHEMERAL_MODE, and X-Ephemeral."""
     if LOG_LEVEL() == "none" or ephemeral or EPHEMERAL_MODE():
         return
@@ -357,6 +416,7 @@ def _log_entry(provider: str, model: str, messages: list, response_text: str,
         prompt_chars = sum(len(str(m.get("content", ""))) for m in messages)
         entry["prompt_tokens_est"]     = prompt_chars // 4
         entry["completion_tokens_est"] = len(response_text) // 4
+        entry["cost_usd"]              = cost_usd
 
         if LOG_LEVEL() == "full":
             entry["messages_preview"] = [
@@ -539,11 +599,16 @@ async def handle_chat_completions(request: web.Request) -> web.Response:
             result = await _forward(provider, upstream_model, payload, session)
         response_text = result.get("choices", [{}])[0].get("message", {}).get("content", "")
         latency_ms = (time.monotonic() - t0) * 1000
-        logger.info("[proxy] %s/%s → %d chars (%.0fms)%s",
-                    provider, upstream_model, len(response_text), latency_ms,
+        # Estimate cost
+        prompt_chars = sum(len(str(m.get("content", ""))) for m in original_messages)
+        input_tokens = prompt_chars // 4
+        output_tokens = len(response_text) // 4
+        cost_usd = _estimate_cost_usd(provider, upstream_model, input_tokens, output_tokens)
+        logger.info("[proxy] %s/%s → %d chars (%.0fms) $%.6f%s",
+                    provider, upstream_model, len(response_text), latency_ms, cost_usd,
                     " [ephemeral]" if (ephemeral or EPHEMERAL_MODE()) else "")
         _log_entry(provider, upstream_model, original_messages, response_text,
-                   latency_ms, ephemeral=ephemeral)
+                   latency_ms, ephemeral=ephemeral, cost_usd=cost_usd)
         return web.json_response(result)
 
     except Exception as e:
