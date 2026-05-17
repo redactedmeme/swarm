@@ -236,12 +236,10 @@ def _find_opportunity_virtual(
     # ── Virtual quote (for logging / future fee simulation) ──────────────────
     vq = simulate_clmm_quote(price, pos, config.PROBE_SOL, is_buy=True)
 
-    log.debug(
+    log.info(
         f'[{config.STRATEGY_MODE.upper()}] {range_status} | '
         f'range=[{pos.lower_price:.8f}, {pos.upper_price:.8f}] '
-        f'±{config.VIRTUAL_RANGE_BPS/2:.0f}bps | '
-        f'virtual_slippage={vq["slippage_vs_mid_pct"]:.4f}% '
-        f'strategy={pos.strategy}'
+        f'slippage={vq["slippage_vs_mid_pct"]:.4f}%'
     )
 
     # Compute ratio deviation (same as inventory path)
@@ -265,9 +263,9 @@ def _find_opportunity_virtual(
         # Use half the normal tolerance (range keeps us tighter).
         inner_tol = config.REBALANCE_TOLERANCE * 0.5
         if deviation < inner_tol:
-            log.debug(
+            log.info(
                 f'[{config.STRATEGY_MODE.upper()}] Virtual range ±{config.VIRTUAL_RANGE_BPS/2:.0f}bps '
-                f'({range_status}), deviation={deviation*100:.2f}% < {inner_tol*100:.2f}% — no rebalance'
+                f'({range_status}), ratio={current_ratio*100:.2f}% dev={deviation*100:.2f}% < {inner_tol*100:.2f}% — holding'
             )
             return None
         log.info(
