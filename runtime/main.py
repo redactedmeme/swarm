@@ -2,6 +2,8 @@
 Sub-Agent Service — FastAPI app for redacted-chan's factual research intern.
 """
 
+import json
+import os
 import time
 import uuid
 import asyncio
@@ -15,6 +17,42 @@ from pydantic import BaseModel
 import router
 import scheduler
 from auth import verify_token
+
+# ── Redis heartbeat helpers ───────────────────────────────────────────────────
+
+REDIS_URL         = os.getenv("REDIS_URL", "redis://localhost:6379")
+HEARTBEAT_PREFIX  = "swarm:heartbeat:"
+HEARTBEAT_TTL     = 600   # 10 min — bots announce every 2 min so key stays fresh
+
+# In-memory mesh peer table (nodeId → last seen unix ts)
+_mesh_peers: dict[str, dict] = {}
+
+
+def _hb_key(node_id: str) -> str:
+    return f"{HEARTBEAT_PREFIX}{node_id}"
+
+
+async def _redis_write_hb(node_id: str, metadata: dict | None = None) -> None:
+    try:
+        import redis.asyncio as aioredis
+        r = aioredis.from_url(REDIS_URL, decode_responses=True)
+        payload = json.dumps({
+            "agent": node_id,
+            "ts":    time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+            "unix":  time.time(),
+            **(metadata or {}),
+        })
+        await r.set(_hb_key(node_id), payload, ex=HEARTBEAT_TTL)
+        await r.aclose()
+    except Exception as e:
+        logger.debug(f"[hb] redis write failed for {node_id}: {e}")
+
+
+async def _self_heartbeat_loop() -> None:
+    """Write runtime's own heartbeat every 2 min so webchat shows it online."""
+    while True:
+        await _redis_write_hb("runtime", {"service": "swarm-runtime", "role": "sub-agent"})
+        await asyncio.sleep(120)
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 logger = logging.getLogger(__name__)
@@ -94,6 +132,7 @@ async def _dispatch(req: TaskRequest) -> TaskResponse:
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     scheduler.start()
+    asyncio.create_task(_self_heartbeat_loop())
     logger.info("[sub-agent-service] online")
     yield
     logger.info("[sub-agent-service] shutting down")
@@ -148,3 +187,35 @@ async def get_scheduled_result(name: str):
     if not result:
         return {"status": "no_result", "name": name}
     return result
+
+
+# ── Swarm mesh bridge ─────────────────────────────────────────────────────────
+# Hermes and smolting POST /announce every 2 min. We write their heartbeat to
+# Redis so the webchat /agents page shows them as online.
+
+@app.post("/announce")
+async def mesh_announce(body: dict):
+    node_id = body.get("nodeId", "")
+    if not node_id:
+        return {"ok": False, "error": "missing nodeId"}
+    metadata = {
+        "role":         body.get("role", ""),
+        "capabilities": body.get("capabilities", []),
+    }
+    _mesh_peers[node_id] = {"last_seen": time.time(), **metadata}
+    await _redis_write_hb(node_id, metadata)
+    logger.info(f"[mesh] {node_id} announced ({body.get('role', '?')})")
+    return {"ok": True, "nodeId": node_id}
+
+
+@app.get("/messages/{node_id}")
+async def mesh_get_messages(node_id: str):
+    # No active message queuing yet — return empty so bots don't error out.
+    return {"messages": []}
+
+
+@app.post("/message/{target}")
+async def mesh_send_message(target: str, body: dict):
+    # Stub — log and discard until a real queue is needed.
+    logger.debug(f"[mesh] message to {target} from {body.get('from', '?')}: {body.get('type', '?')}")
+    return {"ok": True}
