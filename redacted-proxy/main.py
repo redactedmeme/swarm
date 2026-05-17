@@ -181,6 +181,8 @@ _MODEL_ALIASES = {
     "gemma2-9b-it":             ("groq",      "gemma2-9b-it"),
     "mixtral-8x7b":             ("groq",      "mixtral-8x7b-32768"),
     "qwen-qwq-32b":             ("groq",      "qwen-qwq-32b"),
+    "openai/gpt-oss-120b":      ("groq",      "openai/gpt-oss-120b"),
+    "openai/gpt-oss-20b":       ("groq",      "openai/gpt-oss-20b"),
     # Anthropic
     "claude-haiku":             ("anthropic", "claude-3-haiku-20240307"),
     "claude-sonnet":            ("anthropic", "claude-sonnet-4-5"),

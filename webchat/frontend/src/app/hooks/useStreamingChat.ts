@@ -75,7 +75,7 @@ export function useStreamingChat(agent: ChatAgent = 'chan') {
               session_id: sessionId ?? '',
               history: buildApiHistory(messages),
             }),
-            signal: AbortSignal.timeout(75_000),
+            signal: AbortSignal.timeout(95_000),
           })
           const data = await res.json() as { response?: string; error?: string; timeout?: boolean }
           const reply = data.response ?? data.error ?? 'No response'

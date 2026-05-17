@@ -572,7 +572,7 @@ async def ws_chat(websocket: WebSocket):
 
 _AGENTS_CONFIG = [
     {"id": "chan",     "redis_id": "redacted-chan", "label": "redacted-chan",    "icon": "⬡",  "role": "core",    "description": "Emotional memory + relational AI",               "llm": "grok-4-1-fast"},
-    {"id": "hermes",   "redis_id": "hermes",        "label": "hermes-bot",       "icon": "⚡", "role": "agent",   "description": "Autonomous task agent with web/exec/search tools", "llm": "claude-haiku-4-5"},
+    {"id": "hermes",   "redis_id": "hermes",        "label": "hermes-bot",       "icon": "⚡", "role": "agent",   "description": "Autonomous task agent with web/exec/search tools", "llm": os.getenv("HERMES_LLM_LABEL", "openai/gpt-oss-120b")},
     {"id": "smolting", "redis_id": "smolting",      "label": "smolting",          "icon": "🌱", "role": "agent",   "description": "Moltbook TPD trader — Telegram-based",             "llm": "llama-3.1-8b-instant"},
     {"id": "builder",  "redis_id": "builder",       "label": "RedactedBuilder",   "icon": "🔧", "role": "agent",   "description": "Infrastructure + deployment builder",              "llm": "claude-haiku-4-5"},
     {"id": "proxy",    "redis_id": None,            "label": "redacted-proxy",    "icon": "🛡",  "role": "infra",   "description": "Privacy-first LLM routing proxy",                  "llm": "—"},
