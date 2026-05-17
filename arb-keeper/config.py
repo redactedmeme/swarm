@@ -33,11 +33,11 @@ JITO_TIP_ACCOUNTS = [
 ]
 
 # ── Execution parameters (all overridable via Railway env vars) ───────────────
-POLL_INTERVAL     = int(os.environ.get('POLL_INTERVAL',     '30'))   # pool reads, not Jupiter polling
-PROBE_SOL         = float(os.environ.get('PROBE_SOL',       '0.005'))
-MAX_TRADE_SOL     = float(os.environ.get('MAX_TRADE_SOL',   '0.005'))
-SLIPPAGE_BPS      = int(os.environ.get('SLIPPAGE_BPS',      '100'))  # wider for AMM rebalancing
-JITO_TIP_LAMPORTS = int(os.environ.get('JITO_TIP_LAMPORTS', '25000'))
+POLL_INTERVAL     = int(os.environ.get('POLL_INTERVAL',     '6'))    # faster polling for volume capture
+PROBE_SOL         = float(os.environ.get('PROBE_SOL',       '0.03'))
+MAX_TRADE_SOL     = float(os.environ.get('MAX_TRADE_SOL',   '2.5'))  # much larger trades
+SLIPPAGE_BPS      = int(os.environ.get('SLIPPAGE_BPS',      '250'))  # allow more slippage for HF trading
+JITO_TIP_LAMPORTS = int(os.environ.get('JITO_TIP_LAMPORTS', '50000')) # higher tip for priority
 
 # ── AMM / inventory rebalancing ───────────────────────────────────────────────
 # Target fraction of total portfolio value to hold in TOKEN (0.5 = 50/50).
@@ -53,9 +53,24 @@ TRADE_COOLDOWN   = int(os.environ.get('TRADE_COOLDOWN',   '120'))
 TOKEN_DECIMALS = int(os.environ.get('TOKEN_DECIMALS', '9'))
 
 # ── Risk management ────────────────────────────────────────────────────────────
-MAX_CONSEC_FAILS   = int(os.environ.get('MAX_CONSEC_FAILS',    '3'))
-PAUSE_SECONDS      = int(os.environ.get('PAUSE_SECONDS',       '300'))
-DAILY_LOSS_CAP_SOL = float(os.environ.get('DAILY_LOSS_CAP_SOL', '0.05'))
+MAX_CONSEC_FAILS   = int(os.environ.get('MAX_CONSEC_FAILS',    '8'))    # allow more failures in HF mode
+PAUSE_SECONDS      = int(os.environ.get('PAUSE_SECONDS',       '90'))
+DAILY_LOSS_CAP_SOL = float(os.environ.get('DAILY_LOSS_CAP_SOL', '15.0')) # higher cap for larger trades
+
+# ── Volume-aware trading (NEW) ──────────────────────────────────────────────────
+# Target percentage of market volume to capture per trading window.
+TARGET_VOLUME_SHARE = float(os.environ.get('TARGET_VOLUME_SHARE', '0.22'))  # 22%
+
+# Minimum 1h volume threshold to enable volume-capture trading (USD).
+# If market 1h volume < this, skip volume-capture trades (too thin).
+VOLUME_THRESHOLD_USD = float(os.environ.get('VOLUME_THRESHOLD_USD', '5000.0'))
+
+# DexScreener polling interval for volume updates (seconds).
+VOLUME_UPDATE_INTERVAL = int(os.environ.get('VOLUME_UPDATE_INTERVAL', '30'))
+
+# Trade cooldown after a volume-capture trade (seconds).
+# Usually slightly shorter than TRADE_COOLDOWN for more aggressive captures.
+VOLUME_TRADE_COOLDOWN = int(os.environ.get('VOLUME_TRADE_COOLDOWN', '18'))
 
 # ── Phase control ──────────────────────────────────────────────────────────────
 EXECUTE_TRADES = os.environ.get('EXECUTE_TRADES', 'false').lower() == 'true'

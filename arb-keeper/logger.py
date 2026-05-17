@@ -46,7 +46,8 @@ def _push(msg_type: str, payload: dict):
 
 
 def log_opportunity(opp) -> None:
-    _push('rebalance_signal', {
+    signal_type = f'{opp.trade_source}_signal' if hasattr(opp, 'trade_source') else 'rebalance_signal'
+    _push(signal_type, {
         'is_buy_token':    opp.is_buy_token,
         'sol_amount':      round(opp.sol_amount, 6),
         'token_amount':    opp.token_amount,
@@ -55,21 +56,34 @@ def log_opportunity(opp) -> None:
         'deviation_pct':   round(opp.deviation * 100, 2),
         'price_sol_per_token': round(opp.price_sol_per_token, 8),
         'total_value_sol': round(opp.total_value_sol, 6),
+        'trade_source':    getattr(opp, 'trade_source', 'rebalance'),
         'executed':        False,
     })
 
 
 def log_trade(result) -> None:
     opp = result.opportunity
-    _push('rebalance_trade', {
+    trade_type = getattr(opp, 'trade_source', 'rebalance')
+    trade_event = f'{trade_type}_trade'
+
+    payload = {
         'success':         result.success,
         'bundle_id':       result.bundle_id,
         'is_buy_token':    opp.is_buy_token,
         'sol_amount':      round(opp.sol_amount, 6),
         'token_amount':    opp.token_amount,
         'deviation_pct':   round(opp.deviation * 100, 2),
+        'trade_source':    trade_type,
         'error':           result.error,
-    })
+    }
+
+    # Include realized slippage / edge if available
+    if hasattr(result, 'slippage_bps'):
+        payload['realized_slippage_bps'] = result.slippage_bps
+    if hasattr(result, 'profit_sol'):
+        payload['realized_profit_sol'] = round(result.profit_sol, 8)
+
+    _push(trade_event, payload)
 
 
 def log_circuit_status(status: dict) -> None:
