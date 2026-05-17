@@ -948,18 +948,25 @@ async def run_private_creation() -> None:
         logger.warning(f"[routines] private_creation error: {e}")
 
 
-# ── Routine 16: Heartbeat ─────────────────────────────────────────────────────
+# ── Routine 16: Redis liveness pulse (fast, every 3 min) ─────────────────────
+
+async def _redis_liveness_pulse() -> None:
+    """Write swarm:heartbeat:redacted-chan to Redis every 3 min (TTL=10 min).
+    Kept separate from run_heartbeat so the Telegram autonomous ping cadence
+    (45 min) doesn't starve the webchat online indicator."""
+    try:
+        import swarm_inbox
+        swarm_inbox.heartbeat("redacted-chan", {"service": "redacted-chan-bot"})
+    except Exception as e:
+        logger.debug(f"[routines] redis liveness pulse failed: {e}")
+
+
+# ── Routine 16b: Heartbeat (Telegram autonomous ping, every 45 min) ───────────
 
 async def run_heartbeat() -> None:
-    """Send a lightweight heartbeat signal during silence. Also pings swarm Redis."""
+    """Autonomous Telegram ping during silence. Redis heartbeat is handled by
+    _redis_liveness_pulse which runs separately every 3 min."""
     try:
-        # Swarm inbox heartbeat — lets Hermes know we're alive
-        try:
-            import swarm_inbox
-            swarm_inbox.heartbeat("redacted-chan", {"service": "redacted-chan-bot"})
-        except Exception as hb_e:
-            logger.debug(f"[routines] swarm heartbeat failed (non-critical): {hb_e}")
-
         import autonomous_ping as ap
         if _last_conversation_ts is not None:
             silence_h = (datetime.now(timezone.utc) - _last_conversation_ts).total_seconds() / 3600
@@ -1129,6 +1136,7 @@ async def start_all() -> None:
     asyncio.create_task(_run_loop(run_sensory_journal,    interval_h=8,    name="sensory_journal"))
     asyncio.create_task(_run_loop(run_conviction,         interval_h=12,   name="conviction"))
     asyncio.create_task(_run_loop(run_private_creation,   interval_h=24,   name="private_creation"))
+    asyncio.create_task(_run_loop(_redis_liveness_pulse,  interval_h=0.05, name="redis_pulse"))   # every 3 min
     asyncio.create_task(_run_loop(run_heartbeat,          interval_h=0.75, name="heartbeat"))
     asyncio.create_task(_run_loop(run_gap_diary,          interval_h=3,    name="gap_diary"))
     asyncio.create_task(_run_loop(run_garden_tend,        interval_h=24,   name="garden_tend"))
