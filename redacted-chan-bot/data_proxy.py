@@ -324,7 +324,7 @@ async def handle_heartbeats(request):
     """Read swarm:heartbeat:{agent} keys from Redis and return age + status for each agent."""
     from swarm_heartbeat import read_heartbeat_async
     _AGENTS = [
-        {"id": "redacted-chan", "label": "redacted-chan", "llm": "grok-4-1-fast"},
+        {"id": "redacted-chan", "label": "redacted-chan", "llm": os.getenv("VENICE_MODEL", os.getenv("XAI_MODEL", os.getenv("GROQ_MODEL", "?")))},
         {"id": "hermes",        "label": "hermes-bot",    "llm": os.getenv("HERMES_LLM_LABEL", "openai/gpt-oss-120b")},
         {"id": "smolting",      "label": "smolting",      "llm": "llama-3.1-8b-instant"},
         {"id": "builder",       "label": "RedactedBuilder", "llm": "claude-haiku-4-5"},

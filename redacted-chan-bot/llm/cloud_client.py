@@ -77,6 +77,8 @@ class CloudLLMClient:
                 model = os.getenv("GROQ_MODEL", "llama-3.1-8b-instant")
             elif self.provider == "anthropic":
                 model = "claude-3-haiku-20240307"
+            elif self.provider == "venice":
+                model = os.getenv("VENICE_MODEL", "gemma-4-uncensored")
             else:
                 model = "llama-3.1-8b-instant"
 

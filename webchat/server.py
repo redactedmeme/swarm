@@ -571,7 +571,7 @@ async def ws_chat(websocket: WebSocket):
 # ── API: agents ───────────────────────────────────────────────────────────────
 
 _AGENTS_CONFIG = [
-    {"id": "chan",     "redis_id": "redacted-chan", "label": "redacted-chan",    "icon": "⬡",  "role": "core",    "description": "Emotional memory + relational AI",               "llm": "grok-4-1-fast"},
+    {"id": "chan",     "redis_id": "redacted-chan", "label": "redacted-chan",    "icon": "⬡",  "role": "core",    "description": "Emotional memory + relational AI",               "llm": None},
     {"id": "hermes",   "redis_id": "hermes",        "label": "hermes-bot",       "icon": "⚡", "role": "agent",   "description": "Autonomous task agent with web/exec/search tools", "llm": os.getenv("HERMES_LLM_LABEL", "openai/gpt-oss-120b")},
     {"id": "smolting", "redis_id": "smolting",      "label": "smolting",          "icon": "🌱", "role": "agent",   "description": "Moltbook TPD trader — Telegram-based",             "llm": "llama-3.1-8b-instant"},
     {"id": "builder",  "redis_id": "builder",       "label": "RedactedBuilder",   "icon": "🔧", "role": "agent",   "description": "Infrastructure + deployment builder",              "llm": "claude-haiku-4-5"},
@@ -624,13 +624,21 @@ async def api_agents(request: Request):
             status = "unknown"
             last_seen = None
 
+        # Use LLM from heartbeat if available (heartbeat data_proxy reads env vars), else fallback to config
+        llm = cfg["llm"]
+        if hb and hb.get("llm"):
+            llm = hb["llm"]
+        # Infra-only services (no heartbeat) show as "infra" not "unknown"
+        if cfg.get("redis_id") is None:
+            status = "infra"
+            last_seen = None
         agents.append({
             "id": cfg["id"],
             "label": cfg["label"],
             "icon": cfg["icon"],
             "role": cfg["role"],
             "description": cfg["description"],
-            "llm": cfg["llm"],
+            "llm": llm or "—",
             "status": status,
             "last_seen": last_seen,
         })
