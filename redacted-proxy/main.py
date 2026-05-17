@@ -196,19 +196,26 @@ _MODEL_ALIASES = {
     "venice-uncensored":                  ("venice", "venice-uncensored"),
     "nous-hermes-3-nitro":                ("venice", "nous-hermes-3-nitro"),
     "lfm-40b":                            ("venice", "lfm-40b"),
+    "qwen-2-5-vl":                        ("venice", "qwen-2-5-vl"),
+    "llama-3-3-70b":                      ("venice", "llama-3-3-70b"),
 }
 
 
 def _resolve_provider(model: str, explicit_provider: str = "") -> tuple[str, str]:
     """Return (provider, upstream_model) for a given model name."""
-    if explicit_provider:
-        return explicit_provider.lower(), model
-    # Explicit alias table wins first — prevents ambiguous prefix matches
+    explicit = explicit_provider.lower() if explicit_provider else ""
+
+    # Alias table always supplies the upstream model id (even when X-Provider is set).
     if model in _MODEL_ALIASES:
-        return _MODEL_ALIASES[model]
+        alias_provider, upstream_model = _MODEL_ALIASES[model]
+        return explicit or alias_provider, upstream_model
+
     # Venice exact-name set (checked before prefix rules)
     if model in _VENICE_MODELS:
-        return "venice", model
+        return explicit or "venice", model
+
+    if explicit:
+        return explicit, model
     # Prefix routing — Groq llama/gemma/mixtral/qwen only (not Venice variants)
     if model.startswith("grok-"):
         return "xai", model
@@ -389,15 +396,17 @@ async def _forward(provider: str, upstream_model: str, payload: dict,
         body = _to_anthropic({**payload, "model": upstream_model})
         async with session.post(url, json=body, headers=headers, timeout=aiohttp.ClientTimeout(total=90)) as resp:
             result = await resp.json(content_type=None)
-            if "content" not in result:
-                raise ValueError(f"Anthropic error: {result.get('error', result)}")
+            if resp.status >= 400 or "content" not in result:
+                err = result.get("error", result) if isinstance(result, dict) else result
+                raise ValueError(f"Anthropic HTTP {resp.status}: {err}")
             return _from_anthropic(result)
     else:
         body = {**payload, "model": upstream_model}
         async with session.post(url, json=body, headers=headers, timeout=aiohttp.ClientTimeout(total=90)) as resp:
             result = await resp.json(content_type=None)
-            if "choices" not in result:
-                raise ValueError(f"{provider} error: {result.get('error', result)}")
+            if resp.status >= 400 or "choices" not in result:
+                err = result.get("error", result) if isinstance(result, dict) else result
+                raise ValueError(f"{provider} HTTP {resp.status}: {err}")
             return result
 
 
@@ -464,6 +473,14 @@ async def handle_config_post(request: web.Request) -> web.Response:
         if "log_level" not in body:
             _cfg["log_level"] = _default_log_level(val)
         updated["privacy_mode"] = val
+        # Maximum mode: enable scrub + ephemeral unless overridden in same request
+        if val == "maximum":
+            if "privacy_scrub" not in body:
+                _cfg["privacy_scrub"] = True
+                updated["privacy_scrub"] = True
+            if "ephemeral_mode" not in body:
+                _cfg["ephemeral_mode"] = True
+                updated["ephemeral_mode"] = True
 
     if "log_level" in body:
         val = str(body["log_level"]).lower()
@@ -487,11 +504,18 @@ async def handle_config_post(request: web.Request) -> web.Response:
 
 
 async def handle_models(request: web.Request) -> web.Response:
-    models = [
-        {"id": alias, "object": "model", "owned_by": prov}
-        for alias, (prov, _) in _MODEL_ALIASES.items()
-        if _PROVIDER_KEYS.get(prov)
-    ]
+    seen: set[str] = set()
+    models: list[dict[str, str]] = []
+    for alias, (prov, _) in _MODEL_ALIASES.items():
+        if alias in seen or not _PROVIDER_KEYS.get(prov):
+            continue
+        models.append({"id": alias, "object": "model", "owned_by": prov})
+        seen.add(alias)
+    if _PROVIDER_KEYS.get("venice"):
+        for name in sorted(_VENICE_MODELS):
+            if name not in seen:
+                models.append({"id": name, "object": "model", "owned_by": "venice"})
+                seen.add(name)
     return web.json_response({"object": "list", "data": models})
 
 
