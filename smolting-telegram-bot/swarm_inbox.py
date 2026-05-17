@@ -406,6 +406,13 @@ def governance_request(params: dict, from_agent: str = "redactedintern") -> str:
 
 
 def heartbeat(agent: str, metadata: Optional[dict] = None) -> str:
+    r = _get_redis()
+    if r:
+        try:
+            from swarm_heartbeat import write_redis_heartbeat
+            write_redis_heartbeat(r, agent, metadata)
+        except Exception as e:
+            logger.debug("[inbox] heartbeat key write failed: %s", e)
     return write_message(
         agent, "all", "heartbeat",
         {"agent": agent, **(metadata or {})},

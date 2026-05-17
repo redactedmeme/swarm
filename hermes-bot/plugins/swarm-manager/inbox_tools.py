@@ -135,12 +135,18 @@ def _heartbeat(agent: str = "hermes", metadata: dict | None = None) -> str | Non
     r = _get_redis()
     if not r:
         return None
-    data = {
-        "agent": agent,
-        "ts": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
-        **(metadata or {}),
-    }
-    r.set(f"swarm:heartbeat:{agent}", json.dumps(data, ensure_ascii=False), ex=600)
+    try:
+        from swarm_heartbeat import build_heartbeat_payload, heartbeat_redis_key, HEARTBEAT_TTL_SEC
+        data = build_heartbeat_payload(agent, metadata)
+    except ImportError:
+        data = {
+            "agent": agent,
+            "ts": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+            **(metadata or {}),
+        }
+        r.set(f"swarm:heartbeat:{agent}", json.dumps(data, ensure_ascii=False), ex=600)
+        return _write_message(agent, "all", "heartbeat", data)
+    r.set(heartbeat_redis_key(agent), json.dumps(data, ensure_ascii=False), ex=HEARTBEAT_TTL_SEC)
     return _write_message(agent, "all", "heartbeat", data)
 
 
