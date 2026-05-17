@@ -181,9 +181,16 @@ export default function ToolsPage() {
           ) : (
             <div className="space-y-2">
               {hermesPending.items.map((item: SwarmMessage, i: number) => {
-                const content = typeof item.content === 'string'
+                const payload = item.payload as Record<string, unknown> | undefined
+                const content: string = typeof item.content === 'string'
                   ? item.content
-                  : JSON.stringify(item.content ?? item)
+                  : typeof payload?.instruction === 'string'
+                    ? payload.instruction
+                    : typeof payload?.text === 'string'
+                      ? payload.text
+                      : item.type === 'heartbeat'
+                        ? `role=${payload?.role ?? '?'} · mode=${payload?.mode ?? '?'} · tools=${payload?.tools ?? '?'}`
+                        : JSON.stringify(payload ?? {})
                 return (
                   <div key={i} className="bg-secondary/40 border border-border rounded-lg p-3 text-xs">
                     <div className="flex items-center gap-2 mb-1">
