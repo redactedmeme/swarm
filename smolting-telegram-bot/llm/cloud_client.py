@@ -40,7 +40,7 @@ class CloudLLMClient:
         """Get base URL for provider — proxy takes precedence if PROXY_URL is set."""
         proxy = os.getenv("PROXY_URL", "").rstrip("/")
         if proxy:
-            return proxy
+            return f"{proxy}/v1"
         urls = {
             "openai": "https://api.openai.com/v1",
             "anthropic": "https://api.anthropic.com/v1",
