@@ -1082,6 +1082,15 @@ def build_app() -> Application:
     # Free-text chat
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
 
+    # Redis liveness pulse every 3 min — keeps swarm:heartbeat:builder fresh (TTL=10 min)
+    async def _heartbeat_job(ctx) -> None:
+        try:
+            swarm_inbox.heartbeat("redactedbuilder", {"source": "telegram_bot", "status": "online"})
+            swarm_inbox.heartbeat("builder",         {"source": "telegram_bot", "status": "online"})
+        except Exception as e:
+            logger.debug(f"[builder] heartbeat job failed: {e}")
+    app.job_queue.run_repeating(_heartbeat_job, interval=180, first=5)
+
     # Background inbox poll every 60s
     poll_interval = int(os.getenv("POLL_INTERVAL", "60"))
     app.job_queue.run_repeating(_poll_inbox, interval=poll_interval, first=10)
