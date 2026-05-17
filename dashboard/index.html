@@ -526,6 +526,143 @@
         .flywheel-footer-label { font-size: 9px; color: var(--text-muted); }
         .flywheel-footer-value { font-size: 12px; font-weight: 600; margin-top: 2px; }
 
+        /* === PUMP CARD === */
+        .pump-card {
+            background: var(--bg-card);
+            border: 1px solid rgba(6,182,212,0.3);
+            border-radius: 12px;
+            padding: 16px 20px;
+            margin-bottom: 12px;
+            box-shadow: 0 0 20px rgba(6,182,212,0.06);
+        }
+
+        .pump-card-top {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            margin-bottom: 14px;
+        }
+
+        .pump-card-icon {
+            width: 36px;
+            height: 36px;
+            border-radius: 50%;
+            background: rgba(6,182,212,0.15);
+            color: var(--cyan);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 14px;
+            font-weight: 700;
+            flex-shrink: 0;
+        }
+
+        .pump-card-name {
+            font-size: 14px;
+            font-weight: 700;
+            color: var(--cyan);
+            line-height: 1.2;
+        }
+
+        .pump-card-addr {
+            font-size: 9px;
+            color: var(--text-muted);
+            margin-top: 2px;
+        }
+
+        .pump-card-price {
+            margin-left: auto;
+            text-align: right;
+        }
+
+        .pump-card-price-val {
+            font-size: 18px;
+            font-weight: 700;
+            color: var(--cyan);
+        }
+
+        .pump-card-price-chg {
+            font-size: 10px;
+            margin-top: 2px;
+        }
+
+        .pump-card-grid {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 8px;
+        }
+
+        .pump-card-stat {
+            background: rgba(6,182,212,0.04);
+            border: 1px solid rgba(6,182,212,0.1);
+            border-radius: 8px;
+            padding: 8px 10px;
+        }
+
+        .pump-card-stat-label {
+            font-size: 9px;
+            color: var(--text-muted);
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            margin-bottom: 4px;
+        }
+
+        .pump-card-stat-value {
+            font-size: 13px;
+            font-weight: 600;
+            color: var(--text-primary);
+        }
+
+        /* === FLYWHEEL HERO === */
+        .flywheel-hero {
+            border-color: rgba(6,182,212,0.35);
+            background: linear-gradient(135deg, #12121a 60%, rgba(6,182,212,0.05) 100%);
+            box-shadow: 0 0 32px rgba(6,182,212,0.08), 0 0 0 1px rgba(6,182,212,0.12);
+            margin-bottom: 12px;
+        }
+
+        .flywheel-hero::before {
+            background: linear-gradient(135deg, rgba(124,92,252,0.06) 0%, rgba(6,182,212,0.08) 100%);
+        }
+
+        /* pump/fees side gets bigger text */
+        .flywheel-hero .flywheel-token.pump-hero {
+            border-color: rgba(6,182,212,0.3);
+            background: rgba(6,182,212,0.04);
+        }
+
+        .flywheel-hero .flywheel-token.pump-hero .flywheel-token-name {
+            font-size: 13px;
+            color: var(--cyan);
+        }
+
+        .flywheel-hero .flywheel-token.pump-hero .flywheel-stat-value {
+            font-size: 13px;
+            color: var(--cyan);
+        }
+
+        .flywheel-hero .flywheel-token.pump-hero .flywheel-token-icon {
+            width: 36px;
+            height: 36px;
+            font-size: 15px;
+        }
+
+        /* liquidity side slightly dimmer */
+        .flywheel-hero .flywheel-token.liq-side {
+            opacity: 0.8;
+        }
+
+        /* hero-secondary: collapse to compact strip */
+        .hero-secondary {
+            padding: 12px 16px;
+        }
+
+        .hero-secondary .hero-top { margin-bottom: 8px; }
+        .hero-secondary .hero-icon { width: 28px; height: 28px; font-size: 12px; }
+        .hero-secondary .hero-token-name { font-size: 12px; }
+        .hero-secondary .hero-grid { gap: 8px; }
+        .hero-secondary .hero-stat-value { font-size: 16px; }
+
         /* === TOKEN SECURITY === */
         .token-security {
             margin-top: 14px;
@@ -1251,6 +1388,20 @@
         }
 
         @media (max-width: 800px) {
+            .mobile-stats {
+                grid-template-columns: 1fr 1fr;
+                gap: 8px;
+            }
+            .mobile-stats .stat-divider {
+                display: none;
+            }
+            /* Fee APR — last stat card spans full width */
+            .mobile-stats .stat-card:last-child {
+                grid-column: 1 / -1;
+            }
+        }
+
+        @media (max-width: 800px) {
             .layout {
                 grid-template-columns: 1fr;
             }
@@ -1258,10 +1409,36 @@
                 border-left: none;
                 border-top: 1px solid var(--border);
                 max-height: none;
+                order: 3;
             }
+            .col-center { order: 1; }
             .header { padding: 12px 16px; }
             .pools-grid { grid-template-columns: 1fr; }
             .hero-grid { grid-template-columns: 1fr; }
+
+            /* flywheel: stack vertically on mobile, pump on top */
+            .flywheel-body {
+                grid-template-columns: 1fr;
+            }
+            .flywheel-token.pump-hero { order: -1; }
+            .flywheel-flow {
+                flex-direction: row;
+                justify-content: center;
+                order: 0;
+            }
+            .flywheel-arrow { flex-direction: row; align-items: center; gap: 2px; }
+            .flywheel-arrow-line { width: 20px; height: 2px; background: linear-gradient(to right, var(--cyan), var(--accent)); }
+            .flywheel-arrow-head {
+                border-left: 7px solid var(--accent);
+                border-top: 5px solid transparent;
+                border-bottom: 5px solid transparent;
+                border-right: none;
+            }
+            .flywheel-token.liq-side { order: 1; }
+            .flywheel-card { padding: 14px 14px; }
+
+            /* hero secondary: single column on mobile */
+            .hero-secondary .hero-grid { grid-template-columns: 1fr 1fr; }
         }
 
         @media (min-width: 1201px) {
@@ -1294,19 +1471,27 @@
 
     <!-- CENTER COLUMN -->
     <div class="col-center">
-        <!-- Mobile-only stats row (hidden on desktop) -->
-        <div class="mobile-stats" id="mobileStats"></div>
+        <!-- Flywheel Card (hero) -->
+        <div class="flywheel-card flywheel-hero" id="flywheelCard">
+            <div class="loading-state">
+                <div class="spinner"></div>
+                <span>Loading ecosystem data...</span>
+            </div>
+        </div>
 
-        <!-- Hero Card -->
-        <div class="hero-card" id="heroCard">
+        <!-- Pump Token Stats Card -->
+        <div class="pump-card" id="pumpCard"></div>
+
+        <!-- Hero Card (secondary — liquidity token) -->
+        <div class="hero-card hero-secondary" id="heroCard">
             <div class="loading-state">
                 <div class="spinner"></div>
                 <span>Loading token data...</span>
             </div>
         </div>
 
-        <!-- Flywheel Card -->
-        <div class="flywheel-card" id="flywheelCard" style="display:none"></div>
+        <!-- Mobile-only stats row (hidden on desktop) -->
+        <div class="mobile-stats" id="mobileStats"></div>
 
         <!-- Volume Chart -->
         <div class="chart-section">
@@ -1348,19 +1533,6 @@
             </div>
         </div>
 
-        <!-- Activity Feed -->
-        <div class="feed-section">
-            <div class="feed-header">
-                <div class="feed-title">
-                    <div class="feed-live-dot"></div>
-                    ACTIVITY FEED
-                </div>
-                <span class="feed-sub" id="feedSub">waiting for first diff...</span>
-            </div>
-            <div id="activityFeed">
-                <div class="feed-empty">Activity appears here after the second data refresh (30s)</div>
-            </div>
-        </div>
     </div>
 
     <!-- RIGHT COLUMN -->
@@ -1376,6 +1548,7 @@
 
 <script>
 const TOKEN = '9a21gb7fWGm9dD2UFdZAzgFn5K1NwfmYkjyLbpAcKgnM';
+const PUMP_TOKEN = '9mtKd1o8Ht7F1daumKgs5D8EdVyopWBfYQwNmMojpump';
 const API_URL = `https://api.dexscreener.com/latest/dex/tokens/${TOKEN}`;
 
 let poolsData = [];
@@ -1741,11 +1914,34 @@ async function fetchTokenData() {
 }
 
 async function fetchV2Data() {
+    // Try backend cache first; fall back to DexScreener directly
     try {
         const res = await fetch('/api/v2');
+        if (res.ok) {
+            const data = await res.json();
+            if (data && data.price) { v2Data = data; return; }
+        }
+    } catch (_) {}
+    try {
+        const PUMP_URL = `https://api.dexscreener.com/latest/dex/tokens/${PUMP_TOKEN}`;
+        const res = await fetch(PUMP_URL, { headers: { 'User-Agent': 'Mozilla/5.0' } });
         if (!res.ok) return;
-        const data = await res.json();
-        if (data && Object.keys(data).length > 0) v2Data = data;
+        const raw = await res.json();
+        const pairs = (raw.pairs || []).sort((a, b) =>
+            ((b.volume || {}).h24 || 0) - ((a.volume || {}).h24 || 0));
+        if (!pairs.length) return;
+        const p0 = pairs[0];
+        v2Data = {
+            price:  parseFloat(p0.priceUsd || 0),
+            mcap:   parseFloat(p0.marketCap || p0.fdv || 0),
+            vol24h: pairs.reduce((s, p) => s + ((p.volume || {}).h24 || 0), 0),
+            vol6h:  pairs.reduce((s, p) => s + ((p.volume || {}).h6  || 0), 0),
+            vol1h:  pairs.reduce((s, p) => s + ((p.volume || {}).h1  || 0), 0),
+            liq:    pairs.reduce((s, p) => s + ((p.liquidity || {}).usd || 0), 0),
+            pools:  pairs.length,
+            priceChange: p0.priceChange || {},
+            image_url: ((p0.info || {}).imageUrl || ''),
+        };
     } catch (_) {}
 }
 
@@ -1801,6 +1997,7 @@ async function fetchData() {
 function render() {
     renderHero();
     renderFlywheel();
+    renderPumpCard();
     renderStats();
     renderHotPools();
     renderHistoryChart();
@@ -1902,15 +2099,63 @@ function renderHero() {
     `;
 }
 
+function renderPumpCard() {
+    const card = document.getElementById('pumpCard');
+    if (!card) return;
+    if (!v2Data || !v2Data.price) { card.innerHTML = ''; return; }
+
+    const price = v2Data.price;
+    const priceStr = '$' + price.toFixed(price < 0.01 ? 8 : 4);
+    const ch24 = v2Data.priceChange?.h24;
+    const ch1  = v2Data.priceChange?.h1;
+
+    card.innerHTML = `
+        <div class="pump-card-top">
+            <div class="pump-card-icon">${tokenIcon(v2Data.image_url, 'R')}</div>
+            <div>
+                <div class="pump-card-name">REDACTED <span style="font-size:10px;font-weight:400;color:var(--text-muted)">fees token</span></div>
+                <div class="pump-card-addr">9mtKd1o8…pump</div>
+            </div>
+            <div class="pump-card-price">
+                <div class="pump-card-price-val">${priceStr}</div>
+                <div class="pump-card-price-chg ${pctClass(ch24)}">${fmtPct(ch24)} 24h</div>
+            </div>
+        </div>
+        <div class="pump-card-grid">
+            <div class="pump-card-stat">
+                <div class="pump-card-stat-label">Market Cap</div>
+                <div class="pump-card-stat-value">${fmt(v2Data.mcap)}</div>
+            </div>
+            <div class="pump-card-stat">
+                <div class="pump-card-stat-label">24h Volume</div>
+                <div class="pump-card-stat-value">${fmt(v2Data.vol24h)}</div>
+            </div>
+            <div class="pump-card-stat">
+                <div class="pump-card-stat-label">Liquidity</div>
+                <div class="pump-card-stat-value">${fmt(v2Data.liq)}</div>
+            </div>
+            <div class="pump-card-stat">
+                <div class="pump-card-stat-label">1h Change</div>
+                <div class="pump-card-stat-value ${pctClass(ch1)}">${fmtPct(ch1)}</div>
+            </div>
+            <div class="pump-card-stat">
+                <div class="pump-card-stat-label">6h Volume</div>
+                <div class="pump-card-stat-value">${fmt(v2Data.vol6h)}</div>
+            </div>
+            <div class="pump-card-stat">
+                <div class="pump-card-stat-label">Pools</div>
+                <div class="pump-card-stat-value">${v2Data.pools || '--'}</div>
+            </div>
+        </div>
+    `;
+}
+
 function renderFlywheel() {
     const card = document.getElementById('flywheelCard');
     if (!card) return;
 
-    if (!v2Data || !v2Data.price) {
-        card.style.display = 'none';
-        return;
-    }
     card.style.display = 'block';
+    if (!v2Data || !v2Data.price) return;
 
     // v1 stats from poolsData
     const v1Vol24h  = poolsData.reduce((s, p) => s + getVolume(p, 'volume24h'), 0);
@@ -1956,12 +2201,12 @@ function renderFlywheel() {
 
     card.innerHTML = `
         <div class="flywheel-header">
-            <span class="flywheel-title">Flywheel</span>
+            <span class="flywheel-title">REDACTED Ecosystem</span>
             <div class="flywheel-pulse"></div>
         </div>
         <div class="flywheel-body">
             <!-- liquidity token -->
-            <div class="flywheel-token">
+            <div class="flywheel-token liq-side">
                 <div class="flywheel-token-header">
                     <div class="flywheel-token-icon v1">${tokenIcon(serverSnapshots.at(-1)?.image_url || tokenData.image_url, 'R')}</div>
                     <div>
@@ -2001,13 +2246,13 @@ function renderFlywheel() {
                 ${v2BuyPresure ? `<div style="font-size:9px;color:var(--cyan);text-align:center">${fmtNum(v2BuyPresure)}<br>tokens/day</div>` : ''}
             </div>
 
-            <!-- fees token -->
-            <div class="flywheel-token">
+            <!-- fees token (pump — hero) -->
+            <div class="flywheel-token pump-hero">
                 <div class="flywheel-token-header">
                     <div class="flywheel-token-icon v2">${tokenIcon(v2Data.image_url, 'R')}</div>
                     <div>
                         <div class="flywheel-token-name">REDACTED <span class="flywheel-token-tag">fees</span>${volDot(v2Vol24h)}</div>
-                        <div style="font-size:8px;color:var(--text-muted);margin-top:2px">9mtKd1…pump</div>
+                        <div style="font-size:8px;color:var(--text-muted);margin-top:2px">9mtKd1o8…pump</div>
                     </div>
                 </div>
                 <div class="flywheel-stat">
