@@ -128,6 +128,15 @@ def _complete_message(msg_id: str, result: dict | None = None,
     doc["result"] = result
     doc["error"] = error
     r.set(f"swarm:msg:{msg_id}", json.dumps(doc, ensure_ascii=False), ex=_DONE_TTL)
+
+    reply_key = (doc.get("payload") or {}).get("reply_key")
+    if reply_key:
+        if error:
+            r.set(reply_key, json.dumps({"content": error, "error": True}), ex=3600)
+        elif result:
+            text = result.get("summary") or result.get("content") or json.dumps(result)
+            r.set(reply_key, json.dumps({"content": text}), ex=3600)
+
     return True
 
 
@@ -135,12 +144,18 @@ def _heartbeat(agent: str = "hermes", metadata: dict | None = None) -> str | Non
     r = _get_redis()
     if not r:
         return None
-    data = {
-        "agent": agent,
-        "ts": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
-        **(metadata or {}),
-    }
-    r.set(f"swarm:heartbeat:{agent}", json.dumps(data, ensure_ascii=False), ex=600)
+    try:
+        from swarm_heartbeat import build_heartbeat_payload, heartbeat_redis_key, HEARTBEAT_TTL_SEC
+        data = build_heartbeat_payload(agent, metadata)
+    except ImportError:
+        data = {
+            "agent": agent,
+            "ts": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+            **(metadata or {}),
+        }
+        r.set(f"swarm:heartbeat:{agent}", json.dumps(data, ensure_ascii=False), ex=600)
+        return _write_message(agent, "all", "heartbeat", data)
+    r.set(heartbeat_redis_key(agent), json.dumps(data, ensure_ascii=False), ex=HEARTBEAT_TTL_SEC)
     return _write_message(agent, "all", "heartbeat", data)
 
 
