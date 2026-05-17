@@ -28,7 +28,7 @@ def _make_client():
     proxy_url = os.getenv("PROXY_URL", "").rstrip("/")
     if proxy_url:
         from openai import OpenAI
-        return OpenAI(base_url=proxy_url, api_key=os.getenv("PROXY_TOKEN", ""))
+        return OpenAI(base_url=f"{proxy_url}/v1/", api_key=os.getenv("PROXY_TOKEN", ""))
     from groq import Groq
     api_key = os.getenv("GROQ_API_KEY", "").strip()
     if not api_key:
