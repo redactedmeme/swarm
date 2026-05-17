@@ -2,8 +2,6 @@
 
 OpenAI-compatible LLM privacy proxy for the REDACTED swarm. Sits between swarm bots and upstream LLM providers — strips fingerprinting headers, rotates user-agents, and optionally scrubs PII, so bots talk to providers with no identity leakage.
 
-Internal Railway URL: `http://redacted-proxy.railway.internal:7080`
-
 ---
 
 ## Endpoints
@@ -88,7 +86,7 @@ Logs are written to `/data/proxy_log.jsonl` (max 5,000 entries, rotated) and kep
 No redeploy needed — send a `POST /config` with any subset of fields:
 
 ```bash
-curl -X POST http://redacted-proxy.railway.internal:7080/config \
+curl -X POST $PROXY_URL/config \
   -H "Authorization: Bearer $PROXY_TOKEN" \
   -H "Content-Type: application/json" \
   -d '{"privacy_mode": "private", "log_level": "minimal", "privacy_scrub": true}'
@@ -122,7 +120,7 @@ curl -X POST http://redacted-proxy.railway.internal:7080/config \
 Set two env vars on the bot service:
 
 ```bash
-PROXY_URL=http://redacted-proxy.railway.internal:7080
+PROXY_URL=<internal service URL>
 PROXY_TOKEN=<value of redacted-proxy PROXY_TOKEN>
 ```
 
