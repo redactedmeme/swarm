@@ -111,17 +111,36 @@ export async function apiGetSwarmPending(): Promise<{ pending: Record<string, Sw
   return res.json()
 }
 
+function fromProxyConfig(raw: Record<string, unknown>): PrivacyConfig {
+  return {
+    mode: String(raw.privacy_mode ?? raw.mode ?? 'anonymous') as PrivacyConfig['mode'],
+    log_level: String(raw.log_level ?? 'full') as PrivacyConfig['log_level'],
+    pii_scrub: Boolean(raw.privacy_scrub ?? raw.pii_scrub ?? false),
+    ephemeral: Boolean(raw.ephemeral_mode ?? raw.ephemeral ?? false),
+  }
+}
+
+function toProxyConfig(config: Partial<PrivacyConfig>): Record<string, unknown> {
+  const out: Record<string, unknown> = {}
+  if (config.mode !== undefined) out.privacy_mode = config.mode
+  if (config.log_level !== undefined) out.log_level = config.log_level
+  if (config.pii_scrub !== undefined) out.privacy_scrub = config.pii_scrub
+  if (config.ephemeral !== undefined) out.ephemeral_mode = config.ephemeral
+  return out
+}
+
 export async function apiGetPrivacyConfig(): Promise<PrivacyConfig> {
   const res = await fetch(`${BASE}/proxy-config`, { headers: authHeaders() })
   if (!res.ok) throw new Error('Failed to fetch privacy config')
-  return res.json()
+  const raw = await res.json() as Record<string, unknown>
+  return fromProxyConfig(raw)
 }
 
 export async function apiSetPrivacyConfig(config: Partial<PrivacyConfig>): Promise<void> {
   const res = await fetch(`${BASE}/proxy-config`, {
     method: 'POST',
     headers: authHeaders(),
-    body: JSON.stringify(config),
+    body: JSON.stringify(toProxyConfig(config)),
   })
   if (!res.ok) throw new Error('Failed to update privacy config')
 }
