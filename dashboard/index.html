@@ -478,11 +478,42 @@
             gap: 2px;
         }
 
-        .flywheel-arrow-line {
+        .flywheel-arrow {
+            position: relative;
+            width: 28px;
+            height: 44px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            overflow: hidden;
+        }
+
+        .flywheel-arrow-track {
             width: 2px;
-            height: 20px;
-            background: linear-gradient(to bottom, var(--accent), var(--cyan));
+            height: 100%;
+            background: rgba(255,255,255,0.06);
             border-radius: 1px;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .flywheel-arrow-track::after {
+            content: '';
+            position: absolute;
+            top: -50%;
+            left: 0;
+            width: 2px;
+            height: 40%;
+            background: linear-gradient(to bottom, transparent, var(--accent), var(--cyan));
+            border-radius: 1px;
+            animation: flowDown 1.2s linear infinite;
+        }
+
+        @keyframes flowDown {
+            0%   { top: -40%; opacity: 0; }
+            20%  { opacity: 1; }
+            80%  { opacity: 1; }
+            100% { top: 110%; opacity: 0; }
         }
 
         .flywheel-arrow-head {
@@ -491,6 +522,34 @@
             border-left: 5px solid transparent;
             border-right: 5px solid transparent;
             border-top: 7px solid var(--cyan);
+            margin-top: 2px;
+            animation: arrowPulse 1.2s ease-in-out infinite;
+        }
+
+        @keyframes arrowPulse {
+            0%, 100% { opacity: 0.4; transform: translateY(0); }
+            50%       { opacity: 1;   transform: translateY(2px); }
+        }
+
+        .flywheel-vol-badge {
+            background: rgba(255,255,255,0.04);
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            padding: 4px 8px;
+            text-align: center;
+            margin-bottom: 4px;
+        }
+
+        .flywheel-vol-amount {
+            font-size: 12px;
+            font-weight: 700;
+            color: var(--text-primary);
+        }
+
+        .flywheel-vol-sub {
+            font-size: 8px;
+            color: var(--text-muted);
+            margin-top: 1px;
         }
 
         .flywheel-fee-badge {
@@ -2243,12 +2302,16 @@ function renderFlywheel() {
 
             <!-- Flow -->
             <div class="flywheel-flow">
+                <div class="flywheel-vol-badge">
+                    <div class="flywheel-vol-amount">${fmt(v1Vol24h)}</div>
+                    <div class="flywheel-vol-sub">24H Vol</div>
+                </div>
                 <div class="flywheel-fee-badge">
                     <div class="flywheel-fee-amount">${fmt(fees24h)}</div>
                     <div class="flywheel-fee-sub">fees / day</div>
                 </div>
                 <div class="flywheel-arrow">
-                    <div class="flywheel-arrow-line"></div>
+                    <div class="flywheel-arrow-track"></div>
                     <div class="flywheel-arrow-head"></div>
                 </div>
                 <div class="flywheel-flow-label">buys REDACTED</div>
