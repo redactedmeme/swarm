@@ -604,7 +604,12 @@ async def api_agents(request: Request):
         rid = cfg.get("redis_id")
         hb = heartbeat_map.get(rid) if rid else None
         if hb:
-            status = "online" if hb.get("online") else "offline"
+            if hb.get("online"):
+                status = "online"
+            elif not hb.get("present") or hb.get("age_s") is None:
+                status = "unknown"
+            else:
+                status = "offline"
             age_s = hb.get("age_s")
             if age_s is not None:
                 if age_s < 60:

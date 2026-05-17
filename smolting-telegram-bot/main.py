@@ -2657,7 +2657,8 @@ def main():
 
     # ── SwarmInbox polling ────────────────────────────────────────────────────
     # Fire a startup heartbeat so other agents know redactedintern is online
-    swarm_inbox.heartbeat("redactedintern", {"status": "online", "role": "telegram+moltbook"})
+    swarm_inbox.heartbeat("smolting", {"status": "online", "role": "telegram+moltbook"})
+    swarm_inbox.heartbeat("redactedintern", {"status": "online", "role": "telegram+moltbook", "alias": "smolting"})
     logger.info("[swarm_inbox] Heartbeat sent — redactedintern online")
 
     _inbox_admin_chat: list[int] = []   # populated on first admin message
