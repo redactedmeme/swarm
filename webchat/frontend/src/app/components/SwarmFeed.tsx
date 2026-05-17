@@ -40,10 +40,14 @@ function formatTs(ts?: string | number): string {
 }
 
 function msgSummary(msg: SwarmMessage): string {
-  const content = msg.content ?? (msg as Record<string, unknown>).message ?? (msg as Record<string, unknown>).text
+  const m = msg as Record<string, unknown>
+  const payload = m.payload as Record<string, unknown> | undefined
+  const content = msg.content ?? m.message ?? m.text
+    ?? payload?.instruction ?? payload?.content ?? payload?.text
   if (typeof content === 'string') return content.slice(0, 120)
   if (content) return JSON.stringify(content).slice(0, 120)
-  return JSON.stringify(msg).slice(0, 120)
+  // Last resort: show type + from/to
+  return `[${msg.type ?? 'msg'}]`
 }
 
 export default function SwarmFeed({ className }: { className?: string }) {

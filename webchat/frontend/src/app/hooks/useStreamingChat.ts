@@ -1,7 +1,7 @@
 import { useCallback } from 'react'
 import { toast } from 'sonner'
 import { useAuthStore } from '@/app/store/authStore'
-import { useChatStore, buildApiHistory } from '@/app/store/chatStore'
+import { useChatStore, selectMessages, buildApiHistory } from '@/app/store/chatStore'
 import { apiUpload } from '@/app/lib/api'
 import type { Attachment } from '@/app/types'
 import type { ChatAgent } from '@/app/components/Chat/ChanHeader'
@@ -10,19 +10,17 @@ export function useStreamingChat(agent: ChatAgent = 'chan') {
   const sessionId = useAuthStore((s) => s.sessionId)
   const setSessionId = useAuthStore((s) => s.setAuth)
   const token = useAuthStore((s) => s.token)
-  const {
-    messages,
-    pendingAttachments,
-    isWaiting,
-    addUserMessage,
-    startStreamingMessage,
-    appendStreamingChunk,
-    finalizeStreamingMessage,
-    setWaiting,
-    addAttachment,
-    removeAttachment,
-    clearAttachments,
-  } = useChatStore()
+  const messages = useChatStore(selectMessages)
+  const pendingAttachments = useChatStore((s) => s.pendingAttachments)
+  const isWaiting = useChatStore((s) => s.isWaiting)
+  const addUserMessage = useChatStore((s) => s.addUserMessage)
+  const startStreamingMessage = useChatStore((s) => s.startStreamingMessage)
+  const appendStreamingChunk = useChatStore((s) => s.appendStreamingChunk)
+  const finalizeStreamingMessage = useChatStore((s) => s.finalizeStreamingMessage)
+  const setWaiting = useChatStore((s) => s.setWaiting)
+  const addAttachment = useChatStore((s) => s.addAttachment)
+  const removeAttachment = useChatStore((s) => s.removeAttachment)
+  const clearAttachments = useChatStore((s) => s.clearAttachments)
 
   const handleUpload = useCallback(
     async (file: File) => {
