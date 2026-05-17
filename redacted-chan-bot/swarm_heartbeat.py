@@ -23,6 +23,7 @@ HEARTBEAT_LOOKUP_KEYS: dict[str, list[str]] = {
     "hermes": ["hermes"],
     "smolting": ["smolting", "redactedintern"],
     "builder": ["builder", "redactedbuilder"],
+    "redacted-proxy": ["redacted-proxy"],
     "runtime": ["runtime"],
 }
 
