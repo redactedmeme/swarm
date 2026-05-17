@@ -60,6 +60,31 @@ DAILY_LOSS_CAP_SOL = float(os.environ.get('DAILY_LOSS_CAP_SOL', '0.05'))
 # ── Phase control ──────────────────────────────────────────────────────────────
 EXECUTE_TRADES = os.environ.get('EXECUTE_TRADES', 'false').lower() == 'true'
 
+# ── Virtual concentrated liquidity (CLMM/DLMM emulation) ──────────────────────
+# STRATEGY_MODE controls the rebalancing logic:
+#   inventory      — original full-range CPMM behavior (default, fully backward-compat)
+#   virtual_clmm   — emulates Raydium CLMM: rebalance on range exit, tighter quotes inside range
+#   virtual_dlmm   — emulates Meteora DLMM: uses bin-step geometry for range boundaries
+STRATEGY_MODE = os.environ.get('STRATEGY_MODE', 'inventory')
+
+# Total virtual range width in basis points (bps).
+# 2000 bps = ±1% around center price. Narrower → more frequent rebalances + higher edge per trade.
+# Recommended starting point for memecoins: 4000–10000 bps (±2% to ±5%).
+# Keep REBALANCE_TOLERANCE < half the range width (e.g. 0.03 < 0.02 is wrong — use 0.01 for ±2% range).
+VIRTUAL_RANGE_BPS = int(os.environ.get('VIRTUAL_RANGE_BPS', '4000'))
+
+# DLMM bin step in basis points (0.25% = 25 bps is the Meteora default).
+VIRTUAL_BIN_STEP_BPS = int(os.environ.get('VIRTUAL_BIN_STEP_BPS', '25'))
+
+# Liquidity distribution strategy inside the virtual range:
+#   spot    — even distribution (safe default, like Meteora DLMM Spot)
+#   curve   — bell-curve concentration near current price (max efficiency, lower slippage mid-range)
+#   bidask  — more liquidity at range edges (Ping-Pong / volatility capture)
+VIRTUAL_STRATEGY = os.environ.get('VIRTUAL_STRATEGY', 'spot')
+
+# Re-center the virtual position after every rebalance trade.
+REBALANCE_ON_RANGE_EXIT = os.environ.get('REBALANCE_ON_RANGE_EXIT', 'true').lower() == 'true'
+
 # ── Env ────────────────────────────────────────────────────────────────────────
 HELIUS_KEY  = os.environ.get('HELIUS_API_KEY', '')
 REDIS_URL   = os.environ.get('REDIS_URL', 'redis://localhost:6379')

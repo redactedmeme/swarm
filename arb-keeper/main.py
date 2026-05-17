@@ -24,7 +24,7 @@ logging.basicConfig(
 import config
 import logger as swarm_log
 from price_feed import get_price_snapshot
-from detector import find_opportunity
+from detector import find_opportunity, notify_trade_executed
 from circuit_breaker import CircuitBreaker
 
 log = logging.getLogger('arb-keeper')
@@ -71,7 +71,7 @@ async def _get_token_balance(pubkey: str) -> int:
 
 async def run():
     mode = 'EXECUTE' if config.EXECUTE_TRADES else 'DETECT-ONLY'
-    log.info(f'arb-keeper starting — mode: {mode}')
+    log.info(f'arb-keeper starting — mode: {mode}  strategy: {config.STRATEGY_MODE}')
     log.info(
         f'TARGET_RATIO={config.TARGET_RATIO*100:.0f}%  '
         f'TOLERANCE={config.REBALANCE_TOLERANCE*100:.0f}%  '
@@ -79,6 +79,13 @@ async def run():
         f'POLL={config.POLL_INTERVAL}s  '
         f'POOL={config.RAYDIUM_POOL_ID[:16]}...'
     )
+    if config.STRATEGY_MODE in ('virtual_clmm', 'virtual_dlmm'):
+        log.info(
+            f'Virtual position: ±{config.VIRTUAL_RANGE_BPS/2:.0f}bps range  '
+            f'strategy={config.VIRTUAL_STRATEGY}  '
+            f'bin_step={config.VIRTUAL_BIN_STEP_BPS}bps  '
+            f'recenter_on_exit={config.REBALANCE_ON_RANGE_EXIT}'
+        )
 
     keypair, pubkey = _load_wallet()
     cb = CircuitBreaker()
@@ -276,6 +283,9 @@ async def run():
 
                     if result.success:
                         cb.record_success(result.actual_profit_sol or 0.0)
+                        # Re-center virtual position at the post-trade price.
+                        total_sol = sol_balance + (token_balance_raw / 10**config.TOKEN_DECIMALS) * snapshot.mid_price_sol_per_token
+                        notify_trade_executed(snapshot.mid_price_sol_per_token, total_sol)
                     else:
                         # Only count as a loss if the bundle was submitted (not a build failure)
                         loss = 0.0
@@ -285,6 +295,9 @@ async def run():
                         cb.record_failure(loss)
                 else:
                     log.info(f'[DETECT-ONLY] Would execute: {opp.describe()}')
+                    # Re-center virtual position even in dry-run so range tracking stays realistic.
+                    total_sol = sol_balance + (token_balance_raw / 10**config.TOKEN_DECIMALS) * snapshot.mid_price_sol_per_token
+                    notify_trade_executed(snapshot.mid_price_sol_per_token, total_sol)
 
             # ── Periodic heartbeat ───────────────────────────────────────────
             heartbeat += 1
