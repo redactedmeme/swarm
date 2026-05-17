@@ -21,9 +21,15 @@ export default function Sidebar() {
   }
 
   return (
-    <aside className="flex flex-col w-14 shrink-0 border-r border-border bg-card py-3 items-center gap-1">
-      {/* Logo */}
-      <div className="mb-3 flex items-center justify-center w-9 h-9">
+    <aside className={cn(
+      'shrink-0 border-border bg-card',
+      // Mobile: horizontal bottom bar
+      'flex flex-row w-full h-14 border-t items-center justify-around px-2',
+      // Desktop: vertical left sidebar
+      'md:flex-col md:w-14 md:h-full md:border-t-0 md:border-r md:py-3 md:px-0 md:items-center md:justify-start md:gap-1',
+    )}>
+      {/* Logo — desktop only */}
+      <div className="hidden md:flex mb-3 items-center justify-center w-9 h-9">
         <motion.div
           animate={{ rotate: [0, 360] }}
           transition={{ duration: 20, repeat: Infinity, ease: 'linear' }}
@@ -33,16 +39,16 @@ export default function Sidebar() {
         </motion.div>
       </div>
 
-      <div className="w-7 h-px bg-border mb-2" />
+      <div className="hidden md:block w-7 h-px bg-border mb-2" />
 
       {/* Nav */}
-      <nav className="flex flex-col gap-1 flex-1">
+      <nav className="flex flex-row md:flex-col gap-1 md:flex-1 items-center">
         {NAV.map(({ path, icon: Icon, label }) => (
           <NavLink key={path} to={path} title={label}>
             {({ isActive }) => (
               <span
                 className={cn(
-                  'flex items-center justify-center w-9 h-9 rounded-lg transition-all duration-150',
+                  'flex items-center justify-center w-10 h-10 md:w-9 md:h-9 rounded-lg transition-all duration-150',
                   isActive
                     ? 'bg-primary/15 text-primary glow-sm'
                     : 'text-muted-foreground hover:text-foreground hover:bg-secondary',
@@ -55,13 +61,13 @@ export default function Sidebar() {
         ))}
       </nav>
 
-      {/* Bottom */}
-      <div className="flex flex-col gap-1 items-center">
+      {/* Settings + Logout */}
+      <div className="flex flex-row md:flex-col gap-1 items-center">
         <NavLink to="/settings" title="Settings">
           {({ isActive }) => (
             <span
               className={cn(
-                'flex items-center justify-center w-9 h-9 rounded-lg transition-all duration-150',
+                'flex items-center justify-center w-10 h-10 md:w-9 md:h-9 rounded-lg transition-all duration-150',
                 isActive
                   ? 'bg-primary/15 text-primary'
                   : 'text-muted-foreground hover:text-foreground hover:bg-secondary',
@@ -74,7 +80,7 @@ export default function Sidebar() {
         <button
           onClick={handleLogout}
           title="Logout"
-          className="flex items-center justify-center w-9 h-9 rounded-lg text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-all duration-150"
+          className="flex items-center justify-center w-10 h-10 md:w-9 md:h-9 rounded-lg text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-all duration-150"
         >
           <LogOut size={18} strokeWidth={1.75} />
         </button>
