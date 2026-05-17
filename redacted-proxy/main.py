@@ -655,8 +655,9 @@ async def _redis_write_hb() -> None:
         })
         await r.set(f"{HEARTBEAT_PREFIX}redacted-proxy", payload, ex=HEARTBEAT_TTL)
         await r.aclose()
+        logger.debug(f"[heartbeat] wrote proxy liveness to redis")
     except Exception as e:
-        logger.debug(f"[hb] redis write failed: {e}")
+        logger.warning(f"[heartbeat] redis write failed: {e}")
 
 
 async def _heartbeat_loop() -> None:
