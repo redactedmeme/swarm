@@ -1,1 +1,2 @@
 aiohttp>=3.9.0
+redis[asyncio]>=5.0

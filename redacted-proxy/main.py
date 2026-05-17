@@ -60,6 +60,7 @@ Environment variables:
 
 from __future__ import annotations
 
+import asyncio
 import collections
 import json
 import logging
@@ -86,6 +87,9 @@ DEFAULT_TEMPERATURE = os.getenv("DEFAULT_TEMPERATURE", "")
 DEFAULT_TOP_P       = os.getenv("DEFAULT_TOP_P", "")
 RATE_LIMIT_RPM      = int(os.getenv("RATE_LIMIT_RPM", "60"))
 PORT                = int(os.getenv("PORT", "7080"))
+REDIS_URL           = os.getenv("REDIS_URL", "redis://localhost:6379")
+HEARTBEAT_PREFIX    = "swarm:heartbeat:"
+HEARTBEAT_TTL       = 600   # 10 min — proxy announces every 3 min so key stays fresh
 
 # Runtime-mutable config — all values here can be changed via POST /config
 # without a redeploy. Seeded from env vars at startup.
@@ -570,6 +574,33 @@ async def handle_logs(request: web.Request) -> web.Response:
     return web.json_response({"entries": entries, "total_stored": len(_log_ring)})
 
 
+# ── Redis heartbeat (agent liveness for webchat /agents endpoint) ──────────────
+
+async def _redis_write_hb() -> None:
+    """Write proxy heartbeat to Redis every 3 min so webchat shows it online."""
+    try:
+        import redis.asyncio as aioredis
+        r = aioredis.from_url(REDIS_URL, decode_responses=True)
+        payload = json.dumps({
+            "agent": "redacted-proxy",
+            "ts": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+            "unix": time.time(),
+            "service": "redacted-proxy",
+            "role": "infra",
+        })
+        await r.set(f"{HEARTBEAT_PREFIX}redacted-proxy", payload, ex=HEARTBEAT_TTL)
+        await r.aclose()
+    except Exception as e:
+        logger.debug(f"[hb] redis write failed: {e}")
+
+
+async def _heartbeat_loop() -> None:
+    """Periodically write heartbeat to Redis."""
+    while True:
+        await _redis_write_hb()
+        await asyncio.sleep(180)   # 3 min
+
+
 # ── Server ────────────────────────────────────────────────────────────────────
 
 async def make_app() -> web.Application:
@@ -580,6 +611,12 @@ async def make_app() -> web.Application:
     app.router.add_get("/logs",                  handle_logs)
     app.router.add_get("/config",                handle_config_get)
     app.router.add_post("/config",               handle_config_post)
+
+    async def _start_heartbeat(app):
+        asyncio.create_task(_heartbeat_loop())
+        logger.info("[heartbeat] started redis liveness pulse")
+
+    app.on_startup.append(_start_heartbeat)
     return app
 
 
