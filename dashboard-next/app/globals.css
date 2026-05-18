@@ -1,0 +1,41 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Wallet adapter modal override — noir theme */
+.wallet-adapter-modal-wrapper {
+  background: #0f0f0f !important;
+  border: 1px solid #1c1c1c !important;
+}
+.wallet-adapter-button {
+  background: transparent !important;
+  border: 1px solid #1c1c1c !important;
+  color: #ececec !important;
+  font-family: 'SF Mono', 'Fira Code', monospace !important;
+  font-size: 11px !important;
+}
+.wallet-adapter-button:hover {
+  border-color: #b8934a !important;
+}
+.wallet-adapter-modal-title {
+  color: #ececec !important;
+}
+.wallet-adapter-modal-list li {
+  background: #0f0f0f !important;
+}
+
+/* Scrollbar */
+::-webkit-scrollbar { width: 4px; height: 4px; }
+::-webkit-scrollbar-track { background: #080808; }
+::-webkit-scrollbar-thumb { background: #1c1c1c; border-radius: 2px; }
+::-webkit-scrollbar-thumb:hover { background: #b8934a; }
+
+/* Film grain texture */
+body::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 9999;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='200' height='200'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='4' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='200' height='200' filter='url(%23noise)' opacity='0.025'/%3E%3C/svg%3E");
+}
