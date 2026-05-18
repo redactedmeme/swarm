@@ -8,23 +8,23 @@
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
     <style>
         :root {
-            --bg-primary: #0a0a0f;
-            --bg-card: #12121a;
-            --bg-card-hover: #1a1a26;
-            --border: #1e1e2e;
-            --border-glow: rgba(124, 92, 252, 0.3);
-            --text-primary: #e0e0e8;
-            --text-secondary: #8888a0;
-            --text-muted: #55556a;
-            --accent: #7c5cfc;
-            --accent-glow: rgba(124, 92, 252, 0.15);
-            --accent-bright: #9d84fd;
-            --green: #22c55e;
-            --red: #ef4444;
-            --cyan: #06b6d4;
-            --amber: #f59e0b;
-            --green-dim: rgba(34, 197, 94, 0.12);
-            --red-dim: rgba(239, 68, 68, 0.12);
+            --bg-primary: #080808;
+            --bg-card: #0f0f0f;
+            --bg-card-hover: #161616;
+            --border: #1c1c1c;
+            --border-glow: rgba(184, 147, 74, 0.25);
+            --text-primary: #ececec;
+            --text-secondary: #888888;
+            --text-muted: #444444;
+            --accent: #b8934a;
+            --accent-glow: rgba(184, 147, 74, 0.12);
+            --accent-bright: #d4aa62;
+            --green: #4a9e6b;
+            --red: #a85050;
+            --cyan: #b8934a;
+            --amber: #b8934a;
+            --green-dim: rgba(74, 158, 107, 0.1);
+            --red-dim: rgba(168, 80, 80, 0.1);
         }
 
         * { margin: 0; padding: 0; box-sizing: border-box; }
@@ -35,6 +35,7 @@
             color: var(--text-primary);
             min-height: 100vh;
             overflow-x: hidden;
+            background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='200' height='200'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='4' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='200' height='200' filter='url(%23noise)' opacity='0.025'/%3E%3C/svg%3E");
         }
 
         .header {
@@ -169,8 +170,8 @@
         .stat-value.accent { color: var(--accent); }
 
         .fees-summary {
-            background: linear-gradient(135deg, rgba(124,92,252,0.08), rgba(124,92,252,0.02));
-            border-color: rgba(124,92,252,0.25);
+            background: linear-gradient(135deg, rgba(184,147,74,0.06), rgba(184,147,74,0.02));
+            border-color: rgba(184,147,74,0.2);
         }
 
         .stat-divider {
@@ -360,7 +361,7 @@
             content: '';
             position: absolute;
             inset: 0;
-            background: linear-gradient(135deg, rgba(124,92,252,0.04) 0%, rgba(6,182,212,0.04) 100%);
+            background: linear-gradient(135deg, rgba(184,147,74,0.03) 0%, rgba(184,147,74,0.01) 100%);
             pointer-events: none;
         }
 
@@ -427,8 +428,8 @@
             font-weight: 700;
         }
 
-        .flywheel-token-icon.v1 { background: rgba(124,92,252,0.2); color: var(--accent); }
-        .flywheel-token-icon.v2 { background: rgba(6,182,212,0.2);  color: var(--cyan); }
+        .flywheel-token-icon.v1 { background: rgba(184,147,74,0.15); color: var(--accent); }
+        .flywheel-token-icon.v2 { background: rgba(184,147,74,0.1);  color: var(--accent-bright); }
         .flywheel-token-icon img, .hero-icon img {
             width: 100%; height: 100%; border-radius: 50%; object-fit: cover; display: block;
         }
@@ -553,8 +554,8 @@
         }
 
         .flywheel-fee-badge {
-            background: rgba(124,92,252,0.12);
-            border: 1px solid rgba(124,92,252,0.25);
+            background: rgba(184,147,74,0.1);
+            border: 1px solid rgba(184,147,74,0.2);
             border-radius: 6px;
             padding: 5px 8px;
             text-align: center;
@@ -588,11 +589,11 @@
         /* === PUMP CARD === */
         .pump-card {
             background: var(--bg-card);
-            border: 1px solid rgba(6,182,212,0.3);
+            border: 1px solid rgba(184,147,74,0.2);
             border-radius: 12px;
             padding: 16px 20px;
             margin-bottom: 12px;
-            box-shadow: 0 0 20px rgba(6,182,212,0.06);
+            box-shadow: 0 0 20px rgba(184,147,74,0.06);
         }
 
         .pump-card-top {
@@ -606,7 +607,7 @@
             width: 36px;
             height: 36px;
             border-radius: 50%;
-            background: rgba(6,182,212,0.15);
+            background: rgba(184,147,74,0.12);
             color: var(--cyan);
             display: flex;
             align-items: center;
@@ -661,8 +662,8 @@
         }
 
         .pump-card-stat {
-            background: rgba(6,182,212,0.04);
-            border: 1px solid rgba(6,182,212,0.1);
+            background: rgba(184,147,74,0.03);
+            border: 1px solid rgba(184,147,74,0.08);
             border-radius: 8px;
             padding: 8px 10px;
         }
@@ -683,20 +684,20 @@
 
         /* === FLYWHEEL HERO === */
         .flywheel-hero {
-            border-color: rgba(6,182,212,0.35);
-            background: linear-gradient(135deg, #12121a 60%, rgba(6,182,212,0.05) 100%);
-            box-shadow: 0 0 32px rgba(6,182,212,0.08), 0 0 0 1px rgba(6,182,212,0.12);
+            border-color: rgba(184,147,74,0.25);
+            background: linear-gradient(135deg, #0f0f0f 60%, rgba(184,147,74,0.04) 100%);
+            box-shadow: 0 0 32px rgba(184,147,74,0.07), 0 0 0 1px rgba(184,147,74,0.12);
             margin-bottom: 12px;
         }
 
         .flywheel-hero::before {
-            background: linear-gradient(135deg, rgba(124,92,252,0.06) 0%, rgba(6,182,212,0.08) 100%);
+            background: linear-gradient(135deg, rgba(184,147,74,0.05) 0%, rgba(184,147,74,0.03) 100%);
         }
 
         /* pump/fees side gets bigger text */
         .flywheel-hero .flywheel-token.pump-hero {
-            border-color: rgba(6,182,212,0.3);
-            background: rgba(6,182,212,0.04);
+            border-color: rgba(184,147,74,0.2);
+            background: rgba(184,147,74,0.03);
         }
 
         .flywheel-hero .flywheel-token.pump-hero .flywheel-token-name {
@@ -1046,7 +1047,7 @@
         .fee-badge.low { background: rgba(34,197,94,0.15); color: var(--green); }
         .fee-badge.mid { background: rgba(245,158,11,0.15); color: #f59e0b; }
         .fee-badge.high { background: rgba(239,68,68,0.15); color: var(--red); }
-        .fee-badge.dynamic { background: rgba(124,92,252,0.15); color: var(--accent); }
+        .fee-badge.dynamic { background: rgba(184,147,74,0.1); color: var(--accent); }
 
         /* DEX color dots */
         .dex-dot {
@@ -1089,8 +1090,8 @@
 
         /* Weekly fees highlight */
         .weekly-fees-card {
-            background: linear-gradient(135deg, rgba(6,182,212,0.08), rgba(6,182,212,0.02));
-            border-color: rgba(6,182,212,0.25);
+            background: linear-gradient(135deg, rgba(184,147,74,0.06), rgba(184,147,74,0.02));
+            border-color: rgba(184,147,74,0.2);
         }
         .stat-value.cyan { color: var(--cyan); }
 
@@ -1192,7 +1193,7 @@
             transition: border-color 0.2s;
         }
 
-        .podium-item:hover { border-color: rgba(124,92,252,0.3); }
+        .podium-item:hover { border-color: rgba(184,147,74,0.25); }
 
         .podium-medal {
             font-size: 20px;
@@ -1898,8 +1899,8 @@ function renderHistoryChart() {
                 {
                     label: '24h Volume',
                     data: volData,
-                    borderColor: '#7c5cfc',
-                    backgroundColor: 'rgba(124,92,252,0.08)',
+                    borderColor: '#b8934a',
+                    backgroundColor: 'rgba(184,147,74,0.08)',
                     borderWidth: 2,
                     pointRadius: pts.length > 50 ? 0 : 3,
                     fill: true,
@@ -1918,8 +1919,8 @@ function renderHistoryChart() {
                 {
                     label: 'Est. Fees ×10',
                     data: feesData,
-                    borderColor: '#06b6d4',
-                    backgroundColor: 'rgba(6,182,212,0.05)',
+                    borderColor: '#6b6b6b',
+                    backgroundColor: 'rgba(107,107,107,0.05)',
                     borderWidth: 1.5,
                     borderDash: [4, 3],
                     pointRadius: 0,
@@ -2261,7 +2262,7 @@ function renderFlywheel() {
     function volDot(vol) {
         let color, speed, title;
         if (vol >= 100000)      { color = '#22c55e'; speed = '0.7s'; title = 'High volume'; }
-        else if (vol >= 10000)  { color = '#06b6d4'; speed = '1.2s'; title = 'Active'; }
+        else if (vol >= 10000)  { color = '#b8934a'; speed = '1.2s'; title = 'Active'; }
         else if (vol >= 1000)   { color = '#f59e0b'; speed = '2s';   title = 'Low volume'; }
         else                    { color = '#6b7280'; speed = '4s';   title = 'Inactive'; }
         return `<span title="${title}" style="display:inline-block;width:7px;height:7px;border-radius:50%;background:${color};margin-left:5px;animation:volPulse ${speed} ease-in-out infinite;vertical-align:middle"></span>`;
@@ -2602,8 +2603,8 @@ function renderHotPools() {
 }
 
 const CHART_COLORS = [
-    '#7c5cfc', '#22c55e', '#f59e0b', '#ef4444', '#3b82f6',
-    '#ec4899', '#14b8a6', '#f97316', '#8b5cf6', '#06b6d4',
+    '#b8934a', '#4a9e6b', '#c8c8c8', '#a85050', '#7a7a7a',
+    '#8a7a5a', '#6a8a6a', '#9a8060', '#5a5a5a', '#d4aa62',
     '#e879f9', '#84cc16', '#fb923c', '#a78bfa', '#2dd4bf'
 ];
 
@@ -2739,7 +2740,7 @@ function renderPools() {
         const pairUrl = `https://dexscreener.com/solana/8Jd4KxLXhSqJx3wx7WRujfLZ7hmddVQkoM4qJqg4cPHo`;
         const feePct = (feeRate * 100).toFixed(0) + '%';
         v1v2Card = `
-        <div class="pool-card" style="border-color:rgba(124,92,252,0.35);background:rgba(124,92,252,0.05)">
+        <div class="pool-card" style="border-color:rgba(184,147,74,0.25);background:rgba(184,147,74,0.04)">
             <div class="pool-top">
                 <span class="pool-pair">REDACTED/REDACTED <span style="font-size:9px;color:var(--text-muted)">(liq/fees)</span></span>
                 <span class="pool-dex"><span class="dex-dot orca"></span>orca <span class="fee-badge dynamic">${feePct}</span></span>
@@ -2802,7 +2803,7 @@ function renderPools() {
         const pairUrl = `https://app.meteora.ag/dlmm/7YhtV5K7Cg1GTz2GAfzrwBpgX6haY6sHodsFrSpif1eh`;
         const feePct = (feeRate * 100).toFixed(2) + '%';
         meteoraCard = `
-        <div class="pool-card" style="border-color:rgba(6,182,212,0.35);background:rgba(6,182,212,0.05)">
+        <div class="pool-card" style="border-color:rgba(184,147,74,0.25);background:rgba(184,147,74,0.04)">
             <div class="pool-top">
                 <span class="pool-pair">REDACTED/REDACTED <span style="font-size:9px;color:var(--text-muted)">(fees/liq)</span></span>
                 <span class="pool-dex"><span class="dex-dot meteora"></span>meteora DLMM <span class="fee-badge dynamic">${feePct}</span></span>
