@@ -43,12 +43,15 @@ JITO_TIP_LAMPORTS = int(os.environ.get('JITO_TIP_LAMPORTS', '50000')) # higher t
 # Target fraction of total portfolio value to hold in TOKEN (0.5 = 50/50).
 TARGET_RATIO = float(os.environ.get('TARGET_RATIO', '0.50'))
 # Only rebalance when the actual ratio deviates by more than this fraction.
-# e.g. 0.03 means rebalance if token share drifts outside [47%, 53%].
-REBALANCE_TOLERANCE = float(os.environ.get('REBALANCE_TOLERANCE', '0.03'))
+# REDUCED from 0.03 (3%) to 0.015 (1.5%) for more frequent rebalancing.
+# With SOL volatility, this still filters out noise but catches real imbalance.
+# NOTE: Better to switch to USDC pair to avoid volatile baseline.
+REBALANCE_TOLERANCE = float(os.environ.get('REBALANCE_TOLERANCE', '0.015'))
 # Minimum SOL value of a rebalance trade (avoid dust trades).
 MIN_TRADE_SOL    = float(os.environ.get('MIN_TRADE_SOL',    '0.0005'))
 # Seconds to wait after a trade before checking balance again (tx confirmation time).
-TRADE_COOLDOWN   = int(os.environ.get('TRADE_COOLDOWN',   '120'))
+# REDUCED from 120 to 25s to allow ~2-3 trades per hour vs ~1 per hour.
+TRADE_COOLDOWN   = int(os.environ.get('TRADE_COOLDOWN',   '25'))
 # Token decimals — confirmed on-chain via getTokenAccountsByOwner (decimals=9).
 TOKEN_DECIMALS = int(os.environ.get('TOKEN_DECIMALS', '9'))
 
@@ -69,8 +72,8 @@ VOLUME_THRESHOLD_USD = float(os.environ.get('VOLUME_THRESHOLD_USD', '5000.0'))
 VOLUME_UPDATE_INTERVAL = int(os.environ.get('VOLUME_UPDATE_INTERVAL', '30'))
 
 # Trade cooldown after a volume-capture trade (seconds).
-# Usually slightly shorter than TRADE_COOLDOWN for more aggressive captures.
-VOLUME_TRADE_COOLDOWN = int(os.environ.get('VOLUME_TRADE_COOLDOWN', '18'))
+# REDUCED from 18 to 12 to allow more frequent volume-capture trades.
+VOLUME_TRADE_COOLDOWN = int(os.environ.get('VOLUME_TRADE_COOLDOWN', '12'))
 
 # ── Phase control ──────────────────────────────────────────────────────────────
 EXECUTE_TRADES = os.environ.get('EXECUTE_TRADES', 'false').lower() == 'true'
@@ -84,9 +87,9 @@ STRATEGY_MODE = os.environ.get('STRATEGY_MODE', 'inventory')
 
 # Total virtual range width in basis points (bps).
 # 2000 bps = ±1% around center price. Narrower → more frequent rebalances + higher edge per trade.
-# Recommended starting point for memecoins: 4000–10000 bps (±2% to ±5%).
-# Keep REBALANCE_TOLERANCE < half the range width (e.g. 0.03 < 0.02 is wrong — use 0.01 for ±2% range).
-VIRTUAL_RANGE_BPS = int(os.environ.get('VIRTUAL_RANGE_BPS', '4000'))
+# REDUCED from 4000 (±2%) to 2500 (±1.25%) for SOL pair (volatile baseline).
+# This is still wide but tighter than before — reduces false exits from pure price noise.
+VIRTUAL_RANGE_BPS = int(os.environ.get('VIRTUAL_RANGE_BPS', '2500'))
 
 # DLMM bin step in basis points (0.25% = 25 bps is the Meteora default).
 VIRTUAL_BIN_STEP_BPS = int(os.environ.get('VIRTUAL_BIN_STEP_BPS', '25'))
