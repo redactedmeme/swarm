@@ -37,7 +37,9 @@ POLL_INTERVAL     = int(os.environ.get('POLL_INTERVAL',     '6'))    # faster po
 PROBE_SOL         = float(os.environ.get('PROBE_SOL',       '0.03'))
 MAX_TRADE_SOL     = float(os.environ.get('MAX_TRADE_SOL',   '2.5'))  # much larger trades
 SLIPPAGE_BPS      = int(os.environ.get('SLIPPAGE_BPS',      '250'))  # allow more slippage for HF trading
-JITO_TIP_LAMPORTS = int(os.environ.get('JITO_TIP_LAMPORTS', '50000')) # higher tip for priority
+JITO_TIP_LAMPORTS        = int(os.environ.get('JITO_TIP_LAMPORTS',        '50000'))
+COMPUTE_UNIT_LIMIT       = int(os.environ.get('COMPUTE_UNIT_LIMIT',       '120000'))
+COMPUTE_UNIT_PRICE_MICRO = int(os.environ.get('COMPUTE_UNIT_PRICE_MICRO', '50000'))  # micro-lamports per CU
 
 # ── AMM / inventory rebalancing ───────────────────────────────────────────────
 # Target fraction of total portfolio value to hold in TOKEN (0.5 = 50/50).
