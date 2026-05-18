@@ -1,10 +1,11 @@
 #!/bin/sh
 set -e
 
-# serve.py is one level up (repo root layout on Railway)
-python3 ../serve.py &
+# serve.py reads PORT env; force it to 3001 so Next.js owns the Railway PORT
+PORT=3001 python3 ../serve.py &
 SERVE_PID=$!
 
+# Next.js standalone reads PORT from env (set by Railway)
 node server.js &
 NEXT_PID=$!
 
