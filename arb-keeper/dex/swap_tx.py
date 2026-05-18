@@ -141,8 +141,10 @@ async def build_sol_to_token_tx(
     expected_out, _ = quote_swap_base_input(pool, sol_mint, sol_lamports_in)
     min_out = expected_out * (10_000 - slippage_bps) // 10_000
 
+    import config
     ixs = [
-        ix_compute_unit_limit(300_000),
+        ix_compute_unit_limit(config.COMPUTE_UNIT_LIMIT),
+        ix_compute_unit_price(config.COMPUTE_UNIT_PRICE_MICRO),
         ix_create_idempotent_ata(pubkey, pubkey, sol_mint),
         ix_transfer_sol(pubkey, wsol_ata, sol_lamports_in),
         ix_sync_native(wsol_ata),
@@ -187,8 +189,10 @@ async def build_token_to_sol_tx(
     expected_out, _ = quote_swap_base_input(pool, token_mint, token_amount_in)
     min_out = expected_out * (10_000 - slippage_bps) // 10_000
 
+    import config
     ixs = [
-        ix_compute_unit_limit(300_000),
+        ix_compute_unit_limit(config.COMPUTE_UNIT_LIMIT),
+        ix_compute_unit_price(config.COMPUTE_UNIT_PRICE_MICRO),
         ix_create_idempotent_ata(pubkey, pubkey, sol_mint),
         build_swap_ix(pool, pubkey, token_ata, wsol_ata, token_mint, token_amount_in, min_out),
         ix_close_account(wsol_ata, pubkey, pubkey),
