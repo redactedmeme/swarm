@@ -1,8 +1,10 @@
 'use client'
 import { useState } from 'react'
+import dynamic from 'next/dynamic'
 import { useDashboard } from '@/context/DashboardContext'
-import { WalletButton } from '@/components/wallet/WalletButton'
 import { TOKEN } from '@/lib/calculations'
+
+const WalletButton = dynamic(() => import('@/components/wallet/WalletButton').then(m => m.WalletButton), { ssr: false })
 
 export function Header() {
   const { loading, lastUpdated, refresh } = useDashboard()
