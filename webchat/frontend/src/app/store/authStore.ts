@@ -1,6 +1,16 @@
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
 
+function isTokenExpired(token: string | null): boolean {
+  if (!token) return true
+  try {
+    const payload = JSON.parse(atob(token.split('.')[1]))
+    return Date.now() / 1000 > (payload.exp ?? 0)
+  } catch {
+    return true
+  }
+}
+
 interface AuthState {
   token: string | null
   sessionId: string | null
@@ -24,6 +34,17 @@ export const useAuthStore = create<AuthState>()(
         set({ token: null, sessionId: null })
       },
     }),
-    { name: 'rc-auth', partialize: (s) => ({ token: s.token, sessionId: s.sessionId }) },
+    {
+      name: 'rc-auth',
+      partialize: (s) => ({ token: s.token, sessionId: s.sessionId }),
+      onRehydrateStorage: () => (state) => {
+        if (state && isTokenExpired(state.token)) {
+          state.token = null
+          state.sessionId = null
+          localStorage.removeItem('rc_token')
+          localStorage.removeItem('rc_session')
+        }
+      },
+    },
   ),
 )

@@ -222,6 +222,7 @@ export default function TerminalPage() {
 }
 
 function TerminalLine({ line }: { line: string }) {
+  if (line == null) return <p className="leading-5 min-h-[20px]">&nbsp;</p>
   // Color prompt lines
   if (line.startsWith('swarm@[REDACTED]')) {
     return <p className="text-[#00ff9f] leading-5 min-h-[20px]">{line}</p>
