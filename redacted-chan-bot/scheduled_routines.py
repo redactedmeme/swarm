@@ -1110,6 +1110,77 @@ async def run_proactive_check() -> None:
         logger.debug("[routines] proactive check failed: %s", e)
 
 
+async def skill_curation() -> None:
+    """
+    Routine #23 — Skill curation (every 6h).
+    Summarize recently created skills, surface top ones to soul reflection,
+    and trigger improvement for heavily-used skills.
+    """
+    try:
+        import skills_manager as sm
+        entries = sm.list_skills(limit=5)
+        if not entries:
+            return
+        lines = [f"Skills I've built: {len(sm.list_skills(limit=100))} total"]
+        for e in entries[:3]:
+            lines.append(f"  • {e['name']} (used {e['use_count']}x) — {e['description'][:60]}")
+        _write_routine_log("skill_curation.txt", "\n".join(lines))
+        logger.info("[routines] skill curation: %d skills indexed", len(entries))
+    except Exception as e:
+        logger.warning("[routines] skill_curation failed: %s", e)
+
+
+async def swarm_health_report() -> None:
+    """
+    Routine #24 — Swarm health report (every 4h).
+    Log swarm agent liveness. If agents are down and _send_fn is registered,
+    send an alert.
+    """
+    try:
+        import swarm_orchestrator as orch
+        report = await orch._health_check()
+        agents = report.get("agents", {})
+        dead = [a for a, s in agents.items() if not s.get("alive")]
+        status_line = f"Swarm health: {len(agents) - len(dead)}/{len(agents)} agents alive"
+        if dead:
+            status_line += f" | offline: {', '.join(dead)}"
+        _write_routine_log("swarm_health.txt", status_line)
+        logger.info("[routines] %s", status_line)
+        if dead and _send_fn:
+            await _send_fn(f"⚠️ {status_line}")
+    except Exception as e:
+        logger.warning("[routines] swarm_health_report failed: %s", e)
+
+
+async def learning_nudge() -> None:
+    """
+    Routine #25 — Learning nudge (every 12h).
+    Load recent learning insights and surface a reflection to the soul layer.
+    """
+    try:
+        import learning_loop as ll
+        insights = ll.load_recent_insights(n=3)
+        if not insights:
+            return
+        lines = ["Recent learning insights:"]
+        for ins in insights:
+            lines.append(f"  • {ins.get('insight', '')[:120]}")
+        content = "\n".join(lines)
+        _write_routine_log("learning_nudge.txt", content)
+        # Optionally feed into soul_manager as a nudge candidate
+        try:
+            from pathlib import Path as _Path
+            _data = _Path("/data") if _Path("/data").exists() else _Path(__file__).parent / "fs"
+            nudge_path = _data / "soul_nudge_candidates.jsonl"
+            import json, time
+            with open(nudge_path, "a", encoding="utf-8") as f:
+                f.write(json.dumps({"nudge": lines[1] if len(lines) > 1 else "", "ts": time.time(), "source": "learning_nudge"}) + "\n")
+        except Exception:
+            pass
+    except Exception as e:
+        logger.warning("[routines] learning_nudge failed: %s", e)
+
+
 async def start_all() -> None:
     """
     Launch all autonomous routines as asyncio background tasks.
@@ -1145,6 +1216,9 @@ async def start_all() -> None:
     asyncio.create_task(_run_loop(lambda: __import__('relationship_arc').distill_pinned_moments(), interval_h=168, name="pinned_moments"))
     asyncio.create_task(_run_loop(_save_momentum,             interval_h=1/6,  name="momentum_save"))  # every 10min
     asyncio.create_task(_run_loop(run_proactive_check,        interval_h=0.5,  name="proactive_msg"))   # every 30min
+    asyncio.create_task(_run_loop(skill_curation,            interval_h=6,    name="skill_curation"))
+    asyncio.create_task(_run_loop(swarm_health_report,       interval_h=4,    name="swarm_health"))
+    asyncio.create_task(_run_loop(learning_nudge,            interval_h=12,   name="learning_nudge"))
     # Register LLM fns for aliveness modules (they're invoked from echo handler, not as routines)
     asyncio.create_task(_register_aliveness_modules())
     logger.info("[routines] autonomous routines started")

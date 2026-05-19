@@ -12,10 +12,10 @@ logger = logging.getLogger("swarm-manager.health")
 STALE_THRESHOLD_SECONDS = 300  # 5 minutes
 
 AGENT_SERVICE_MAP = {
-    "redactedintern": "smolting-telegram-bot",
-    "hermes": "hermes-bot",
-    "redacted-chan": "redacted-chan-bot",
-    "redactedbuilder": "redactedbuilder-bot",
+    "smolting":       "smolting-telegram-bot",
+    "hermes":         "hermes-bot",
+    "redacted-chan":  "redacted-chan-bot",
+    "builder":        "redactedbuilder-telegram-bot",
 }
 
 
