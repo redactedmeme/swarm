@@ -24,6 +24,15 @@
       "runtimeExecutable": "python",
       "runtimeArgs": ["-m", "http.server", "8765", "--directory", "fs"],
       "port": 8765
+    },
+    {
+      "name": "dashboard",
+      "runtimeExecutable": "python",
+      "runtimeArgs": ["-u", "dashboard/serve.py"],
+      "port": 3001,
+      "env": {
+        "PYTHONIOENCODING": "utf-8"
+      }
     }
   ]
 }
