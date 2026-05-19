@@ -26,8 +26,13 @@ export function PoolCard({ pool, feeRates, pinned, pinnedLabel }: PoolCardProps)
     : feeLabel === 'MID'  ? 'text-text-secondary border-border bg-bg-primary'
     : 'text-text-muted border-border bg-bg-primary'
 
+  const hasFees = fees24h != null
+
   return (
-    <div className={`bg-bg-card border rounded-xl p-4 transition-colors hover:border-accent/30 ${pinned ? 'border-accent/20' : 'border-border'}`}>
+    <div className={`bg-bg-card rounded-xl p-4 transition-all hover:border-accent/50 ${
+      pinned ? 'border-2' : 'border'
+    } ${hasFees ? 'border-accent/30' : 'border-border'}`}
+      style={hasFees ? { boxShadow: '0 0 16px rgba(0,220,255,0.1), inset 0 0 12px rgba(0,220,255,0.03)' } : {}}>
       {pinned && pinnedLabel && (
         <div className="text-[8px] text-accent uppercase tracking-widest mb-2">{pinnedLabel}</div>
       )}
@@ -62,7 +67,10 @@ export function PoolCard({ pool, feeRates, pinned, pinnedLabel }: PoolCardProps)
           <div className="h-full rounded-full" style={{ width: `${buyPct}%`, background: buyPressureColor(buyPct) }} />
         </div>
         {fees24h != null && (
-          <span className="text-[10px] text-accent">{fmt(fees24h)}/day</span>
+          <span className="text-[11px] font-semibold text-accent"
+            style={{ textShadow: '0 0 8px rgba(0,220,255,0.5)' }}>
+            {fmt(fees24h)}/day
+          </span>
         )}
       </div>
     </div>

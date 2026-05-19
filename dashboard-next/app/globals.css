@@ -2,33 +2,61 @@
 @tailwind components;
 @tailwind utilities;
 
-/* Wallet adapter modal override — noir theme */
+/* Wallet adapter modal override */
 .wallet-adapter-modal-wrapper {
-  background: #0f0f0f !important;
-  border: 1px solid #1c1c1c !important;
+  background: #121218 !important;
+  border: 1px solid #242430 !important;
 }
 .wallet-adapter-button {
   background: transparent !important;
-  border: 1px solid #1c1c1c !important;
-  color: #ececec !important;
+  border: 1px solid #242430 !important;
+  color: #f0f0f7 !important;
   font-family: 'SF Mono', 'Fira Code', monospace !important;
   font-size: 11px !important;
 }
 .wallet-adapter-button:hover {
-  border-color: #b8934a !important;
+  border-color: #00dcff !important;
 }
 .wallet-adapter-modal-title {
-  color: #ececec !important;
+  color: #f0f0f7 !important;
 }
 .wallet-adapter-modal-list li {
-  background: #0f0f0f !important;
+  background: #121218 !important;
 }
 
 /* Scrollbar */
 ::-webkit-scrollbar { width: 4px; height: 4px; }
-::-webkit-scrollbar-track { background: #080808; }
-::-webkit-scrollbar-thumb { background: #1c1c1c; border-radius: 2px; }
-::-webkit-scrollbar-thumb:hover { background: #b8934a; }
+::-webkit-scrollbar-track { background: #0a0a0f; }
+::-webkit-scrollbar-thumb { background: #242430; border-radius: 2px; }
+::-webkit-scrollbar-thumb:hover { background: #00dcff; }
+
+/* Animated rotating gradient border for fee token hero card */
+@keyframes rotateBorder {
+  0%   { background-position: 0% 50%; }
+  50%  { background-position: 100% 50%; }
+  100% { background-position: 0% 50%; }
+}
+
+.fee-hero-border {
+  position: relative;
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}
+
+.fee-hero-border::before {
+  content: '';
+  position: absolute;
+  inset: -2px;
+  border-radius: inherit;
+  padding: 2px;
+  background: linear-gradient(90deg, #b844ff, #00dcff, #00ff88, #b844ff);
+  background-size: 300% 300%;
+  animation: rotateBorder 3s linear infinite;
+  -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+  -webkit-mask-composite: xor;
+  mask-composite: exclude;
+  pointer-events: none;
+}
 
 /* Film grain texture */
 body::before {
