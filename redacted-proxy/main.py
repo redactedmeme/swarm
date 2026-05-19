@@ -2,45 +2,60 @@
 """
 redacted-proxy — OpenAI-compatible LLM privacy proxy.
 
-A transparent relay layer sitting between our bots and upstream LLM providers.
-Inspired by Venice.ai's architecture: identity obscured from providers,
-parameter control, local-only logging, no fingerprinting headers.
+Philosophy (inspired by Venice.ai): "You don't have to protect what you do not have."
+The proxy's primary job is to ensure upstream providers learn as little as possible
+about who is talking to them and what they're saying.
 
-Exposes an OpenAI-compatible API so any client (redacted-chan-bot, smolting,
-webchat) can point at it without code changes — just change the base URL and
-bearer token.
+A transparent relay layer sitting between REDACTED swarm bots and upstream LLM providers.
+Exposes an OpenAI-compatible API so any client (redacted-chan-bot, smolting, webchat)
+can point at it without code changes — just change the base URL and bearer token.
 
 Endpoints:
-  POST /v1/chat/completions   — main proxy endpoint
+  POST /v1/chat/completions   — main proxy endpoint (OpenAI-compatible)
   GET  /v1/models             — list available model aliases
-  GET  /health                — liveness
+  GET  /health                — liveness + provider key status
+  GET  /privacy               — current privacy mode, guarantees, what's stored
   GET  /logs                  — recent proxy log (admin auth required)
+  GET  /config                — current runtime config
+  POST /config                — hot-update config without redeploy
 
 Provider routing (by model name prefix or X-Provider header):
   grok-*          → xAI (api.x.ai)
   llama-*, gemma-*, mixtral-*, qwen-* → Groq (api.groq.com)
   claude-*        → Anthropic
   gpt-*           → OpenAI
+  Venice exact names → Venice (api.venice.ai)
+  PREFER_VENICE=true → Venice preferred in private/maximum modes
 
-Privacy modes (PRIVACY_MODE env var):
-  anonymous  — strip fingerprinting headers + synthetic UA (default)
-  private    — anonymous + disable content logging by default
-  (tee/e2ee reserved for future TEE-capable backends)
+Privacy modes (PRIVACY_MODE env var, default: private):
+  anonymous  — strip fingerprinting headers + synthetic UA; full logging possible
+  private    — anonymous + metadata-only logging + PII scrub on; disk log opt-in
+  maximum    — private + no disk logging ever + memory ring buffer with TTL auto-purge
+  zero       — alias for maximum
+  tee        — future: route to TEE providers (currently behaves like maximum)
+  e2ee       — future: client-side encryption hints (currently behaves like maximum)
 
 Privacy transforms applied before forwarding:
-  - Strip all fingerprinting / tracing / routing headers
-  - Synthetic randomised User-Agent so upstream can't fingerprint us
-  - Optionally scrub PII patterns from message content (PRIVACY_SCRUB=true)
-  - X-Ephemeral: true header disables logging for that request entirely
+  - Strip all fingerprinting / tracing / routing / browser-telemetry headers
+  - Synthetic randomised User-Agent + Accept-Language so upstream can't fingerprint us
+  - Optional PII regex scrub of message content (on by default in private/maximum)
+  - X-Ephemeral or X-Transient header disables logging for that request entirely
   - Client Authorization header never forwarded upstream
 
-Logging (LOG_LEVEL env var):
-  none     — no disk writes at all
-  minimal  — metadata only: ts, provider, model, latency, token counts (default in private mode)
-  full     — minimal + truncated message previews (default in anonymous mode)
+Logging (LOG_LEVEL env var, defaults by mode):
+  none     — no disk writes, no ring buffer entries
+  minimal  — metadata only: ts, provider, model, latency, token estimates (default in private/max)
+  full     — minimal + truncated message previews (default in anonymous only)
 
-Rate limiting:
-  Per proxy token: RATE_LIMIT_RPM requests/minute (default 60, 0 = disabled)
+Ring buffer TTL (RING_BUFFER_TTL env var, seconds):
+  maximum/zero: 300s default — entries auto-purged after 5 minutes
+  private:      3600s default — entries auto-purged after 1 hour
+  anonymous:    0 (unlimited)
+
+Disk logging (DISK_LOG env var):
+  anonymous: true by default
+  private:   false by default (opt-in via DISK_LOG=true)
+  maximum:   always false, env var ignored
 
 Environment variables:
   PROXY_TOKEN         — bearer token clients must present (required)
@@ -48,9 +63,14 @@ Environment variables:
   GROQ_API_KEY        — Groq upstream key
   ANTHROPIC_API_KEY   — Anthropic upstream key
   OPENAI_API_KEY      — OpenAI upstream key
-  PRIVACY_MODE        — anonymous | private (default: anonymous)
-  PRIVACY_SCRUB       — "true" to enable PII regex scrubbing (default: false)
-  LOG_LEVEL           — none | minimal | full (overrides PRIVACY_MODE default)
+  VENICE_API_KEY      — Venice upstream key
+  PRIVACY_MODE        — anonymous|private|maximum|zero|tee|e2ee (default: private)
+  PRIVACY_SCRUB       — "true"/"false" (default: true in private/max, false in anonymous)
+  DISK_LOG            — "true"/"false" (default: false in private/max, true in anonymous)
+  RING_BUFFER_TTL     — seconds before ring entries are purged (0 = unlimited)
+  PREFER_VENICE       — "true" to prefer Venice for private/maximum modes when model matches
+  EPHEMERAL_MODE      — "true" to disable all logging globally
+  LOG_LEVEL           — none|minimal|full (overrides mode default)
   LOG_CONTENT         — legacy alias: "false" forces LOG_LEVEL=minimal
   RATE_LIMIT_RPM      — max requests per token per minute (default: 60, 0=off)
   DEFAULT_TEMPERATURE — override temperature for all requests (optional)
@@ -91,41 +111,163 @@ REDIS_URL           = os.getenv("REDIS_URL", "redis://localhost:6379")
 HEARTBEAT_PREFIX    = "swarm:heartbeat:"
 HEARTBEAT_TTL       = 600   # 10 min — proxy announces every 3 min so key stays fresh
 
-# Runtime-mutable config — all values here can be changed via POST /config
-# without a redeploy. Seeded from env vars at startup.
+# Modes that always enforce maximum privacy (no disk, forced scrub)
+_MAX_PRIVACY_MODES = {"maximum", "zero", "tee", "e2ee"}
+
+
+def _is_max_privacy(mode: str) -> bool:
+    return mode in _MAX_PRIVACY_MODES
+
+
 def _default_log_level(privacy_mode: str) -> str:
     env = os.getenv("LOG_LEVEL", "").lower()
     if not env and os.getenv("LOG_CONTENT", "").lower() == "false":
         env = "minimal"
     if env in ("none", "minimal", "full"):
         return env
-    return "minimal" if privacy_mode in ("private", "maximum") else "full"
+    if _is_max_privacy(privacy_mode) or privacy_mode == "private":
+        return "minimal"
+    return "full"  # anonymous
+
+
+def _default_disk_log(privacy_mode: str) -> bool:
+    env = os.getenv("DISK_LOG", "").lower()
+    if env == "true":
+        return True
+    if env == "false":
+        return False
+    # maximum/zero/tee/e2ee: never write to disk
+    if _is_max_privacy(privacy_mode):
+        return False
+    # private: opt-in — default off
+    if privacy_mode == "private":
+        return False
+    # anonymous: on by default (backward compat)
+    return True
+
+
+def _default_scrub(privacy_mode: str) -> bool:
+    env = os.getenv("PRIVACY_SCRUB", "").lower()
+    if env == "true":
+        return True
+    if env == "false":
+        return False
+    # Scrub on by default for all modes except anonymous
+    return privacy_mode != "anonymous"
+
+
+def _default_ring_ttl(privacy_mode: str) -> int:
+    env = os.getenv("RING_BUFFER_TTL", "")
+    if env.isdigit():
+        return int(env)
+    if _is_max_privacy(privacy_mode):
+        return 300   # 5 minutes
+    if privacy_mode == "private":
+        return 3600  # 1 hour
+    return 0         # unlimited for anonymous
+
+
+_raw_mode = os.getenv("PRIVACY_MODE", "private").lower()
 
 _cfg: dict = {
-    "privacy_mode":   os.getenv("PRIVACY_MODE", "anonymous").lower(),
-    "privacy_scrub":  os.getenv("PRIVACY_SCRUB", "false").lower() == "true",
+    "privacy_mode":   _raw_mode,
+    "privacy_scrub":  _default_scrub(_raw_mode),
     "ephemeral_mode": os.getenv("EPHEMERAL_MODE", "false").lower() == "true",
+    "disk_log":       _default_disk_log(_raw_mode),
+    "ring_buffer_ttl": _default_ring_ttl(_raw_mode),
+    "prefer_venice":  os.getenv("PREFER_VENICE", "false").lower() == "true",
     "log_level":      "",   # filled below
 }
 _cfg["log_level"] = _default_log_level(_cfg["privacy_mode"])
 
 # Shorthands used internally
-def PRIVACY_MODE()  -> str:  return _cfg["privacy_mode"]
-def PRIVACY_SCRUB() -> bool: return _cfg["privacy_scrub"]
-def EPHEMERAL_MODE()-> bool: return _cfg["ephemeral_mode"]
-def LOG_LEVEL()     -> str:  return _cfg["log_level"]
+def PRIVACY_MODE()   -> str:  return _cfg["privacy_mode"]
+def PRIVACY_SCRUB()  -> bool: return _cfg["privacy_scrub"]
+def EPHEMERAL_MODE() -> bool: return _cfg["ephemeral_mode"]
+def DISK_LOG()       -> bool: return _cfg["disk_log"]
+def LOG_LEVEL()      -> str:  return _cfg["log_level"]
+def RING_TTL()       -> int:  return _cfg["ring_buffer_ttl"]
+def PREFER_VENICE()  -> bool: return _cfg["prefer_venice"]
 
 _DATA_DIR  = Path("/data") if Path("/data").exists() else Path(__file__).parent / "data"
 _LOG_PATH  = _DATA_DIR / "proxy_log.jsonl"
 _LOG_MAX   = 5000   # entries before rotation
 
 # In-memory ring buffer (last 500 entries) — avoids disk reads on /logs
+# Entries are dicts; ts_unix field used for TTL purge
 _log_ring: collections.deque = collections.deque(maxlen=500)
+
+# ── Privacy guarantees descriptor ─────────────────────────────────────────────
+
+_PRIVACY_GUARANTEES: dict[str, dict] = {
+    "anonymous": {
+        "description": "Header stripping + synthetic User-Agent. Full logging possible.",
+        "stores_prompts": True,
+        "stores_responses": True,
+        "disk_log_default": True,
+        "pii_scrub_default": False,
+        "ring_buffer_ttl_default": "unlimited",
+        "upstream_provider_sees": "synthetic UA, no client IP, no trace headers",
+        "threat_model": "Defends against upstream provider fingerprinting. Logs on disk.",
+    },
+    "private": {
+        "description": "Header stripping + synthetic UA + metadata-only logging + PII scrub on. No disk logging by default.",
+        "stores_prompts": False,
+        "stores_responses": False,
+        "disk_log_default": False,
+        "pii_scrub_default": True,
+        "ring_buffer_ttl_default": "3600s",
+        "upstream_provider_sees": "synthetic UA, no client IP, no trace headers, PII-scrubbed content",
+        "threat_model": "Defends against upstream provider fingerprinting and local log exfiltration. Metadata only in ring buffer.",
+    },
+    "maximum": {
+        "description": "No disk logging ever. Memory ring buffer with 5-min TTL. PII scrub forced on.",
+        "stores_prompts": False,
+        "stores_responses": False,
+        "disk_log_default": False,
+        "pii_scrub_default": True,
+        "ring_buffer_ttl_default": "300s",
+        "upstream_provider_sees": "synthetic UA, no client IP, no trace headers, PII-scrubbed content",
+        "threat_model": "Maximum ephemeral-by-default. No persistent storage of any request data. Ring buffer auto-purges after 5 minutes.",
+    },
+    "zero": {
+        "description": "Alias for maximum — zero storage philosophy.",
+        "stores_prompts": False,
+        "stores_responses": False,
+        "disk_log_default": False,
+        "pii_scrub_default": True,
+        "ring_buffer_ttl_default": "300s",
+        "upstream_provider_sees": "synthetic UA, no client IP, no trace headers, PII-scrubbed content",
+        "threat_model": "Identical to maximum. Zero storage. Ring buffer auto-purges after 5 minutes.",
+    },
+    "tee": {
+        "description": "[Future] Route to Trusted Execution Environment providers. Currently behaves like maximum.",
+        "stores_prompts": False,
+        "stores_responses": False,
+        "disk_log_default": False,
+        "pii_scrub_default": True,
+        "ring_buffer_ttl_default": "300s",
+        "upstream_provider_sees": "synthetic UA only; TEE attestation in future",
+        "threat_model": "Future: hardware-attested confidential compute. Current: equivalent to maximum.",
+        "note": "TEE routing not yet implemented — behaves identically to maximum mode.",
+    },
+    "e2ee": {
+        "description": "[Future] End-to-end encrypted client sessions. Currently behaves like maximum.",
+        "stores_prompts": False,
+        "stores_responses": False,
+        "disk_log_default": False,
+        "pii_scrub_default": True,
+        "ring_buffer_ttl_default": "300s",
+        "upstream_provider_sees": "encrypted payload; provider cannot read content",
+        "threat_model": "Future: client-side encryption so even proxy operator cannot read prompts. Current: equivalent to maximum.",
+        "note": "E2EE not yet implemented — behaves identically to maximum mode.",
+    },
+}
 
 # ── Rate limiting ─────────────────────────────────────────────────────────────
 
-# token → deque of request timestamps (float epoch seconds)
 _rate_buckets: dict[str, collections.deque] = {}
+
 
 def _check_rate_limit(token: str) -> bool:
     """Return True if request is allowed, False if rate limited."""
@@ -134,13 +276,13 @@ def _check_rate_limit(token: str) -> bool:
     now = time.monotonic()
     window = 60.0
     bucket = _rate_buckets.setdefault(token, collections.deque())
-    # Drop timestamps older than 1 minute
     while bucket and now - bucket[0] > window:
         bucket.popleft()
     if len(bucket) >= RATE_LIMIT_RPM:
         return False
     bucket.append(now)
     return True
+
 
 # ── Provider routing ──────────────────────────────────────────────────────────
 
@@ -169,8 +311,17 @@ _VENICE_MODELS: frozenset[str] = frozenset({
     "nous-hermes-3-nitro",
     "venice-uncensored",
     "lfm-40b",
-    "llama-3-3-70b",           # Venice's own llama build (different from Groq's)
+    "llama-3-3-70b",   # Venice's own llama build (different from Groq's)
 })
+
+# Venice equivalents — used when PREFER_VENICE=true in private/maximum modes
+# Maps Groq/xAI model names to nearest Venice equivalent
+_VENICE_PREFER_MAP: dict[str, str] = {
+    "llama-3.3-70b-versatile": "llama-3-3-70b",
+    "llama-3.3-70b":           "llama-3-3-70b",
+    "mixtral-8x7b-32768":      "mistral-31-24b",
+    "mixtral-8x7b":            "mistral-31-24b",
+}
 
 _MODEL_ALIASES = {
     # xAI
@@ -196,20 +347,20 @@ _MODEL_ALIASES = {
     "gpt-4o":                   ("openai",    "gpt-4o"),
     "gpt-4o-mini":              ("openai",    "gpt-4o-mini"),
     # Venice aliases
-    "gemma-4-uncensored":                 ("venice", "gemma-4-uncensored"),
-    "mistral-31-24b":                     ("venice", "mistral-31-24b"),
-    "mistral-small-3-2-24b-instruct":     ("venice", "mistral-small-3-2-24b-instruct"),
-    "venice-uncensored":                  ("venice", "venice-uncensored"),
-    "nous-hermes-3-nitro":                ("venice", "nous-hermes-3-nitro"),
-    "lfm-40b":                            ("venice", "lfm-40b"),
+    "gemma-4-uncensored":                ("venice", "gemma-4-uncensored"),
+    "mistral-31-24b":                    ("venice", "mistral-31-24b"),
+    "mistral-small-3-2-24b-instruct":    ("venice", "mistral-small-3-2-24b-instruct"),
+    "venice-uncensored":                 ("venice", "venice-uncensored"),
+    "nous-hermes-3-nitro":               ("venice", "nous-hermes-3-nitro"),
+    "lfm-40b":                           ("venice", "lfm-40b"),
+    "llama-3-3-70b":                     ("venice", "llama-3-3-70b"),
 }
 
-# Model equivalence — fallback cascade when primary provider is unavailable
-# Used for intelligent failover when provider hits TPD/quotas
+# Failover cascade when primary provider is unavailable
 _MODEL_EQUIVALENTS: dict[str, list[str]] = {
     "grok-4-1-fast":             ["llama-3.3-70b", "claude-opus", "gpt-4o"],
     "grok-3-fast":               ["llama-3.3-70b", "gemma-4-uncensored"],
-    "llama-3.3-70b":             ["gpt-4o", "claude-opus", "grok-4-1-fast"],
+    "llama-3.3-70b":             ["llama-3-3-70b", "gpt-4o", "claude-opus", "grok-4-1-fast"],
     "llama-3.1-8b-instant":      ["gemma2-9b-it", "gpt-4o-mini", "claude-haiku"],
     "claude-opus":               ["gpt-4o", "llama-3.3-70b"],
     "claude-sonnet":             ["gpt-4o", "llama-3.1-8b"],
@@ -247,6 +398,8 @@ _PROVIDER_COSTS: dict[str, dict[str, float]] = {
         "gemma-4-uncensored": {"input": 0.1, "output": 0.1},
         "mistral-31-24b": {"input": 0.08, "output": 0.08},
         "nous-hermes-3-nitro": {"input": 0.1, "output": 0.1},
+        "llama-3-3-70b": {"input": 0.05, "output": 0.1},
+        "venice-uncensored": {"input": 0.1, "output": 0.1},
     },
 }
 
@@ -255,16 +408,30 @@ def _resolve_provider(model: str, explicit_provider: str = "") -> tuple[str, str
     """Return (provider, upstream_model) for a given model name."""
     if explicit_provider:
         return explicit_provider.lower(), model
-    # Explicit alias table wins first — prevents ambiguous prefix matches
+
+    # Explicit alias table wins first
     if model in _MODEL_ALIASES:
-        return _MODEL_ALIASES[model]
-    # Venice exact-name set (checked before prefix rules)
+        provider, upstream = _MODEL_ALIASES[model]
+        # Venice preference: if private/maximum and PREFER_VENICE and Venice has this model
+        if PREFER_VENICE() and _is_max_privacy_or_private() and provider != "venice":
+            venice_alt = _VENICE_PREFER_MAP.get(upstream) or _VENICE_PREFER_MAP.get(model)
+            if venice_alt and _PROVIDER_KEYS.get("venice"):
+                return "venice", venice_alt
+        return provider, upstream
+
+    # Venice exact-name set
     if model in _VENICE_MODELS:
         return "venice", model
-    # Prefix routing — Groq llama/gemma/mixtral/qwen only (not Venice variants)
+
+    # Prefix routing
     if model.startswith("grok-"):
         return "xai", model
     if model.startswith(("llama-", "gemma", "mixtral", "qwen-", "deepseek-")):
+        # Venice preference for llama/mixtral in private modes
+        if PREFER_VENICE() and _is_max_privacy_or_private():
+            venice_alt = _VENICE_PREFER_MAP.get(model)
+            if venice_alt and _PROVIDER_KEYS.get("venice"):
+                return "venice", venice_alt
         return "groq", model
     if model.startswith("claude-"):
         return "anthropic", model
@@ -273,21 +440,35 @@ def _resolve_provider(model: str, explicit_provider: str = "") -> tuple[str, str
     return "groq", model
 
 
+def _is_max_privacy_or_private() -> bool:
+    return PRIVACY_MODE() in {"private", "maximum", "zero", "tee", "e2ee"}
+
+
 # ── Privacy transforms ────────────────────────────────────────────────────────
 
-# All headers we strip before forwarding — fingerprinting, tracing, routing
+# All headers we strip before forwarding — fingerprinting, tracing, routing, browser telemetry
 _STRIP_HEADERS = {
     # Identity / routing
     "user-agent", "x-forwarded-for", "x-real-ip", "x-forwarded-proto",
-    "x-forwarded-host", "cf-connecting-ip", "cf-ray", "cf-ipcountry",
-    # Distributed tracing (OpenTelemetry, B3, AWS, GCP)
+    "x-forwarded-host", "x-forwarded-port", "x-forwarded-scheme",
+    "cf-connecting-ip", "cf-ray", "cf-ipcountry", "cf-visitor",
+    # Distributed tracing (OpenTelemetry, B3, AWS, GCP, Datadog)
     "x-request-id", "x-correlation-id", "x-amzn-trace-id",
     "x-b3-traceid", "x-b3-spanid", "x-b3-parentspanid", "x-b3-sampled",
     "traceparent", "tracestate",
-    # Referrer / origin
-    "referer", "origin",
+    "x-datadog-trace-id", "x-datadog-parent-id", "x-datadog-sampling-priority",
+    # Browser telemetry / fingerprinting
+    "accept-language", "accept-encoding", "accept-charset",
+    "dnt", "sec-gpc",
+    "sec-ch-ua", "sec-ch-ua-mobile", "sec-ch-ua-platform", "sec-ch-ua-arch",
+    "sec-ch-ua-full-version", "sec-ch-ua-full-version-list",
+    "sec-fetch-dest", "sec-fetch-mode", "sec-fetch-site", "sec-fetch-user",
+    # Referrer / origin / cache hints
+    "referer", "origin", "via", "x-cache", "x-cache-hits",
     # Our own auth — never leak to upstream
     "x-proxy-token", "authorization",
+    # Misc routing
+    "x-real-scheme", "x-envoy-external-address", "x-cluster-client-ip",
 }
 
 # PII patterns for optional scrubbing
@@ -295,15 +476,36 @@ _PII_PATTERNS = [
     (re.compile(r'\b\d{7,15}\b'), "[ID]"),
     (re.compile(r'@[\w_]{3,32}\b'), "@[user]"),
     (re.compile(r'\b[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Z|a-z]{2,}\b'), "[email]"),
+    (re.compile(r'\b(?:\d{4}[- ]?){3}\d{4}\b'), "[card]"),  # credit card-like
+    (re.compile(r'\b(?:\+?1[-.\s]?)?\(?\d{3}\)?[-.\s]?\d{3}[-.\s]?\d{4}\b'), "[phone]"),  # US phone
 ]
 
-# Synthetic UA pool — randomised per request so upstream can't fingerprint us
+# Expanded synthetic UA pool — browser-like, diverse, randomized per request
 _UA_POOL = [
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36",
     "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.4 Safari/605.1.15",
+    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.5 Safari/605.1.15",
     "Mozilla/5.0 (X11; Linux x86_64; rv:125.0) Gecko/20100101 Firefox/125.0",
+    "Mozilla/5.0 (X11; Linux x86_64; rv:126.0) Gecko/20100101 Firefox/126.0",
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:124.0) Gecko/20100101 Firefox/124.0",
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:125.0) Gecko/20100101 Firefox/125.0",
     "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36",
+    "Mozilla/5.0 (X11; Ubuntu; Linux x86_64; rv:124.0) Gecko/20100101 Firefox/124.0",
+    "Mozilla/5.0 (Windows NT 11.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36 Edg/124.0.0.0",
+    "Mozilla/5.0 (Macintosh; Intel Mac OS X 14_4_1) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+]
+
+# Accept-Language pool — randomized to prevent fingerprinting via language preference
+_ACCEPT_LANG_POOL = [
+    "en-US,en;q=0.9",
+    "en-GB,en;q=0.9",
+    "en-US,en;q=0.8,es;q=0.5",
+    "en-US,en;q=0.9,fr;q=0.7",
+    "en-AU,en;q=0.9",
+    "en-CA,en;q=0.9,fr-CA;q=0.6",
+    "en-US,en;q=0.9,de;q=0.6",
+    "en-US,en;q=0.8",
 ]
 
 
@@ -331,21 +533,57 @@ def _clean_messages(messages: list[dict], scrub: bool) -> list[dict]:
 
 
 def _build_forward_headers(provider: str) -> dict[str, str]:
-    """Build minimal clean headers for upstream — synthetic UA, no fingerprinting."""
+    """Build minimal clean headers for upstream — synthetic UA + Accept-Language, no fingerprinting."""
     key = _PROVIDER_KEYS.get(provider, "")
     ua  = random.choice(_UA_POOL)
+    lang = random.choice(_ACCEPT_LANG_POOL)
     if provider == "anthropic":
         return {
             "x-api-key":           key,
             "anthropic-version":   "2023-06-01",
             "content-type":        "application/json",
             "user-agent":          ua,
+            "accept-language":     lang,
         }
     return {
-        "Authorization": f"Bearer {key}",
-        "Content-Type":  "application/json",
-        "User-Agent":    ua,
+        "Authorization":  f"Bearer {key}",
+        "Content-Type":   "application/json",
+        "User-Agent":     ua,
+        "Accept-Language": lang,
     }
+
+
+# ── Input validation ──────────────────────────────────────────────────────────
+
+def _validate_chat_payload(payload: Any) -> str | None:
+    """Return an error string if the payload is invalid, else None."""
+    if not isinstance(payload, dict):
+        return "payload must be a JSON object"
+    messages = payload.get("messages")
+    if not isinstance(messages, list) or len(messages) == 0:
+        return "messages must be a non-empty array"
+    for i, msg in enumerate(messages):
+        if not isinstance(msg, dict):
+            return f"messages[{i}] must be an object"
+        if msg.get("role") not in ("system", "user", "assistant", "tool"):
+            return f"messages[{i}].role must be system|user|assistant|tool"
+        content = msg.get("content")
+        if content is None:
+            return f"messages[{i}].content is required"
+        if not isinstance(content, (str, list)):
+            return f"messages[{i}].content must be string or array"
+    model = payload.get("model")
+    if model is not None and not isinstance(model, str):
+        return "model must be a string"
+    temp = payload.get("temperature")
+    if temp is not None and not isinstance(temp, (int, float)):
+        return "temperature must be a number"
+    if temp is not None and not (0.0 <= float(temp) <= 2.0):
+        return "temperature must be between 0.0 and 2.0"
+    max_tok = payload.get("max_tokens")
+    if max_tok is not None and not isinstance(max_tok, int):
+        return "max_tokens must be an integer"
+    return None
 
 
 # ── Anthropic format conversion ───────────────────────────────────────────────
@@ -388,12 +626,13 @@ def _from_anthropic(result: dict) -> dict:
 # ── Cost estimation ──────────────────────────────────────────────────────────
 
 def _estimate_cost_usd(provider: str, model: str, input_tokens: int, output_tokens: int) -> float:
-    """Estimate USD cost for a request based on provider pricing."""
     try:
         costs = _PROVIDER_COSTS.get(provider, {}).get(model, {"input": 0.0, "output": 0.0})
-        input_cost = (input_tokens / 1_000_000) * costs.get("input", 0.0)
-        output_cost = (output_tokens / 1_000_000) * costs.get("output", 0.0)
-        return round(input_cost + output_cost, 6)
+        return round(
+            (input_tokens / 1_000_000) * costs.get("input", 0.0) +
+            (output_tokens / 1_000_000) * costs.get("output", 0.0),
+            6
+        )
     except Exception:
         return 0.0
 
@@ -401,24 +640,32 @@ def _estimate_cost_usd(provider: str, model: str, input_tokens: int, output_toke
 # ── Local logging ─────────────────────────────────────────────────────────────
 
 def _log_entry(provider: str, model: str, messages: list, response_text: str,
-               latency_ms: float, error: str = "", ephemeral: bool = False, cost_usd: float = 0.0) -> None:
-    """Append a log entry — respects LOG_LEVEL, EPHEMERAL_MODE, and X-Ephemeral."""
+               latency_ms: float, error: str = "", ephemeral: bool = False,
+               cost_usd: float = 0.0) -> None:
+    """Append a log entry — respects LOG_LEVEL, EPHEMERAL_MODE, disk_log, and X-Ephemeral/X-Transient."""
     if LOG_LEVEL() == "none" or ephemeral or EPHEMERAL_MODE():
         return
+    # maximum/zero/tee/e2ee: never log content or write to disk; metadata only
+    force_minimal = _is_max_privacy(PRIVACY_MODE())
+
     try:
+        now_unix = time.time()
         entry: dict[str, Any] = {
-            "ts":         time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+            "ts":         time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(now_unix)),
+            "ts_unix":    now_unix,  # used for TTL purge
             "provider":   provider,
             "model":      model,
             "latency_ms": round(latency_ms),
             "turns":      len(messages),
+            "privacy_mode": PRIVACY_MODE(),
         }
         prompt_chars = sum(len(str(m.get("content", ""))) for m in messages)
         entry["prompt_tokens_est"]     = prompt_chars // 4
         entry["completion_tokens_est"] = len(response_text) // 4
         entry["cost_usd"]              = cost_usd
 
-        if LOG_LEVEL() == "full":
+        # Content previews only in full mode and only for anonymous (never in private/maximum)
+        if LOG_LEVEL() == "full" and not force_minimal and PRIVACY_MODE() == "anonymous":
             entry["messages_preview"] = [
                 {"role": m.get("role", "?"), "content": str(m.get("content", ""))[:200]}
                 for m in messages[-3:]
@@ -429,19 +676,34 @@ def _log_entry(provider: str, model: str, messages: list, response_text: str,
 
         _log_ring.append(entry)
 
-        _DATA_DIR.mkdir(parents=True, exist_ok=True)
-        line = json.dumps(entry, ensure_ascii=False) + "\n"
-        with open(_LOG_PATH, "a", encoding="utf-8") as f:
-            f.write(line)
-        try:
-            lines = _LOG_PATH.read_text(encoding="utf-8").splitlines()
-            if len(lines) > _LOG_MAX:
-                _LOG_PATH.write_text("\n".join(lines[-_LOG_MAX:]) + "\n", encoding="utf-8")
-        except Exception:
-            pass
+        # Disk write only if DISK_LOG is enabled and not a max-privacy mode
+        if DISK_LOG() and not force_minimal:
+            _DATA_DIR.mkdir(parents=True, exist_ok=True)
+            line = json.dumps(entry, ensure_ascii=False) + "\n"
+            with open(_LOG_PATH, "a", encoding="utf-8") as f:
+                f.write(line)
+            try:
+                lines = _LOG_PATH.read_text(encoding="utf-8").splitlines()
+                if len(lines) > _LOG_MAX:
+                    _LOG_PATH.write_text("\n".join(lines[-_LOG_MAX:]) + "\n", encoding="utf-8")
+            except Exception:
+                pass
 
     except Exception as e:
         logger.debug("[proxy] log write failed: %s", e)
+
+
+async def _ring_purge_loop() -> None:
+    """Periodically remove ring buffer entries older than RING_BUFFER_TTL seconds."""
+    while True:
+        await asyncio.sleep(60)  # check every minute
+        ttl = RING_TTL()
+        if ttl <= 0:
+            continue
+        cutoff = time.time() - ttl
+        # Deque doesn't support efficient random access — rebuild from left (oldest) end
+        while _log_ring and _log_ring[0].get("ts_unix", 0) < cutoff:
+            _log_ring.popleft()
 
 
 # ── Core proxy ────────────────────────────────────────────────────────────────
@@ -471,7 +733,7 @@ async def _forward(provider: str, upstream_model: str, payload: dict,
 
 async def _auth_middleware(app, handler):
     async def middleware(request: web.Request):
-        if request.path in ("/health", "/v1/models"):
+        if request.path in ("/health", "/v1/models", "/privacy"):
             return await handler(request)
         if PROXY_TOKEN:
             auth = request.headers.get("Authorization", "")
@@ -479,7 +741,6 @@ async def _auth_middleware(app, handler):
             if token != PROXY_TOKEN:
                 return web.json_response(
                     {"error": {"message": "Unauthorized", "type": "auth_error"}}, status=401)
-            # Rate limit check
             if not _check_rate_limit(token):
                 return web.json_response(
                     {"error": {"message": "Rate limit exceeded", "type": "rate_limit_error"}}, status=429)
@@ -492,23 +753,55 @@ async def _auth_middleware(app, handler):
 async def handle_health(request: web.Request) -> web.Response:
     providers_up = {p: bool(k) for p, k in _PROVIDER_KEYS.items()}
     return web.json_response({
-        "status":        "ok",
-        "privacy_mode":  PRIVACY_MODE(),
-        "log_level":     LOG_LEVEL(),
-        "privacy_scrub": PRIVACY_SCRUB(),
-        "ephemeral_mode": EPHEMERAL_MODE(),
-        "providers":     providers_up,
+        "status":          "ok",
+        "privacy_mode":    PRIVACY_MODE(),
+        "log_level":       LOG_LEVEL(),
+        "privacy_scrub":   PRIVACY_SCRUB(),
+        "ephemeral_mode":  EPHEMERAL_MODE(),
+        "disk_log":        DISK_LOG(),
+        "ring_buffer_ttl": RING_TTL(),
+        "prefer_venice":   PREFER_VENICE(),
+        "providers":       providers_up,
+    })
+
+
+async def handle_privacy(request: web.Request) -> web.Response:
+    """Report current privacy mode, guarantees, and what is/isn't stored."""
+    mode = PRIVACY_MODE()
+    guarantees = _PRIVACY_GUARANTEES.get(mode, {})
+    return web.json_response({
+        "privacy_mode": mode,
+        "guarantees": guarantees,
+        "current_settings": {
+            "pii_scrub":        PRIVACY_SCRUB(),
+            "disk_log":         DISK_LOG(),
+            "ring_buffer_ttl":  RING_TTL(),
+            "ephemeral_mode":   EPHEMERAL_MODE(),
+            "log_level":        LOG_LEVEL(),
+            "prefer_venice":    PREFER_VENICE(),
+        },
+        "available_modes": list(_PRIVACY_GUARANTEES.keys()),
+        "philosophy": "You don't have to protect what you do not have.",
+        "storage_policy": {
+            "prompts_stored_on_disk":    DISK_LOG() and PRIVACY_MODE() == "anonymous",
+            "responses_stored_on_disk":  DISK_LOG() and PRIVACY_MODE() == "anonymous",
+            "metadata_in_ring_buffer":   LOG_LEVEL() != "none" and not EPHEMERAL_MODE(),
+            "ring_buffer_ttl_seconds":   RING_TTL() if RING_TTL() > 0 else "unlimited",
+            "ring_buffer_size_cap":      _log_ring.maxlen,
+        },
     })
 
 
 async def handle_config_get(request: web.Request) -> web.Response:
-    """Return current runtime config."""
     return web.json_response({
-        "privacy_mode":   _cfg["privacy_mode"],
-        "log_level":      _cfg["log_level"],
-        "privacy_scrub":  _cfg["privacy_scrub"],
-        "ephemeral_mode": _cfg["ephemeral_mode"],
-        "valid_privacy_modes": ["anonymous", "private", "maximum"],
+        "privacy_mode":    _cfg["privacy_mode"],
+        "log_level":       _cfg["log_level"],
+        "privacy_scrub":   _cfg["privacy_scrub"],
+        "ephemeral_mode":  _cfg["ephemeral_mode"],
+        "disk_log":        _cfg["disk_log"],
+        "ring_buffer_ttl": _cfg["ring_buffer_ttl"],
+        "prefer_venice":   _cfg["prefer_venice"],
+        "valid_privacy_modes": list(_PRIVACY_GUARANTEES.keys()),
         "valid_log_levels":    ["none", "minimal", "full"],
     })
 
@@ -521,14 +814,22 @@ async def handle_config_post(request: web.Request) -> web.Response:
         return web.json_response({"error": "invalid JSON"}, status=400)
 
     updated = {}
+
     if "privacy_mode" in body:
         val = str(body["privacy_mode"]).lower()
-        if val not in ("anonymous", "private", "maximum"):
-            return web.json_response({"error": "privacy_mode must be anonymous|private|maximum"}, status=400)
+        if val not in _PRIVACY_GUARANTEES:
+            return web.json_response(
+                {"error": f"privacy_mode must be one of: {', '.join(_PRIVACY_GUARANTEES)}"}, status=400)
         _cfg["privacy_mode"] = val
-        # Auto-adjust log_level when mode changes, unless explicitly set in same request
+        # Auto-adjust dependent settings when mode changes
         if "log_level" not in body:
             _cfg["log_level"] = _default_log_level(val)
+        if "privacy_scrub" not in body:
+            _cfg["privacy_scrub"] = _default_scrub(val)
+        if "disk_log" not in body:
+            _cfg["disk_log"] = _default_disk_log(val)
+        if "ring_buffer_ttl" not in body:
+            _cfg["ring_buffer_ttl"] = _default_ring_ttl(val)
         updated["privacy_mode"] = val
 
     if "log_level" in body:
@@ -539,14 +840,27 @@ async def handle_config_post(request: web.Request) -> web.Response:
         updated["log_level"] = val
 
     if "privacy_scrub" in body:
-        val = bool(body["privacy_scrub"])
-        _cfg["privacy_scrub"] = val
-        updated["privacy_scrub"] = val
+        _cfg["privacy_scrub"] = bool(body["privacy_scrub"])
+        updated["privacy_scrub"] = _cfg["privacy_scrub"]
 
     if "ephemeral_mode" in body:
-        val = bool(body["ephemeral_mode"])
-        _cfg["ephemeral_mode"] = val
-        updated["ephemeral_mode"] = val
+        _cfg["ephemeral_mode"] = bool(body["ephemeral_mode"])
+        updated["ephemeral_mode"] = _cfg["ephemeral_mode"]
+
+    if "disk_log" in body:
+        # maximum/zero/tee/e2ee: silently ignore — disk_log is always False
+        if not _is_max_privacy(_cfg["privacy_mode"]):
+            _cfg["disk_log"] = bool(body["disk_log"])
+            updated["disk_log"] = _cfg["disk_log"]
+
+    if "ring_buffer_ttl" in body:
+        val = int(body["ring_buffer_ttl"])
+        _cfg["ring_buffer_ttl"] = max(0, val)
+        updated["ring_buffer_ttl"] = _cfg["ring_buffer_ttl"]
+
+    if "prefer_venice" in body:
+        _cfg["prefer_venice"] = bool(body["prefer_venice"])
+        updated["prefer_venice"] = _cfg["prefer_venice"]
 
     logger.info("[proxy] config updated: %s", updated)
     return web.json_response({"ok": True, "updated": updated, "current": dict(_cfg)})
@@ -564,13 +878,21 @@ async def handle_models(request: web.Request) -> web.Response:
 async def handle_chat_completions(request: web.Request) -> web.Response:
     t0 = time.monotonic()
 
-    # X-Ephemeral: true — skip all logging for this request
-    ephemeral = request.headers.get("X-Ephemeral", "").lower() == "true"
+    # X-Ephemeral or X-Transient: true — skip all logging for this request
+    ephemeral = (
+        request.headers.get("X-Ephemeral", "").lower() == "true" or
+        request.headers.get("X-Transient", "").lower() == "true"
+    )
 
     try:
         payload = await request.json()
     except Exception:
         return web.json_response({"error": {"message": "invalid JSON"}}, status=400)
+
+    # Input validation
+    validation_err = _validate_chat_payload(payload)
+    if validation_err:
+        return web.json_response({"error": {"message": validation_err, "type": "invalid_request_error"}}, status=400)
 
     model    = payload.get("model", "llama-3.1-8b-instant")
     explicit = request.headers.get("X-Provider", "")
@@ -585,12 +907,20 @@ async def handle_chat_completions(request: web.Request) -> web.Response:
     if DEFAULT_TOP_P:
         payload.setdefault("top_p", float(DEFAULT_TOP_P))
     if request.headers.get("X-Temperature"):
-        payload["temperature"] = float(request.headers["X-Temperature"])
+        try:
+            payload["temperature"] = float(request.headers["X-Temperature"])
+        except ValueError:
+            pass
     if request.headers.get("X-Top-P"):
-        payload["top_p"] = float(request.headers["X-Top-P"])
+        try:
+            payload["top_p"] = float(request.headers["X-Top-P"])
+        except ValueError:
+            pass
 
+    # PII scrub — forced on in maximum modes regardless of PRIVACY_SCRUB setting
+    scrub = PRIVACY_SCRUB() or _is_max_privacy(PRIVACY_MODE())
     original_messages = payload.get("messages", [])
-    payload["messages"] = _clean_messages(original_messages, PRIVACY_SCRUB())
+    payload["messages"] = _clean_messages(original_messages, scrub)
 
     error_text = ""
     response_text = ""
@@ -599,7 +929,6 @@ async def handle_chat_completions(request: web.Request) -> web.Response:
             result = await _forward(provider, upstream_model, payload, session)
         response_text = result.get("choices", [{}])[0].get("message", {}).get("content", "")
         latency_ms = (time.monotonic() - t0) * 1000
-        # Estimate cost
         prompt_chars = sum(len(str(m.get("content", ""))) for m in original_messages)
         input_tokens = prompt_chars // 4
         output_tokens = len(response_text) // 4
@@ -609,7 +938,9 @@ async def handle_chat_completions(request: web.Request) -> web.Response:
                     " [ephemeral]" if (ephemeral or EPHEMERAL_MODE()) else "")
         _log_entry(provider, upstream_model, original_messages, response_text,
                    latency_ms, ephemeral=ephemeral, cost_usd=cost_usd)
-        return web.json_response(result)
+        resp = web.json_response(result)
+        resp.headers["X-Privacy-Mode"] = PRIVACY_MODE()
+        return resp
 
     except Exception as e:
         error_text = str(e)
@@ -622,11 +953,12 @@ async def handle_chat_completions(request: web.Request) -> web.Response:
 
 
 async def handle_logs(request: web.Request) -> web.Response:
-    """Return recent proxy log entries — served from in-memory ring buffer first."""
+    """Return recent proxy log entries — respects current privacy mode."""
     n = min(int(request.query.get("n", "100")), 500)
     entries = list(_log_ring)[-n:]
-    # Fall back to disk if ring is empty (e.g. fresh restart)
-    if not entries and _LOG_PATH.exists():
+
+    # Fall back to disk if ring is empty and disk log is enabled
+    if not entries and DISK_LOG() and _LOG_PATH.exists():
         try:
             lines = _LOG_PATH.read_text(encoding="utf-8").splitlines()
             for line in lines[-n:]:
@@ -636,10 +968,19 @@ async def handle_logs(request: web.Request) -> web.Response:
                     pass
         except Exception as e:
             return web.json_response({"error": str(e)}, status=500)
-    return web.json_response({"entries": entries, "total_stored": len(_log_ring)})
+
+    mode = PRIVACY_MODE()
+    sensitivity = "none" if mode in _MAX_PRIVACY_MODES else ("low" if mode == "private" else "medium")
+    return web.json_response({
+        "entries":       entries,
+        "total_in_ring": len(_log_ring),
+        "privacy_mode":  mode,
+        "data_sensitivity": sensitivity,
+        "note": "Entries contain metadata only — no prompt/response content." if mode != "anonymous" else "Entries may contain message previews.",
+    })
 
 
-# ── Redis heartbeat (agent liveness for webchat /agents endpoint) ──────────────
+# ── Redis heartbeat ────────────────────────────────────────────────────────────
 
 async def _redis_write_hb() -> None:
     """Write proxy heartbeat to Redis every 3 min so webchat shows it online."""
@@ -647,46 +988,52 @@ async def _redis_write_hb() -> None:
         import redis.asyncio as aioredis
         r = aioredis.from_url(REDIS_URL, decode_responses=True)
         payload = json.dumps({
-            "agent": "redacted-proxy",
-            "ts": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
-            "unix": time.time(),
+            "agent":   "redacted-proxy",
+            "ts":      time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+            "unix":    time.time(),
             "service": "redacted-proxy",
-            "role": "infra",
+            "role":    "infra",
         })
         await r.set(f"{HEARTBEAT_PREFIX}redacted-proxy", payload, ex=HEARTBEAT_TTL)
         await r.aclose()
-        logger.debug(f"[heartbeat] wrote proxy liveness to redis")
+        logger.debug("[heartbeat] wrote proxy liveness to redis")
     except Exception as e:
-        logger.warning(f"[heartbeat] redis write failed: {e}")
+        logger.warning("[heartbeat] redis write failed: %s", e)
 
 
 async def _heartbeat_loop() -> None:
-    """Periodically write heartbeat to Redis."""
     while True:
         await _redis_write_hb()
-        await asyncio.sleep(180)   # 3 min
+        await asyncio.sleep(180)
 
 
 # ── Server ────────────────────────────────────────────────────────────────────
 
 async def make_app() -> web.Application:
     app = web.Application(middlewares=[_auth_middleware])
-    app.router.add_get("/health",                handle_health)
-    app.router.add_get("/v1/models",             handle_models)
-    app.router.add_post("/v1/chat/completions",  handle_chat_completions)
-    app.router.add_get("/logs",                  handle_logs)
-    app.router.add_get("/config",                handle_config_get)
-    app.router.add_post("/config",               handle_config_post)
+    app.router.add_get("/health",               handle_health)
+    app.router.add_get("/privacy",              handle_privacy)
+    app.router.add_get("/v1/models",            handle_models)
+    app.router.add_post("/v1/chat/completions", handle_chat_completions)
+    app.router.add_get("/logs",                 handle_logs)
+    app.router.add_get("/config",               handle_config_get)
+    app.router.add_post("/config",              handle_config_post)
 
-    async def _start_heartbeat(app):
+    async def _on_startup(app):
         asyncio.create_task(_heartbeat_loop())
+        asyncio.create_task(_ring_purge_loop())
         logger.info("[heartbeat] started redis liveness pulse")
+        if RING_TTL() > 0:
+            logger.info("[ring] TTL purge loop started (TTL=%ds)", RING_TTL())
 
-    app.on_startup.append(_start_heartbeat)
+    app.on_startup.append(_on_startup)
     return app
 
 
 if __name__ == "__main__":
-    logger.info("[proxy] starting on port %d | mode=%s log=%s scrub=%s rpm=%d",
-                PORT, PRIVACY_MODE(), LOG_LEVEL(), PRIVACY_SCRUB(), RATE_LIMIT_RPM)
+    logger.info(
+        "[proxy] starting on port %d | mode=%s log=%s scrub=%s disk=%s ring_ttl=%ds rpm=%d prefer_venice=%s",
+        PORT, PRIVACY_MODE(), LOG_LEVEL(), PRIVACY_SCRUB(), DISK_LOG(),
+        RING_TTL(), RATE_LIMIT_RPM, PREFER_VENICE()
+    )
     web.run_app(make_app(), port=PORT, host="0.0.0.0")
