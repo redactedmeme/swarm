@@ -58,6 +58,32 @@ export function useStreamingChat(agent: ChatAgent = 'chan') {
       addUserMessage(content, attachments)
       setWaiting(true)
 
+      // ── smolting / builder: persona-injected POST via chan-bot ───────────
+      if (agent === 'smolting' || agent === 'builder') {
+        const msgId = startStreamingMessage()
+        try {
+          const res = await fetch(`/api/chat/${agent}`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+            body: JSON.stringify({
+              message: content,
+              session_id: sessionId ?? '',
+              history: buildApiHistory(messages),
+            }),
+            signal: AbortSignal.timeout(90_000),
+          })
+          const data = await res.json() as { response?: string; error?: string }
+          appendStreamingChunk(msgId, data.response ?? data.error ?? 'No response')
+        } catch (err) {
+          appendStreamingChunk(msgId, `${agent} is unavailable right now.`)
+          toast.error(err instanceof Error ? err.message : `${agent} error`)
+        } finally {
+          finalizeStreamingMessage(msgId)
+          setWaiting(false)
+        }
+        return
+      }
+
       // ── Hermes: non-streaming POST, poll up to 70s ────────────────────────
       if (agent === 'hermes') {
         const msgId = startStreamingMessage()
