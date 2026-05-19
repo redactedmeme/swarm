@@ -22,22 +22,22 @@ export function PumpCard() {
   ]
 
   return (
-    <div className="bg-bg-card border rounded-xl p-4 mb-3"
-      style={{ borderColor: 'rgba(184,147,74,0.2)', boxShadow: '0 0 20px rgba(184,147,74,0.06)' }}>
+    <div className="fee-hero-border rounded-xl p-4 mb-3 animate-heroCardGlow"
+      style={{ background: 'linear-gradient(135deg, rgba(184,68,255,0.06), rgba(184,68,255,0.02))' }}>
       {/* top row */}
       <div className="flex items-center gap-3 mb-4">
         <div className="w-9 h-9 rounded-full overflow-hidden flex-shrink-0 flex items-center justify-center"
-          style={{ background: 'rgba(184,147,74,0.12)' }}>
+          style={{ background: 'rgba(184,68,255,0.15)' }}>
           <TokenIcon url={v2Data.image_url} size={36} />
         </div>
         <div>
-          <div className="text-sm font-bold text-accent leading-tight">
+          <div className="text-sm font-bold leading-tight" style={{ color: '#b844ff' }}>
             REDACTED <span className="text-[10px] font-normal text-text-muted">fees token</span>
           </div>
           <div className="text-[9px] text-text-muted mt-0.5">9mtKd1o8…pump</div>
         </div>
         <div className="ml-auto text-right">
-          <div className="text-lg font-bold text-accent">{priceStr}</div>
+          <div className="text-lg font-bold" style={{ color: '#b844ff' }}>{priceStr}</div>
           <div className={`text-[10px] mt-0.5 ${pctClass(ch24)}`}>{fmtPct(ch24)} 24h</div>
         </div>
       </div>
@@ -46,7 +46,7 @@ export function PumpCard() {
       <div className="grid grid-cols-3 gap-2">
         {stats.map(({ label, value, cls }) => (
           <div key={label} className="rounded-lg px-2.5 py-2"
-            style={{ background: 'rgba(184,147,74,0.03)', border: '1px solid rgba(184,147,74,0.08)' }}>
+            style={{ background: 'rgba(184,68,255,0.04)', border: '1px solid rgba(184,68,255,0.12)' }}>
             <div className="text-[9px] text-text-muted uppercase tracking-wide mb-1">{label}</div>
             <div className={`text-[13px] font-semibold ${cls ?? 'text-text-primary'}`}>{value}</div>
           </div>

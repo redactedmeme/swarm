@@ -47,10 +47,10 @@ export function FlywheelCard() {
 
   return (
     <div className="bg-bg-card border rounded-xl p-4 mb-3 relative overflow-hidden"
-      style={{ borderColor: 'rgba(184,147,74,0.25)', boxShadow: '0 0 32px rgba(184,147,74,0.07)' }}>
+      style={{ borderColor: 'rgba(0,220,255,0.2)', boxShadow: '0 0 32px rgba(0,220,255,0.08)' }}>
       {/* gradient overlay */}
       <div className="absolute inset-0 pointer-events-none"
-        style={{ background: 'linear-gradient(135deg, rgba(184,147,74,0.05) 0%, rgba(184,147,74,0.03) 100%)' }} />
+        style={{ background: 'linear-gradient(135deg, rgba(0,220,255,0.04) 0%, rgba(0,220,255,0.01) 100%)' }} />
 
       {/* header */}
       <div className="flex items-center justify-between mb-4 relative">
@@ -69,7 +69,8 @@ export function FlywheelCard() {
               <div className="text-[11px] font-semibold flex items-center gap-1">
                 REDACTED
                 <span className="text-[9px] text-text-muted bg-bg-primary border border-border px-1 py-0.5 rounded">liquidity</span>
-                <VolDot vol={v1Vol24h} />
+                {/* orange blinking dot for liquidity */}
+                <span className="inline-block rounded-full ml-1 align-middle animate-blinkOrange" style={{ width: 7, height: 7 }} />
               </div>
               <div className="text-[8px] text-text-muted mt-0.5">9a21gb7f…KgnM</div>
             </div>
@@ -83,43 +84,46 @@ export function FlywheelCard() {
         </div>
 
         {/* Flow arrow */}
-        <div className="flex flex-col items-center gap-1.5">
-          {/* vol badge */}
-          <div className="bg-white/[0.03] border border-border rounded-md px-2 py-1 text-center mb-1">
-            <div className="text-[12px] font-bold text-text-primary">{fmt(v1Vol24h)}</div>
+        <div className="flex flex-col items-center gap-2 px-3">
+          {/* vol badge — orange indicator */}
+          <div className="relative bg-white/[0.03] border border-border rounded-md px-2.5 py-1.5 text-center">
+            <span className="absolute -top-1 -right-1 w-2.5 h-2.5 rounded-full animate-blinkOrange" />
+            <div className="text-[13px] font-bold text-text-primary">{fmt(v1Vol24h)}</div>
             <div className="text-[8px] text-text-muted mt-0.5">24H Vol</div>
           </div>
-          {/* fee badge */}
-          <div className="rounded-md px-2 py-1 text-center"
-            style={{ background: 'rgba(184,147,74,0.1)', border: '1px solid rgba(184,147,74,0.2)' }}>
-            <div className="text-[13px] font-bold text-accent">{fmt(fees24h)}</div>
+          {/* fee badge — green indicator */}
+          <div className="relative rounded-md px-2.5 py-1.5 text-center"
+            style={{ background: 'rgba(0,220,255,0.08)', border: '1px solid rgba(0,220,255,0.25)' }}>
+            <span className="absolute -top-1 -right-1 w-2.5 h-2.5 rounded-full animate-blinkGreen" />
+            <div className="text-[14px] font-bold text-accent">{fmt(fees24h)}</div>
             <div className="text-[8px] text-text-muted mt-0.5">fees / day</div>
           </div>
-          {/* animated arrow */}
-          <div className="relative flex flex-col items-center" style={{ width: 28, height: 44 }}>
-            <div className="relative overflow-hidden rounded-sm" style={{ width: 2, height: '100%', background: 'rgba(255,255,255,0.06)' }}>
-              <div className="absolute left-0 w-0.5 h-[40%] animate-flowDown rounded-sm"
-                style={{ background: 'linear-gradient(to bottom, transparent, #b8934a, #d4aa62)' }} />
+          {/* animated arrow — green */}
+          <div className="relative flex flex-col items-center" style={{ width: 36, height: 52 }}>
+            <div className="relative overflow-hidden rounded-sm" style={{ width: 2, height: '100%', background: 'rgba(255,255,255,0.08)' }}>
+              <div className="absolute animate-flowDown rounded-sm"
+                style={{ left: -1, width: 4, height: '45%', background: 'linear-gradient(to bottom, transparent, rgba(0,220,255,0.9), rgba(0,220,255,0.4))', boxShadow: '0 0 12px rgba(0,220,255,0.7)' }} />
             </div>
             <div className="mt-0.5 animate-arrowPulse"
-              style={{ width: 0, height: 0, borderLeft: '5px solid transparent', borderRight: '5px solid transparent', borderTop: '7px solid #b8934a' }} />
+              style={{ width: 0, height: 0, borderLeft: '6px solid transparent', borderRight: '6px solid transparent', borderTop: '8px solid #00ff88', filter: 'drop-shadow(0 0 4px rgba(0,255,136,0.8))' }} />
           </div>
-          <div className="text-[8px] text-text-muted text-center">buys REDACTED</div>
+          <div className="text-[9px] font-medium text-text-secondary text-center">buys REDACTED</div>
           {v2BuyPressure != null && (
             <div className="text-[9px] text-accent text-center">{fmtNum(v2BuyPressure)}<br />tokens/day</div>
           )}
         </div>
 
-        {/* Pump / fees token */}
+        {/* Pump / fees token — purple highlight */}
         <div className="rounded-lg p-3"
-          style={{ border: '1px solid rgba(184,147,74,0.3)', background: 'rgba(184,147,74,0.04)' }}>
+          style={{ border: '1px solid rgba(184,68,255,0.35)', background: 'rgba(184,68,255,0.05)', boxShadow: '0 0 16px rgba(184,68,255,0.1)' }}>
           <div className="flex items-center gap-2 mb-3">
             <TokenIcon url={v2Data.image_url} size={36} />
             <div>
-              <div className="text-[13px] font-semibold text-accent flex items-center gap-1">
+              <div className="text-[13px] font-semibold flex items-center gap-1" style={{ color: '#b844ff' }}>
                 REDACTED
                 <span className="text-[9px] text-text-muted bg-bg-primary border border-border px-1 py-0.5 rounded">fees</span>
-                <VolDot vol={v2Vol24h} />
+                {/* green blinking dot for fees token */}
+                <span className="inline-block rounded-full ml-1 align-middle animate-blinkGreen" style={{ width: 7, height: 7 }} />
               </div>
               <div className="text-[8px] text-text-muted mt-0.5">9mtKd1o8…pump</div>
             </div>
@@ -132,7 +136,7 @@ export function FlywheelCard() {
           ].map(([l, v]) => (
             <div key={String(l)} className="flex justify-between items-baseline mb-1">
               <span className="text-[9px] text-text-muted">{l}</span>
-              <span className="text-[13px] font-semibold text-accent">{v}</span>
+              <span className="text-[13px] font-semibold" style={{ color: '#b844ff' }}>{v}</span>
             </div>
           ))}
         </div>
