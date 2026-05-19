@@ -13,6 +13,6 @@ COPY --from=builder /app/.next/static ./.next/static/
 COPY --from=builder /app/public ./public/
 COPY serve.py ./
 COPY start.sh ./
-RUN chmod +x start.sh
+RUN sed -i 's/\r//' start.sh && chmod +x start.sh
 EXPOSE 3000
-CMD ["./start.sh"]
+CMD ["/bin/sh", "./start.sh"]
