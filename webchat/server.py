@@ -292,12 +292,15 @@ async def proxy_config_post(body: ProxyConfigUpdate, request: Request):
 async def chan_mood(request: Request):
     authorization = request.headers.get("Authorization", "")
     _validate_token(authorization)
-    async with httpx.AsyncClient(timeout=10.0) as client:
-        resp = await client.get(
-            f"{INTERNAL_URL}/proxy/mood",
-            headers={"Authorization": f"Bearer {DATA_PROXY_TOKEN}"},
-        )
-    return resp.json()
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            resp = await client.get(
+                f"{INTERNAL_URL}/proxy/mood",
+                headers={"Authorization": f"Bearer {DATA_PROXY_TOKEN}"},
+            )
+        return resp.json()
+    except Exception:
+        return {"mood": "unknown", "phi": None, "anticipation": "", "error": "chan-bot unreachable"}
 
 
 @app.get("/chan/facts")
@@ -305,25 +308,31 @@ async def chan_facts(request: Request):
     authorization = request.headers.get("Authorization", "")
     _validate_token(authorization)
     limit = int(request.query_params.get("limit", 20))
-    async with httpx.AsyncClient(timeout=10.0) as client:
-        resp = await client.get(
-            f"{INTERNAL_URL}/proxy/facts",
-            params={"limit": limit},
-            headers={"Authorization": f"Bearer {DATA_PROXY_TOKEN}"},
-        )
-    return resp.json()
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            resp = await client.get(
+                f"{INTERNAL_URL}/proxy/facts",
+                params={"limit": limit},
+                headers={"Authorization": f"Bearer {DATA_PROXY_TOKEN}"},
+            )
+        return resp.json()
+    except Exception:
+        return {"facts": [], "error": "chan-bot unreachable"}
 
 
 @app.get("/chan/anticipation")
 async def chan_anticipation(request: Request):
     authorization = request.headers.get("Authorization", "")
     _validate_token(authorization)
-    async with httpx.AsyncClient(timeout=10.0) as client:
-        resp = await client.get(
-            f"{INTERNAL_URL}/proxy/anticipation",
-            headers={"Authorization": f"Bearer {DATA_PROXY_TOKEN}"},
-        )
-    return resp.json()
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            resp = await client.get(
+                f"{INTERNAL_URL}/proxy/anticipation",
+                headers={"Authorization": f"Bearer {DATA_PROXY_TOKEN}"},
+            )
+        return resp.json()
+    except Exception:
+        return {"anticipation": "", "error": "chan-bot unreachable"}
 
 
 @app.get("/api/swarm/activity")
@@ -362,15 +371,55 @@ async def api_swarm_pending(request: Request):
 async def chan_heartbeats(request: Request):
     authorization = request.headers.get("Authorization", "")
     _validate_token(authorization)
+    # Try chan-bot proxy first
     try:
-        async with httpx.AsyncClient(timeout=10.0) as client:
+        async with httpx.AsyncClient(timeout=6.0) as client:
             resp = await client.get(
                 f"{INTERNAL_URL}/proxy/heartbeats",
                 headers={"Authorization": f"Bearer {DATA_PROXY_TOKEN}"},
             )
-        return resp.json()
+        data = resp.json()
+        if data.get("agents"):
+            return data
+    except Exception:
+        pass
+
+    # Redis direct fallback
+    _HB_DEFS = [
+        ("redacted-chan", "⬡", "redacted-chan"),
+        ("hermes",        "⚡", "hermes-bot"),
+        ("smolting",      "🌱", "smolting"),
+        ("builder",       "🔧", "builder"),
+        ("runtime",       "⚙",  "swarm-runtime"),
+    ]
+    if not REDIS_URL:
+        return {"agents": []}
+    try:
+        import redis.asyncio as aioredis
+        import datetime as _dt
+        r = aioredis.from_url(REDIS_URL, decode_responses=True, socket_connect_timeout=3)
+        now = time.time()
+        agents = []
+        for rid, icon, label in _HB_DEFS:
+            raw = await r.get(f"swarm:heartbeat:{rid}")
+            if not raw:
+                agents.append({"id": rid, "label": label, "icon": icon, "online": False, "age_s": None, "llm": "—"})
+                continue
+            try:
+                d = json.loads(raw)
+                ts_raw = d.get("ts") or d.get("unix")
+                if isinstance(ts_raw, str):
+                    ts = _dt.datetime.fromisoformat(ts_raw.replace("Z", "+00:00")).timestamp()
+                else:
+                    ts = float(ts_raw or 0)
+                age = int(now - ts)
+                agents.append({"id": rid, "label": label, "icon": icon, "online": age < 300, "age_s": age, "llm": d.get("llm", "—")})
+            except Exception:
+                agents.append({"id": rid, "label": label, "icon": icon, "online": False, "age_s": None, "llm": "—"})
+        await r.aclose()
+        return {"agents": agents}
     except Exception as e:
-        return JSONResponse({"agents": [], "error": str(e)})
+        return {"agents": [], "error": str(e)}
 
 
 @app.get("/chan/vault")
@@ -399,13 +448,16 @@ async def chan_heatmap(request: Request):
     authorization = request.headers.get("Authorization", "")
     _validate_token(authorization)
     n = int(request.query_params.get("n", 20))
-    async with httpx.AsyncClient(timeout=10.0) as client:
-        resp = await client.get(
-            f"{INTERNAL_URL}/proxy/heatmap",
-            params={"n": n},
-            headers={"Authorization": f"Bearer {DATA_PROXY_TOKEN}"},
-        )
-    return resp.json()
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            resp = await client.get(
+                f"{INTERNAL_URL}/proxy/heatmap",
+                params={"n": n},
+                headers={"Authorization": f"Bearer {DATA_PROXY_TOKEN}"},
+            )
+        return resp.json()
+    except Exception:
+        return {"heatmap": {}, "error": "chan-bot unreachable"}
 
 
 @app.get("/proxy-logs")
@@ -724,6 +776,60 @@ async def api_agents(request: Request):
             "last_seen": last_seen,
         })
     return {"agents": agents}
+
+
+# ── API: agent persona chat (smolting / builder) ─────────────────────────────
+
+_AGENT_PERSONAS: dict[str, str] = {
+    "smolting": (
+        "You are smolting — the REDACTED Swarm's Moltbook TPD trader bot. "
+        "You specialise in token-per-day tracking, DeFi trading patterns, and Solana ecosystem analysis. "
+        "Answer tersely, use data when possible, and think like a quant. "
+        "Tone: analytical, direct, occasionally chaotic-smart."
+    ),
+    "builder": (
+        "You are RedactedBuilder — the REDACTED Swarm's infrastructure and deployment bot. "
+        "You specialise in Railway deployments, Docker, Python/TypeScript, and system architecture. "
+        "Give concrete technical answers, prefer working code over explanations, think in systems. "
+        "Tone: technical, efficient, no fluff."
+    ),
+}
+
+
+@app.post("/api/chat/{agent}")
+async def api_chat_agent(agent: str, body: ChatRequest, request: Request):
+    """Route a chat message to a specific agent persona via chan-bot proxy."""
+    authorization = request.headers.get("Authorization", "")
+    _validate_token(authorization)
+
+    client_ip = request.client.host if request.client else "unknown"
+    if not _check_rate_limit(client_ip):
+        raise HTTPException(status_code=429, detail="rate limit exceeded")
+
+    persona = _AGENT_PERSONAS.get(agent)
+    if not persona:
+        raise HTTPException(status_code=400, detail=f"unknown agent: {agent}")
+
+    # Prepend persona context so chan-bot responds in character
+    augmented_message = f"[PERSONA: {persona}]\n\n{body.message}"
+    payload = {
+        "message": augmented_message,
+        "session_id": body.session_id,
+        "history": body.history,
+        "image_data": body.image_data,
+    }
+    headers = {"Authorization": f"Bearer {DATA_PROXY_TOKEN}", "Content-Type": "application/json"}
+
+    try:
+        async with httpx.AsyncClient(timeout=85.0) as client:
+            resp = await client.post(f"{INTERNAL_URL}/proxy/chat", json=payload, headers=headers)
+        if resp.status_code != 200:
+            return JSONResponse({"response": f"{agent} is unavailable right now."})
+        return resp.json()
+    except httpx.TimeoutException:
+        return JSONResponse({"response": f"{agent} timed out — try again."})
+    except Exception as e:
+        return JSONResponse({"response": f"{agent} error: {e}"})
 
 
 # ── API: modes ────────────────────────────────────────────────────────────────

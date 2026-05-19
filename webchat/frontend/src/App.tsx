@@ -35,6 +35,7 @@ export default function App() {
           <Route path="agents"    element={<AgentsPage />} />
           <Route path="tools"     element={<ToolsPage />} />
           <Route path="settings"  element={<SettingsPage />} />
+          <Route path="terminal"  element={<TerminalPage />} />
         </Route>
       </Routes>
       <Toaster

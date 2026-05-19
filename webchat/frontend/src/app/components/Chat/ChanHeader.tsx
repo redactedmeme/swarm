@@ -8,8 +8,8 @@ export type ChatAgent = 'chan' | 'hermes' | 'smolting' | 'builder'
 const AGENTS: { id: ChatAgent; label: string; icon: string; available: boolean; llm: string }[] = [
   { id: 'chan',     label: 'redacted-chan', icon: '⬡',  available: true,  llm: 'gemma-4-uncensored' },
   { id: 'hermes',  label: 'hermes-bot',    icon: '⚡', available: true,  llm: 'openai/gpt-oss-120b' },
-  { id: 'smolting',label: 'smolting',       icon: '🌱', available: false, llm: 'llama-3.1-8b'       },
-  { id: 'builder', label: 'builder',        icon: '🔧', available: false, llm: 'claude-haiku-4-5'  },
+  { id: 'smolting',label: 'smolting',       icon: '🌱', available: true,  llm: 'llama-3.1-8b'       },
+  { id: 'builder', label: 'builder',        icon: '🔧', available: true,  llm: 'claude-haiku-4-5'  },
 ]
 
 interface Props {
