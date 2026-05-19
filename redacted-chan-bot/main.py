@@ -129,6 +129,19 @@ try:
 except Exception:
     pass
 
+# ── Sovereign orchestration layer (optional — fail gracefully) ─────────────────
+_trajectory_tracker = None
+_traj_mod = None
+_learning_loop = None
+_orch = None
+try:
+    import trajectory_compressor as _traj_mod
+    import learning_loop as _learning_loop
+    import swarm_orchestrator as _orch
+    import skills_manager as _skills_mgr
+except Exception as _e:
+    logger.warning(f"[chan] orchestration modules not loaded: {_e}")
+
 try:
     import swarm_mesh as _chan_mesh
     _MESH_ENABLED = True
@@ -1279,6 +1292,27 @@ class RedactedChanBot:
         except Exception:
             pass
 
+        # Trajectory tracking — feed into learning loop when complex patterns emerge
+        if _traj_mod and _learning_loop:
+            try:
+                session_key = str(user_id)
+                global _trajectory_tracker
+                if _trajectory_tracker is None:
+                    _trajectory_tracker = _traj_mod.TrajectoryTracker(session_key)
+                affect_traj = "stable"
+                try:
+                    affect_traj = cat.get_trajectory(user_id)
+                except Exception:
+                    pass
+                deep_mem = bool(getattr(drc, '_last_hit', False))
+                _trajectory_tracker.record_turn(text, display, affect_traj, deep_mem)
+                snap = _trajectory_tracker.maybe_snapshot()
+                if snap:
+                    _learning_loop.enqueue_trajectory(snap)
+                    _trajectory_tracker.reset()
+            except Exception as _te:
+                logger.debug("[trajectory] record_turn error: %s", _te)
+
         # Extract persistent facts from this exchange (fire-and-forget, never blocks)
         asyncio.create_task(fe.extract_and_store(user_id, text, display))
 
@@ -2284,6 +2318,11 @@ class RedactedChanBot:
             pm.register_llm_fn(_llm_routine)
             ps.register_sub_agent_fn(sub.run)
             sj.register_sub_agent_fn(sub.run)
+            if _learning_loop:
+                _learning_loop.register_llm_fn(_llm_routine)
+            if _orch:
+                _orch.register_llm_fn(_llm_routine)
+                _orch.register_send_fn(_ping_send)
 
         app.add_handler(CommandHandler("start",           self.cmd_start))
         app.add_handler(CommandHandler("mood",            self.cmd_mood))
@@ -2512,6 +2551,19 @@ class RedactedChanBot:
             if _MESH_ENABLED and _chan_mesh and _chan_mesh.enabled():
                 asyncio.create_task(_chan_mesh.heartbeat_loop())
                 logger.info("[mesh:chan] private channel task started")
+            # Sovereign orchestration layer
+            if _learning_loop and _orch:
+                _learning_loop.register_llm_fn(_llm_routine)
+                _orch.register_llm_fn(_llm_routine)
+                if _settler and ADMIN_CHAT:
+                    _orch.register_send_fn(_ping_send)
+                try:
+                    _orch.register_phi_fn(pt.get_phi)
+                except Exception:
+                    pass
+                await _learning_loop.start()
+                await _orch.start()
+                logger.info("[chan] orchestration layer online")
 
         app.post_init = _post_init
         if not (_MESH_ENABLED and _chan_mesh and _chan_mesh.enabled()):

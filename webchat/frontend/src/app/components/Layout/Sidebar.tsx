@@ -1,6 +1,6 @@
 import { NavLink, useNavigate } from 'react-router-dom'
 import { motion } from 'framer-motion'
-import { MessageCircle, LayoutDashboard, Bot, Wrench, Settings, LogOut, Hexagon } from 'lucide-react'
+import { MessageCircle, LayoutDashboard, Bot, Wrench, Settings, LogOut, Hexagon, Terminal } from 'lucide-react'
 import { cn } from '@/app/lib/utils'
 import { useAuthStore } from '@/app/store/authStore'
 
@@ -9,6 +9,7 @@ const NAV = [
   { path: '/dashboard', icon: LayoutDashboard, label: 'Dashboard' },
   { path: '/agents',    icon: Bot,             label: 'Agents' },
   { path: '/tools',     icon: Wrench,          label: 'Tools' },
+  { path: '/terminal',  icon: Terminal,        label: 'Terminal' },
 ]
 
 export default function Sidebar() {

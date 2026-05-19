@@ -8,6 +8,7 @@ import DashboardPage from '@/app/pages/DashboardPage'
 import AgentsPage from '@/app/pages/AgentsPage'
 import ToolsPage from '@/app/pages/ToolsPage'
 import SettingsPage from '@/app/pages/SettingsPage'
+import TerminalPage from '@/app/pages/TerminalPage'
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const token = useAuthStore((s) => s.token)

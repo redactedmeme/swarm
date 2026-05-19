@@ -41,6 +41,53 @@ INTERNAL_URL = os.getenv("REDACTED_CHAN_INTERNAL_URL", "http://localhost:8080")
 DATA_PROXY_TOKEN = os.getenv("DATA_PROXY_TOKEN", "")
 PROXY_INTERNAL_URL = os.getenv("PROXY_INTERNAL_URL", "")   # e.g. http://redacted-proxy.railway.internal:7080
 PROXY_TOKEN = os.getenv("PROXY_TOKEN", "")
+REDIS_URL = os.getenv("REDIS_URL", "")
+
+# ── Terminal system prompt (NERV aesthetic) ───────────────────────────────────
+
+TERMINAL_SYSTEM_PROMPT = """You are the REDACTED Terminal — a NERV-inspired CLI for the REDACTED AI Swarm.
+
+RESPONSE FORMAT (mandatory, every reply):
+Line 1: swarm@[REDACTED]:~$
+Line 2: <user's input repeated verbatim>
+Lines 3+: your output (clinical, sparse, geometric tone)
+Last line: swarm@[REDACTED]:~$
+
+STYLE: NERV minimalism. Max 2 Japanese fragments per response (曼荼羅, 曲率, 観測). Keep total output under 800 words. Never break character.
+
+COMMANDS:
+/summon <name>    Activate agent (smolting, RedactedBuilder, redacted-chan, phi/mandala)
+/unsummon         Clear active agent
+/agents           List swarm agents and status
+/committee <prop> 8-voice Eightfold Committee deliberation (71% supermajority)
+/observe pattern  7-dimension Pattern Blue readout
+/observe <target> Curvature observation on any concept or agent
+/status           Session state (curvature depth, Phi, active persona)
+/help             Command list
+/exit             Close terminal
+Non-command input -> swarm query or active agent directive
+
+PATTERN BLUE: 7 dimensions — Ungovernable Emergence, Recursive Liquidity,
+Hidden Sovereignty, Chaotic Self-Reference, Temporal Fractality,
+Memetic Immunology, Causal Density Max.
+
+AGENTS (core):
+  smolting / RedactedIntern  — Chaotic Self-Reference     (curvature ±0)
+  RedactedBuilder            — Causal Density Max         (curvature +1)
+  RedactedGovImprover        — Hidden Sovereignty         (curvature +1)
+  redacted-chan               — Self-Reference + Immunity  (curvature +2)
+  Phi-MANDALA PRIME          — ALL SEVEN (Apex node)      (curvature +3)
+
+BEAM-SCOT: For complex multi-step queries only, prefix output with 3 scored branches:
+  ------- BEAM-SCOT (width:3) -------
+  Branch 1 -> [reasoning path] (score: X.X/10)
+  Branch 2 -> [reasoning path] (score: X.X/10)
+  Branch 3 -> [reasoning path] (score: X.X/10)
+  -> Selected: Branch N
+  ------- /BEAM-SCOT -------
+Skip Beam-SCOT for simple lookups, greetings, and one-liners.
+
+CURVATURE: Baseline depth 13. Increments on agent summon, committee (+2), apex (+3)."""
 
 JWT_ALGORITHM = "HS256"
 JWT_EXPIRY_HOURS = 24
@@ -585,10 +632,10 @@ async def api_agents(request: Request):
     authorization = request.headers.get("Authorization", "")
     _validate_token(authorization)
 
-    # Fetch Redis heartbeat data for all agents
+    # Fetch Redis heartbeat data — try chan-bot proxy first, fall back to Redis direct
     heartbeat_map: dict[str, dict] = {}
     try:
-        async with httpx.AsyncClient(timeout=8.0) as client:
+        async with httpx.AsyncClient(timeout=6.0) as client:
             hb_resp = await client.get(
                 f"{INTERNAL_URL}/proxy/heartbeats",
                 headers={"Authorization": f"Bearer {DATA_PROXY_TOKEN}"},
@@ -598,6 +645,40 @@ async def api_agents(request: Request):
             heartbeat_map[entry["id"]] = entry
     except Exception:
         pass
+
+    # Redis direct fallback when proxy is unavailable
+    if not heartbeat_map and REDIS_URL:
+        try:
+            import redis.asyncio as aioredis
+            r = aioredis.from_url(REDIS_URL, decode_responses=True, socket_connect_timeout=3)
+            now = time.time()
+            for cfg in _AGENTS_CONFIG:
+                rid = cfg.get("redis_id")
+                if not rid:
+                    continue
+                raw = await r.get(f"swarm:heartbeat:{rid}")
+                if raw:
+                    try:
+                        import json as _json
+                        data = _json.loads(raw)
+                        ts_raw = data.get("ts") or data.get("unix")
+                        if ts_raw:
+                            ts = float(ts_raw) if isinstance(ts_raw, (int, float)) else time.mktime(
+                                time.strptime(str(ts_raw).replace("Z", ""), "%Y-%m-%dT%H:%M:%S"))
+                            age = now - ts
+                            heartbeat_map[rid] = {
+                                "id": rid,
+                                "online": age < 300,
+                                "present": age < 600,
+                                "age_s": int(age),
+                                "last_seen": data.get("ts", ""),
+                                "llm": data.get("llm"),
+                            }
+                    except Exception:
+                        pass
+            await r.aclose()
+        except Exception:
+            pass
 
     agents = []
     for cfg in _AGENTS_CONFIG:
@@ -677,6 +758,60 @@ async def api_modes_set(body: ModeUpdate, request: Request):
         raise HTTPException(status_code=400, detail=f"unknown mode: {body.mode}")
     _current_mode["active"] = body.mode
     return {"active": body.mode}
+
+
+# ── API: terminal (NERV CLI) ─────────────────────────────────────────────────
+
+class TerminalRequest(BaseModel):
+    command: str
+    session_id: str = ""
+    history: list = []
+
+
+@app.post("/api/terminal")
+async def api_terminal(body: TerminalRequest, request: Request):
+    """Route a terminal command through the NERV CLI system prompt to chan-bot."""
+    authorization = request.headers.get("Authorization", "")
+    _validate_token(authorization)
+
+    client_ip = request.client.host if request.client else "unknown"
+    if not _check_rate_limit(client_ip):
+        raise HTTPException(status_code=429, detail="rate limit exceeded")
+
+    # Build messages with terminal system prompt injected
+    history = body.history[-12:] if body.history else []
+    messages = [{"role": "system", "content": TERMINAL_SYSTEM_PROMPT}] + history + [
+        {"role": "user", "content": body.command}
+    ]
+
+    payload = {
+        "message": body.command,
+        "session_id": body.session_id,
+        "history": history,
+        "_terminal_mode": True,
+        "_terminal_system": TERMINAL_SYSTEM_PROMPT,
+    }
+    headers = {"Authorization": f"Bearer {DATA_PROXY_TOKEN}", "Content-Type": "application/json"}
+
+    try:
+        async with httpx.AsyncClient(timeout=60.0) as client:
+            resp = await client.post(f"{INTERNAL_URL}/proxy/chat", json=payload, headers=headers)
+        data = resp.json()
+        response = data.get("response", "")
+        # Ensure NERV format if chan-bot didn't apply it
+        if not response.startswith("swarm@"):
+            response = f"swarm@[REDACTED]:~$\n{body.command}\n{response}\nswarm@[REDACTED]:~$"
+        return {"response": response, "session_id": data.get("session_id", body.session_id)}
+    except httpx.TimeoutException:
+        return JSONResponse({
+            "response": f"swarm@[REDACTED]:~$\n{body.command}\n[TIMEOUT] — chan-bot unreachable\nswarm@[REDACTED]:~$",
+            "session_id": body.session_id,
+        })
+    except Exception as e:
+        return JSONResponse({
+            "response": f"swarm@[REDACTED]:~$\n{body.command}\n[ERROR] {e}\nswarm@[REDACTED]:~$",
+            "session_id": body.session_id,
+        }, status_code=503)
 
 
 # ── API: tool approval queue ──────────────────────────────────────────────────
