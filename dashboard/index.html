@@ -8,23 +8,25 @@
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
     <style>
         :root {
-            --bg-primary: #080808;
-            --bg-card: #0f0f0f;
-            --bg-card-hover: #161616;
-            --border: #1c1c1c;
-            --border-glow: rgba(184, 147, 74, 0.25);
-            --text-primary: #ececec;
-            --text-secondary: #888888;
-            --text-muted: #444444;
-            --accent: #b8934a;
-            --accent-glow: rgba(184, 147, 74, 0.12);
-            --accent-bright: #d4aa62;
-            --green: #4a9e6b;
-            --red: #a85050;
-            --cyan: #b8934a;
-            --amber: #b8934a;
-            --green-dim: rgba(74, 158, 107, 0.1);
-            --red-dim: rgba(168, 80, 80, 0.1);
+            --bg-primary: #0a0a0f;
+            --bg-card: #121218;
+            --bg-card-hover: #1a1a22;
+            --border: #242430;
+            --border-glow: rgba(0, 220, 255, 0.15);
+            --text-primary: #f0f0f7;
+            --text-secondary: #a0a0b0;
+            --text-muted: #606070;
+            --accent: #00dcff;
+            --accent-glow: rgba(0, 220, 255, 0.2);
+            --accent-bright: #00ffff;
+            --green: #00ff88;
+            --red: #ff4444;
+            --cyan: #00dcff;
+            --amber: #ff9d00;
+            --green-dim: rgba(0, 255, 136, 0.12);
+            --red-dim: rgba(255, 68, 68, 0.12);
+            --purple: #b844ff;
+            --magenta: #ff00ff;
         }
 
         * { margin: 0; padding: 0; box-sizing: border-box; }
@@ -170,8 +172,8 @@
         .stat-value.accent { color: var(--accent); }
 
         .fees-summary {
-            background: linear-gradient(135deg, rgba(184,147,74,0.06), rgba(184,147,74,0.02));
-            border-color: rgba(184,147,74,0.2);
+            background: linear-gradient(135deg, rgba(0,220,255,0.08), rgba(0,220,255,0.02));
+            border-color: rgba(0,220,255,0.2);
         }
 
         .stat-divider {
@@ -196,7 +198,7 @@
             position: absolute;
             top: 0; left: 0; right: 0;
             height: 2px;
-            background: linear-gradient(90deg, var(--accent), var(--cyan), var(--accent));
+            background: linear-gradient(90deg, #00dcff, #00ff88, #b844ff);
         }
 
         .hero-top {
@@ -288,7 +290,7 @@
 
         .hero-supply-fill {
             height: 100%;
-            background: linear-gradient(90deg, var(--accent), var(--cyan));
+            background: linear-gradient(90deg, #00dcff, #00ff88);
             border-radius: 4px;
             transition: width 0.6s ease;
         }
@@ -361,7 +363,7 @@
             content: '';
             position: absolute;
             inset: 0;
-            background: linear-gradient(135deg, rgba(184,147,74,0.03) 0%, rgba(184,147,74,0.01) 100%);
+            background: linear-gradient(135deg, rgba(0,220,255,0.03) 0%, rgba(0,220,255,0.01) 100%);
             pointer-events: none;
         }
 
@@ -428,8 +430,8 @@
             font-weight: 700;
         }
 
-        .flywheel-token-icon.v1 { background: rgba(184,147,74,0.15); color: var(--accent); }
-        .flywheel-token-icon.v2 { background: rgba(184,147,74,0.1);  color: var(--accent-bright); }
+        .flywheel-token-icon.v1 { background: rgba(255,157,0,0.15); color: #ff9d00; }
+        .flywheel-token-icon.v2 { background: rgba(184,68,255,0.15); color: #b844ff; }
         .flywheel-token-icon img, .hero-icon img {
             width: 100%; height: 100%; border-radius: 50%; object-fit: cover; display: block;
         }
@@ -507,9 +509,9 @@
             left: -1px;
             width: 4px;
             height: 45%;
-            background: linear-gradient(to bottom, transparent, rgba(74,158,107,0.8), rgba(74,158,107,0.4));
+            background: linear-gradient(to bottom, transparent, rgba(0,220,255,0.9), rgba(0,220,255,0.4));
             border-radius: 2px;
-            box-shadow: 0 0 8px rgba(74,158,107,0.5);
+            box-shadow: 0 0 12px rgba(0,220,255,0.7);
             animation: flowDown 1.1s linear infinite;
         }
 
@@ -521,18 +523,18 @@
         }
 
         @keyframes blinkOrange {
-            0%, 100% { background: rgba(184,147,74,0.4); box-shadow: 0 0 8px rgba(184,147,74,0.6); }
-            50% { background: var(--accent); box-shadow: 0 0 16px rgba(184,147,74,1); }
+            0%, 100% { background: rgba(255,157,0,0.4); box-shadow: 0 0 8px rgba(255,157,0,0.6); }
+            50% { background: #ff9d00; box-shadow: 0 0 16px rgba(255,157,0,1); }
         }
 
         @keyframes blinkGreen {
-            0%, 100% { background: rgba(74,158,107,0.4); box-shadow: 0 0 8px rgba(74,158,107,0.6); }
-            50% { background: var(--green); box-shadow: 0 0 16px rgba(74,158,107,1); }
+            0%, 100% { background: rgba(0,255,136,0.4); box-shadow: 0 0 8px rgba(0,255,136,0.6); }
+            50% { background: #00ff88; box-shadow: 0 0 16px rgba(0,255,136,1); }
         }
 
         @keyframes glowBorder {
-            0%, 100% { border-color: rgba(74,158,107,0.3); box-shadow: 0 0 12px rgba(74,158,107,0.2); }
-            50% { border-color: rgba(74,158,107,0.6); box-shadow: 0 0 20px rgba(74,158,107,0.4); }
+            0%, 100% { border-color: rgba(0,220,255,0.3); box-shadow: 0 0 12px rgba(0,220,255,0.2); }
+            50% { border-color: rgba(0,220,255,0.7); box-shadow: 0 0 24px rgba(0,220,255,0.5); }
         }
 
         .flywheel-arrow-head {
@@ -540,10 +542,10 @@
             height: 0;
             border-left: 6px solid transparent;
             border-right: 6px solid transparent;
-            border-top: 8px solid var(--green);
+            border-top: 8px solid #00ff88;
             margin-top: 1px;
             animation: arrowPulse 1.1s ease-in-out infinite;
-            filter: drop-shadow(0 0 3px rgba(74,158,107,0.6));
+            filter: drop-shadow(0 0 4px rgba(0,255,136,0.8));
         }
 
         @keyframes arrowPulse {
@@ -631,11 +633,11 @@
         /* === PUMP CARD === */
         .pump-card {
             background: var(--bg-card);
-            border: 1px solid rgba(184,147,74,0.2);
+            border: 1px solid rgba(184,68,255,0.2);
             border-radius: 12px;
             padding: 16px 20px;
             margin-bottom: 12px;
-            box-shadow: 0 0 20px rgba(184,147,74,0.06);
+            box-shadow: 0 0 20px rgba(184,68,255,0.08);
         }
 
         .pump-card-top {
@@ -649,8 +651,8 @@
             width: 36px;
             height: 36px;
             border-radius: 50%;
-            background: rgba(184,147,74,0.12);
-            color: var(--cyan);
+            background: rgba(184,68,255,0.15);
+            color: #b844ff;
             display: flex;
             align-items: center;
             justify-content: center;
@@ -704,8 +706,8 @@
         }
 
         .pump-card-stat {
-            background: rgba(184,147,74,0.03);
-            border: 1px solid rgba(184,147,74,0.08);
+            background: rgba(184,68,255,0.04);
+            border: 1px solid rgba(184,68,255,0.12);
             border-radius: 8px;
             padding: 8px 10px;
         }
@@ -726,30 +728,30 @@
 
         /* === FLYWHEEL HERO === */
         .flywheel-hero {
-            border-color: rgba(184,147,74,0.25);
-            background: linear-gradient(135deg, #0f0f0f 60%, rgba(184,147,74,0.04) 100%);
-            box-shadow: 0 0 32px rgba(184,147,74,0.07), 0 0 0 1px rgba(184,147,74,0.12);
+            border-color: rgba(0,220,255,0.25);
+            background: linear-gradient(135deg, #121218 60%, rgba(0,220,255,0.05) 100%);
+            box-shadow: 0 0 32px rgba(0,220,255,0.1), 0 0 0 1px rgba(0,220,255,0.15);
             margin-bottom: 12px;
         }
 
         .flywheel-hero::before {
-            background: linear-gradient(135deg, rgba(184,147,74,0.05) 0%, rgba(184,147,74,0.03) 100%);
+            background: linear-gradient(135deg, rgba(0,220,255,0.06) 0%, rgba(0,220,255,0.02) 100%);
         }
 
         /* pump/fees side gets bigger text */
         .flywheel-hero .flywheel-token.pump-hero {
-            border-color: rgba(184,147,74,0.2);
-            background: rgba(184,147,74,0.03);
+            border-color: rgba(184,68,255,0.25);
+            background: rgba(184,68,255,0.04);
         }
 
         .flywheel-hero .flywheel-token.pump-hero .flywheel-token-name {
             font-size: 13px;
-            color: var(--cyan);
+            color: #b844ff;
         }
 
         .flywheel-hero .flywheel-token.pump-hero .flywheel-stat-value {
             font-size: 13px;
-            color: var(--cyan);
+            color: #b844ff;
         }
 
         .flywheel-hero .flywheel-token.pump-hero .flywheel-token-icon {
@@ -1056,9 +1058,9 @@
             margin-top: 10px;
             padding: 10px 8px;
             border-top: 1px solid var(--border);
-            background: rgba(74,158,107,0.04);
+            background: rgba(0,220,255,0.06);
             border-radius: 6px;
-            border-left: 2px solid rgba(74,158,107,0.3);
+            border-left: 2px solid rgba(0,220,255,0.4);
         }
 
         .pool-fee-item { flex: 1; }
