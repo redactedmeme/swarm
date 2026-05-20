@@ -54,6 +54,7 @@ health_tools = _import_plugin_module("health_tools")
 web_tools   = _import_plugin_module("web_tools")
 exec_tools  = _import_plugin_module("exec_tools")
 skill_tools = _import_plugin_module("skill_tools")
+x_tools     = _import_plugin_module("x_tools")
 
 
 # ── Tool registry ─────────────────────────────────────────────────────────────
@@ -77,6 +78,10 @@ def _load_tools():
     web_tools.register(ctx)
     exec_tools.register(ctx)
     skill_tools.register(ctx)
+    try:
+        x_tools.register(ctx)
+    except Exception as _xe:
+        logger.warning("[tools] X tools not registered (missing credentials?): %s", _xe)
     logger.info("[swarm_manager] %d tools loaded: %s", len(TOOLS), list(TOOLS))
 
 
@@ -130,6 +135,13 @@ accurate result. You operate in a multi-step loop: plan → act → observe → 
 - swarm_read_pending, swarm_send_message — read/send swarm inbox messages
 - swarm_health_check — check agent heartbeats
 - skill_recall — recall past approaches for similar tasks
+- x_post — post a tweet (max 280 chars)
+- x_reply — reply to a tweet by ID
+- x_like — like a tweet by ID
+- x_search — search recent tweets with X query operators (from:, #tag, lang:, etc.)
+- x_get_bookmarks — fetch the authenticated user's bookmarks
+- x_get_timeline — fetch the authenticated user's home timeline
+- x_get_user — look up an X user profile by username or ID
 
 ## Rules
 - Always call at least one tool if information is needed. Never guess facts you can verify.
