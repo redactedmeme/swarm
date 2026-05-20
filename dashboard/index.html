@@ -986,6 +986,43 @@
             height: 260px;
         }
 
+        /* === BIRDEYE PRICE CHART === */
+        .birdeye-section {
+            margin-bottom: 20px;
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            overflow: hidden;
+            background: var(--bg-card);
+        }
+
+        .birdeye-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 10px 14px;
+            border-bottom: 1px solid var(--border);
+        }
+
+        .birdeye-title {
+            font-size: 13px;
+            font-weight: 600;
+            color: var(--text-primary);
+        }
+
+        .birdeye-badge {
+            font-size: 10px;
+            color: var(--text-muted);
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+        }
+
+        .birdeye-iframe {
+            display: block;
+            width: 100%;
+            height: 500px;
+            border: none;
+        }
+
         /* === CENTER — POOL CARDS === */
         .pools-section { margin-bottom: 20px; }
 
@@ -1663,6 +1700,22 @@
 
         <!-- Mobile-only stats row (hidden on desktop) -->
         <div class="mobile-stats" id="mobileStats"></div>
+
+        <!-- Birdeye Price Chart -->
+        <div class="birdeye-section">
+            <div class="birdeye-header">
+                <span class="birdeye-title">Price Chart</span>
+                <span class="birdeye-badge">Powered by Birdeye</span>
+            </div>
+            <iframe
+                class="birdeye-iframe"
+                src="https://embed.birdeye.so/tv-widget/9mtKd1o8Ht7F1daumKgs5D8EdVyopWBfYQwNmMojpump?chain=solana&viewMode=pair&chartInterval=15&chartType=Candle&chartTimezone=America%2FChicago&chartLeftToolbar=show&theme=dark"
+                frameborder="0"
+                allowfullscreen
+                loading="lazy"
+                title="REDACTED token price chart">
+            </iframe>
+        </div>
 
         <!-- Volume Chart -->
         <div class="chart-section">
