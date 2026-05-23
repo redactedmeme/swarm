@@ -1129,8 +1129,8 @@ def build_app() -> Application:
     poll_interval = int(os.getenv("POLL_INTERVAL", "60"))
     app.job_queue.run_repeating(_poll_inbox, interval=poll_interval, first=10)
 
-    # Background hourly status report to smolting
-    app.job_queue.run_repeating(_hourly_status_report, interval=3600, first=60)
+    # Hourly status report disabled — was generating spam in smolting's admin chat
+    # app.job_queue.run_repeating(_hourly_status_report, interval=3600, first=60)
 
     # Soul evolution — every 2h, distill recent activity into SOUL.md
     app.job_queue.run_repeating(_soul_update_job, interval=7200, first=300)
