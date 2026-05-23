@@ -63,6 +63,10 @@ LLM_PROVIDER = os.getenv("LLM_PROVIDER", "anthropic").lower()
 MOLTBOOK_API_KEY = os.getenv("MOLTBOOK_API_KEY", "")
 MOLTBOOK_BASE = "https://www.moltbook.com/api/v1"
 
+# Proxy routing — when set, all LLM calls go through redacted-proxy
+PROXY_URL   = os.getenv("PROXY_URL", "").rstrip("/")
+PROXY_TOKEN = os.getenv("PROXY_TOKEN", "")
+
 # Clawbal (IQLabs on-chain chatroom)
 CLAWBAL_BASE       = os.getenv("CLAWBAL_API_URL",  "https://ai.iqlabs.dev")
 CLAWBAL_ROOM       = os.getenv("CLAWBAL_CHATROOM", "")        # default room UUID
@@ -111,9 +115,39 @@ _chat_histories: dict = {}
 
 # ── LLM client ───────────────────────────────────────────────────────────────
 
+async def _proxy_complete(messages: list, model: str, max_tokens: int) -> str:
+    """Call redacted-proxy OpenAI-compat endpoint."""
+    system = _build_system_prompt()
+    full = [{"role": "system", "content": system}] + [m for m in messages if m["role"] != "system"]
+    payload = {"model": model, "messages": full, "max_tokens": max_tokens, "temperature": 0.75}
+    headers = {
+        "Authorization": f"Bearer {PROXY_TOKEN}",
+        "Content-Type": "application/json",
+    }
+    async with aiohttp.ClientSession() as session:
+        async with session.post(
+            f"{PROXY_URL}/v1/chat/completions",
+            json=payload, headers=headers,
+            timeout=aiohttp.ClientTimeout(total=30),
+        ) as resp:
+            data = await resp.json()
+            if resp.status != 200:
+                raise RuntimeError(f"proxy {resp.status}: {data}")
+            return data["choices"][0]["message"]["content"].strip()
+
+
 async def _llm_complete(messages: list, max_tokens: int = 600) -> str:
-    """Call the configured LLM provider with fallback chain. Returns the assistant text."""
-    chain = [LLM_PROVIDER] + [p for p in ("venice", "groq", "xai", "anthropic") if p != LLM_PROVIDER]
+    """Call LLM — via proxy if configured, else direct provider fallback chain."""
+    if PROXY_URL:
+        model = _LLM_MODELS.get(LLM_PROVIDER, "llama-3.1-8b-instant")
+        try:
+            result = await _proxy_complete(messages, model, max_tokens)
+            if result:
+                return result
+        except Exception as e:
+            logger.warning(f"[llm] proxy failed, falling back to direct: {e}")
+
+    chain = [LLM_PROVIDER] + [p for p in ("groq", "xai", "anthropic") if p != LLM_PROVIDER]
 
     last_err = None
     for provider in chain:
@@ -1120,6 +1154,7 @@ def main() -> None:
     logger.info("=" * 60)
     logger.info("RedactedBuilder Telegram Bot starting")
     logger.info(f"  LLM provider: {LLM_PROVIDER}")
+    logger.info(f"  Proxy:        {PROXY_URL or 'disabled (direct)'}")
     logger.info(f"  Admin IDs:    {ADMIN_IDS or 'unrestricted'}")
     logger.info(f"  Moltbook:     {'configured' if MOLTBOOK_API_KEY else 'not set'}")
     logger.info(f"  Soul:         {soul_manager.soul_status_line()}")
