@@ -2755,6 +2755,12 @@ def main():
                             ev += f": {str(detail)[:80]}"
                         soul_manager.record_notable_event(ev)
 
+                elif msg_type == "status_report":
+                    # Routine agent health pings — ack silently, don't notify admin
+                    swarm_inbox.complete_message(msg_id, result={"ack": True})
+                    logger.debug(f"[swarm_inbox] status_report from {from_ag} — silently acked")
+                    continue
+
                 elif msg_type == "status_update":
                     notif = (
                         f"📡 <b>Swarm status</b> from {from_ag}\n"
