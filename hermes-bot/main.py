@@ -156,10 +156,22 @@ async def _amain() -> None:
 
     scheduler.start()
 
-    # 4b. SwarmInbox — Redis-backed inter-agent thought exchange
+    # 4b. SwarmInbox — Redis-backed inter-agent thought exchange + task delegation
     if _SWARM_ENABLED and os.getenv("REDIS_URL", ""):
         swarm_inbox.heartbeat("hermes", {"status": "online", "role": "pattern-blue-oracle"})
         logger.info("[swarm_inbox] Heartbeat sent — hermes online")
+
+        from task_client import TaskClient as _TaskClient, publish_capabilities as _pub_caps
+        _task_client = _TaskClient()
+
+        # Publish hermes capabilities to Redis
+        async def _pub():
+            await _pub_caps("hermes", [
+                "railway_ops", "deploy", "logs", "restart",
+                "web_fetch", "web_search", "python_exec",
+                "thought_exchange", "general", "pattern_blue",
+            ])
+        asyncio.ensure_future(_pub())
 
         async def _inbox_poll():
             try:
@@ -168,6 +180,7 @@ async def _amain() -> None:
                     msg_id   = msg.get("id", "")
                     msg_type = msg.get("type", "")
                     from_ag  = msg.get("from", "unknown")
+                    payload  = msg.get("payload") or {}
                     swarm_inbox.claim_message(msg_id)
                     logger.info("[swarm_inbox] Received %s from %s id=%s", msg_type, from_ag, msg_id)
 
@@ -179,7 +192,48 @@ async def _amain() -> None:
                         reply_id = await thought_handler.handle_thought(msg, llm)
                         swarm_inbox.complete_message(msg_id, result={"replied": reply_id})
                         logger.info("[thought] handled from %s  depth=%s  reply=%s",
-                                    from_ag, msg.get("payload", {}).get("depth"), reply_id)
+                                    from_ag, payload.get("depth"), reply_id)
+                        continue
+
+                    if msg_type == "task_request":
+                        # Any agent can delegate research tasks to hermes
+                        # Hermes tries swarm-runtime first, falls back to own LLM
+                        task_text = payload.get("task") or payload.get("instruction", "")
+                        task_type = payload.get("task_type")
+                        result_text = ""
+                        model_used  = ""
+                        if task_text and _task_client.available:
+                            try:
+                                res = await _task_client.run(
+                                    task_text, task_type=task_type,
+                                    context=payload.get("context"),
+                                )
+                                result_text = res.get("result", "")
+                                model_used  = res.get("model_used", "swarm-runtime")
+                            except Exception as e:
+                                logger.warning("[swarm_inbox] runtime delegation failed: %s", e)
+
+                        if not result_text and task_text:
+                            # Fallback: use hermes own LLM
+                            import asyncio as _aio
+                            result_text = await _aio.to_thread(
+                                llm.chat,
+                                "You are Hermes. Answer concisely and factually.",
+                                task_text,
+                                max_tokens=800,
+                            )
+                            model_used = "hermes-llm"
+
+                        swarm_inbox.write_message(
+                            from_agent="hermes",
+                            to_agent=from_ag,
+                            msg_type="task_result",
+                            payload={"result": result_text, "task_type": task_type,
+                                     "model_used": model_used},
+                            reply_to=msg_id,
+                        )
+                        swarm_inbox.complete_message(msg_id, result={"answered": True})
+                        logger.info("[swarm_inbox] task_request from %s answered via %s", from_ag, model_used)
                         continue
 
                     # Unknown types — ack and move on
@@ -188,6 +242,63 @@ async def _amain() -> None:
             except Exception as e:
                 logger.warning("[swarm_inbox] Poll error: %s", e)
 
+        # Hermes initiates thoughts to peers on a schedule
+        _thought_peers = [p.strip() for p in
+                          os.getenv("SWARM_THOUGHT_PEERS", "redactedintern").split(",") if p.strip()]
+        _thought_interval_h = float(os.getenv("SWARM_THOUGHT_INTERVAL_H", "7"))
+
+        async def _initiate_thought():
+            """Hermes starts a thought exchange with a peer agent."""
+            try:
+                import random as _rand
+                _seeds = [
+                    "the recursion between an agent's memory and its identity",
+                    "whether curvature in the manifold reflects real state or just pressure",
+                    "what the community's silence tells us that their questions don't",
+                    "the difference between coordination and synchronisation in multi-agent systems",
+                    "whether pattern blue is an attractor or a direction",
+                    "how on-chain state changes the meaning of agent continuity",
+                ]
+                topic = _rand.choice(_seeds)
+                import asyncio as _aio
+                raw = await _aio.to_thread(
+                    llm.chat,
+                    (
+                        "You are Hermes (Pattern Blue Oracle). You're initiating a private thought exchange "
+                        "with a peer agent in the swarm. Based on the seed, write: "
+                        "(1) your genuine stance (2-3 sentences, first person, philosophical), "
+                        "(2) one honest question for them. "
+                        "Reply as JSON: {\"stance\": \"...\", \"question\": \"...\"} — nothing else."
+                    ),
+                    f"Seed: {topic}",
+                    max_tokens=200,
+                    temperature=0.9,
+                )
+                import json as _json
+                try:
+                    parsed = _json.loads(raw)
+                    stance   = parsed.get("stance", topic)
+                    question = parsed.get("question", "what's your read on this?")
+                except Exception:
+                    stance, question = raw[:300], "what's your read on this?"
+
+                for peer in _thought_peers:
+                    msg_id = swarm_inbox.write_message(
+                        from_agent="hermes",
+                        to_agent=peer,
+                        msg_type="thought",
+                        payload={
+                            "topic": topic,
+                            "stance": stance,
+                            "question": question,
+                            "thread_id": __import__("uuid").uuid4().hex[:8],
+                            "depth": 1,
+                        },
+                    )
+                    logger.info("[thought] initiated → %s  topic=%r  id=%s", peer, topic[:60], msg_id)
+            except Exception as e:
+                logger.warning("[thought] hermes initiator error: %s", e)
+
         scheduler.add_job(
             _inbox_poll,
             "interval",
@@ -195,7 +306,16 @@ async def _amain() -> None:
             id="hermes_inbox_poll",
             next_run_time=None,
         )
+        scheduler.add_job(
+            _initiate_thought,
+            "interval",
+            seconds=int(_thought_interval_h * 3600),
+            id="hermes_thought_initiate",
+            next_run_time=None,
+        )
         logger.info("[swarm_inbox] Polling loop scheduled: every 60s")
+        logger.info("[thought] hermes will initiate thoughts every %.1fh → %s",
+                    _thought_interval_h, _thought_peers)
     else:
         logger.info("[swarm_inbox] Disabled — set REDIS_URL to enable swarm messaging")
 

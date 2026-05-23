@@ -194,10 +194,28 @@ async def _dispatch(req: TaskRequest, task_id: str | None = None) -> TaskRespons
 
 # ── Lifecycle ─────────────────────────────────────────────────────────────────
 
+async def _publish_capabilities() -> None:
+    """Publish swarm-runtime capabilities to Redis for agent discovery."""
+    redis_url = os.getenv("REDIS_URL", "")
+    if not redis_url:
+        return
+    try:
+        import json
+        import redis.asyncio as aioredis
+        caps = list(TASK_HANDLERS.keys())
+        r = aioredis.from_url(redis_url, decode_responses=True)
+        await r.set("swarm:caps:swarm-runtime", json.dumps(caps), ex=86400)
+        await r.aclose()
+        logger.info("[caps] published capabilities: %s", caps)
+    except Exception as e:
+        logger.warning("[caps] capability publish failed: %s", e)
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     scheduler.start()
     asyncio.create_task(_self_heartbeat_loop())
+    asyncio.create_task(_publish_capabilities())
     kernel = get_kernel()
     await kernel.start_lifecycle(tick_rate=1.0)
     logger.info("[sub-agent-service] online — hyperbolic kernel started (%d tiles)", len(kernel.tiles))

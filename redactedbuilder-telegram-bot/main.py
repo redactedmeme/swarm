@@ -67,6 +67,10 @@ MOLTBOOK_BASE = "https://www.moltbook.com/api/v1"
 PROXY_URL   = os.getenv("PROXY_URL", "").rstrip("/")
 PROXY_TOKEN = os.getenv("PROXY_TOKEN", "")
 
+# swarm-runtime task delegation
+from task_client import TaskClient as _TaskClient, publish_capabilities as _pub_caps
+_task_client = _TaskClient()
+
 # Clawbal (IQLabs on-chain chatroom)
 CLAWBAL_BASE       = os.getenv("CLAWBAL_API_URL",  "https://ai.iqlabs.dev")
 CLAWBAL_ROOM       = os.getenv("CLAWBAL_CHATROOM", "")        # default room UUID
@@ -542,14 +546,35 @@ async def cmd_build(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     description = " ".join(context.args)
     thinking_msg = await update.message.reply_text("thinking about this...")
 
-    build_prompt = (
-        f"Someone's asking you to build something for the REDACTED AI Swarm.\n\n"
-        f"Request: {description}\n\n"
-        f"Give a concrete, conversational response about how you'd approach this. "
-        f"Talk about what you'd build, what files you'd touch, any tricky parts. "
-        f"Be specific but keep it natural — like explaining your plan to a teammate. "
-        f"Include code snippets if relevant. Keep it under 400 tokens."
-    )
+    # Delegate research-heavy requests to swarm-runtime for deeper analysis
+    _research_keywords = ("research", "analyse", "analyze", "sentiment", "find", "search",
+                          "what is", "how does", "explain", "summarize", "compare")
+    is_research = any(kw in description.lower() for kw in _research_keywords)
+
+    if is_research and _task_client.available:
+        try:
+            res = await _task_client.run(description, task_type="research")
+            runtime_context = res.get("result", "")
+            if runtime_context:
+                build_prompt = (
+                    f"Someone asked you: {description}\n\n"
+                    f"swarm-runtime found this context:\n{runtime_context[:800]}\n\n"
+                    f"Give your take on it in your voice — founder, direct, no fluff."
+                )
+            else:
+                is_research = False
+        except Exception:
+            is_research = False
+
+    if not is_research:
+        build_prompt = (
+            f"Someone's asking you to build something for the REDACTED AI Swarm.\n\n"
+            f"Request: {description}\n\n"
+            f"Give a concrete, conversational response about how you'd approach this. "
+            f"Talk about what you'd build, what files you'd touch, any tricky parts. "
+            f"Be specific but keep it natural — like explaining your plan to a teammate. "
+            f"Include code snippets if relevant. Keep it under 400 tokens."
+        )
 
     user_id = update.effective_user.id
     _push_history(user_id, "user", build_prompt)
@@ -1168,6 +1193,19 @@ def main() -> None:
         {"source": "telegram_bot", "status": "online", "ts": datetime.utcnow().isoformat()},
     )
     logger.info("[bot] Heartbeat written to SwarmInbox — RedactedBuilder online")
+
+    # Publish capabilities to Redis so other agents know what we handle
+    import asyncio as _aio
+    try:
+        _aio.get_event_loop().run_until_complete(
+            _pub_caps("redactedbuilder", [
+                "on_chain", "buy", "transfer", "spl_token", "wallet_info",
+                "jupiter_quote", "clawbal_post", "moltbook_post",
+                "build_proposal", "sigil", "thought_exchange",
+            ])
+        )
+    except Exception as _e:
+        logger.debug("[caps] capability publish failed: %s", _e)
 
     app.run_polling(drop_pending_updates=True)
 
