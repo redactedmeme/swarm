@@ -25,6 +25,34 @@ async function fetchAgents(): Promise<{ agents: Agent[] }> {
   return res.json()
 }
 
+async function fetchCapabilities(): Promise<{ capabilities: Record<string, string[]> }> {
+  const res = await fetch('/api/swarm/capabilities', {
+    headers: { Authorization: `Bearer ${localStorage.getItem('rc_token') ?? ''}` },
+  })
+  if (!res.ok) return { capabilities: {} }
+  return res.json()
+}
+
+// Which agents delegate to which (mesh topology)
+const DELEGATION_EDGES: Array<[string, string]> = [
+  ['chan',    'runtime'],
+  ['chan',    'hermes'],
+  ['chan',    'smolting'],
+  ['chan',    'builder'],
+  ['smolting','runtime'],
+  ['builder', 'runtime'],
+  ['hermes',  'runtime'],
+]
+
+// Redis agent key → display id mapping
+const CAPS_KEY_TO_ID: Record<string, string> = {
+  'swarm-runtime': 'runtime',
+  'hermes':        'hermes',
+  'smolting':      'smolting',
+  'builder':       'builder',
+  'redacted-chan': 'chan',
+}
+
 const ROLE_COLOR: Record<string, string> = {
   core:  'text-violet-400 bg-violet-500/10 border-violet-500/20',
   agent: 'text-cyan-400 bg-cyan-500/10 border-cyan-500/20',
@@ -58,9 +86,21 @@ export default function AgentsPage() {
     queryFn: apiGetSwarmPending,
     refetchInterval: 10_000,
   })
+  const { data: capsData } = useQuery({
+    queryKey: ['swarm-capabilities'],
+    queryFn: fetchCapabilities,
+    refetchInterval: 60_000,
+  })
 
   const agents = data?.agents ?? []
   const pending = pendingData?.pending ?? {}
+  const rawCaps = capsData?.capabilities ?? {}
+  // Remap Redis agent keys → display ids
+  const capabilities: Record<string, string[]> = {}
+  for (const [k, v] of Object.entries(rawCaps)) {
+    const id = CAPS_KEY_TO_ID[k] ?? k
+    capabilities[id] = v
+  }
 
   function pendingCount(agentId: string): number {
     const key = AGENT_REDIS_KEY[agentId]
@@ -111,6 +151,7 @@ export default function AgentsPage() {
                         onSelect={() => setSelected((s) => s === agent.id ? null : agent.id)}
                         pendingCount={pc}
                         pendingItems={pending[AGENT_REDIS_KEY[agent.id] ?? '']?.items ?? []}
+                        capabilities={capabilities[agent.id] ?? []}
                       />
                     </motion.div>
                   )
@@ -156,23 +197,23 @@ function SpatialCanvas({ agents, selected, onSelect, pendingCount }: SpatialCanv
       </pattern>
       <rect width="100%" height="100%" fill="url(#grid)" />
 
-      {/* Connection lines from chan */}
-      {agents.map((agent) => {
-        if (agent.id === 'chan') return null
-        const from = INITIAL_POSITIONS['chan'] ?? { x: 0.5, y: 0.5 }
-        const to = INITIAL_POSITIONS[agent.id] ?? { x: 0.5, y: 0.5 }
-        const pc = pendingCount(agent.id)
+      {/* Mesh delegation edges */}
+      {DELEGATION_EDGES.map(([fromId, toId]) => {
+        const from = INITIAL_POSITIONS[fromId] ?? { x: 0.5, y: 0.5 }
+        const to   = INITIAL_POSITIONS[toId]   ?? { x: 0.5, y: 0.5 }
+        const pc   = pendingCount(toId)
+        const isActive = pc > 0
         return (
           <motion.line
-            key={`line-${agent.id}`}
+            key={`edge-${fromId}-${toId}`}
             x1={from.x * canvasW} y1={from.y * canvasH}
             x2={to.x * canvasW}   y2={to.y * canvasH}
-            stroke={pc > 0 ? 'hsl(190 80% 50% / 0.35)' : 'hsl(245 60% 60% / 0.15)'}
-            strokeWidth={pc > 0 ? 1.5 : 1}
-            strokeDasharray="4 4"
-            initial={{ pathLength: 0, opacity: 0 }}
-            animate={{ pathLength: 1, opacity: 1 }}
-            transition={{ duration: 1, delay: 0.3 }}
+            stroke={isActive ? 'hsl(190 80% 50% / 0.45)' : 'hsl(245 60% 60% / 0.12)'}
+            strokeWidth={isActive ? 1.5 : 0.8}
+            strokeDasharray={fromId === 'chan' ? '4 4' : '2 5'}
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            transition={{ duration: 0.8, delay: 0.2 }}
           />
         )
       })}
@@ -247,9 +288,10 @@ interface AgentCardProps {
   onSelect: () => void
   pendingCount: number
   pendingItems: Array<{ content?: string; type?: string; from?: string; [k: string]: unknown }>
+  capabilities: string[]
 }
 
-function AgentCard({ agent, selected, onSelect, pendingCount: pc, pendingItems }: AgentCardProps) {
+function AgentCard({ agent, selected, onSelect, pendingCount: pc, pendingItems, capabilities }: AgentCardProps) {
   return (
     <div
       onClick={onSelect}
@@ -321,6 +363,22 @@ function AgentCard({ agent, selected, onSelect, pendingCount: pc, pendingItems }
                       </div>
                     )
                   })}
+                </div>
+              )}
+              {/* Capabilities */}
+              {capabilities.length > 0 && (
+                <div className="space-y-1.5">
+                  <p className="text-[10px] text-muted-foreground uppercase tracking-wider">Capabilities</p>
+                  <div className="flex flex-wrap gap-1">
+                    {capabilities.map((cap) => (
+                      <span
+                        key={cap}
+                        className="text-[9px] px-1.5 py-0.5 rounded bg-secondary border border-border text-muted-foreground font-mono"
+                      >
+                        {cap}
+                      </span>
+                    ))}
+                  </div>
                 </div>
               )}
             </div>
