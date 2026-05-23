@@ -18,6 +18,16 @@ RAYDIUM_POOL_ID = os.environ.get(
     '14qc563Gd2V4nKhoK6Yoj8gYEgPa8JmadLfh45czFWJ1',  # REDACTED/SOL Raydium CPMM
 )
 
+# Secondary venue — Meteora DLMM (0.25% fee); price via DexScreener, execution via Jupiter.
+METEORA_POOL_ID = os.environ.get(
+    'METEORA_POOL_ID',
+    'HvE4Dk891ypuFSTT249gDYXinr9cboRxvKXzbXPFUvMQ',  # REDACTED/SOL Meteora DLMM
+)
+
+# Minimum price discrepancy between pools to route to the cheaper venue (bps).
+# 75bps = 0.75% — covers Meteora 0.25% fee + Raydium 0.25% fee + slippage buffer.
+ARB_MIN_DISCREPANCY_BPS = int(os.environ.get('ARB_MIN_DISCREPANCY_BPS', '75'))
+
 # ── API endpoints ──────────────────────────────────────────────────────────────
 JUPITER_QUOTE = 'https://lite-api.jup.ag/swap/v1/quote'
 JUPITER_SWAP  = 'https://lite-api.jup.ag/swap/v1/swap'
@@ -37,9 +47,9 @@ POLL_INTERVAL     = int(os.environ.get('POLL_INTERVAL',     '6'))    # faster po
 PROBE_SOL         = float(os.environ.get('PROBE_SOL',       '0.03'))
 MAX_TRADE_SOL     = float(os.environ.get('MAX_TRADE_SOL',   '2.5'))  # much larger trades
 SLIPPAGE_BPS      = int(os.environ.get('SLIPPAGE_BPS',      '250'))  # allow more slippage for HF trading
-JITO_TIP_LAMPORTS        = int(os.environ.get('JITO_TIP_LAMPORTS',        '50000'))
+JITO_TIP_LAMPORTS        = int(os.environ.get('JITO_TIP_LAMPORTS',        '1000'))    # 0.000001 SOL
 COMPUTE_UNIT_LIMIT       = int(os.environ.get('COMPUTE_UNIT_LIMIT',       '120000'))
-COMPUTE_UNIT_PRICE_MICRO = int(os.environ.get('COMPUTE_UNIT_PRICE_MICRO', '50000'))  # micro-lamports per CU
+COMPUTE_UNIT_PRICE_MICRO = int(os.environ.get('COMPUTE_UNIT_PRICE_MICRO', '1000'))   # micro-lamports per CU
 
 # ── AMM / inventory rebalancing ───────────────────────────────────────────────
 # Target fraction of total portfolio value to hold in TOKEN (0.5 = 50/50).

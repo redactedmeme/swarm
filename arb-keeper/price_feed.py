@@ -62,6 +62,48 @@ class PriceSnapshot:
         return (s - b) / b * 100
 
 
+@dataclass
+class DualPoolSnapshot:
+    """Combined Raydium on-chain + Meteora DexScreener snapshot for cross-pool routing."""
+    raydium: PriceSnapshot
+    meteora_mid: float              # 0.0 if Meteora data unavailable
+    meteora_volume_1h_usd: float
+    discrepancy_bps: float          # (raydium_mid - meteora_mid) / meteora_mid * 10000
+
+    # Proxy properties so main.py can treat DualPoolSnapshot like a PriceSnapshot.
+    @property
+    def mid_price_sol_per_token(self) -> float:
+        return self.raydium.mid_price_sol_per_token
+
+    @property
+    def pool(self):
+        return self.raydium.pool
+
+    @property
+    def probe_sol_lamports(self) -> int:
+        return self.raydium.probe_sol_lamports
+
+    @property
+    def probe_tokens(self) -> int:
+        return self.raydium.probe_tokens
+
+    @property
+    def abs_discrepancy_bps(self) -> float:
+        return abs(self.discrepancy_bps)
+
+    def cheaper_buy_pool(self) -> str:
+        """Pool with lower SOL/token price (cheaper to buy)."""
+        if self.meteora_mid <= 0:
+            return 'raydium'
+        return 'raydium' if self.raydium.mid_price_sol_per_token <= self.meteora_mid else 'meteora'
+
+    def better_sell_pool(self) -> str:
+        """Pool with higher SOL/token price (better return when selling)."""
+        if self.meteora_mid <= 0:
+            return 'raydium'
+        return 'raydium' if self.raydium.mid_price_sol_per_token >= self.meteora_mid else 'meteora'
+
+
 def _mid_price(pool: CpmmPool) -> float:
     """Instantaneous mid-price SOL per whole token from pool reserves."""
     if pool.token_0_mint == WSOL_MINT:
@@ -139,6 +181,40 @@ async def get_price_snapshot(probe_sol: float = config.PROBE_SOL) -> Optional[Pr
         f'tok_liq={tok_reserve/10**config.TOKEN_DECIMALS:.0f} tok'
     )
     return snap
+
+
+async def get_dual_snapshot(probe_sol: float = config.PROBE_SOL) -> Optional[DualPoolSnapshot]:
+    """Fetch Raydium on-chain + Meteora DexScreener price snapshots."""
+    from dex.meteora_dlmm import get_meteora_snapshot
+
+    raydium_snap = await get_price_snapshot(probe_sol)
+    if raydium_snap is None:
+        return None
+
+    meteora_snap = get_meteora_snapshot()
+    if meteora_snap is None or meteora_snap.mid_price_sol_per_token <= 0:
+        return DualPoolSnapshot(
+            raydium=raydium_snap,
+            meteora_mid=0.0,
+            meteora_volume_1h_usd=0.0,
+            discrepancy_bps=0.0,
+        )
+
+    raydium_mid = raydium_snap.mid_price_sol_per_token
+    meteora_mid = meteora_snap.mid_price_sol_per_token
+    discrepancy_bps = (raydium_mid - meteora_mid) / meteora_mid * 10_000
+
+    log.info(
+        f'[DualPool] Raydium={raydium_mid:.8f} Meteora={meteora_mid:.8f} '
+        f'discrepancy={discrepancy_bps:+.1f}bps  1h_vol=${meteora_snap.volume_1h_usd:.0f}'
+    )
+
+    return DualPoolSnapshot(
+        raydium=raydium_snap,
+        meteora_mid=meteora_mid,
+        meteora_volume_1h_usd=meteora_snap.volume_1h_usd,
+        discrepancy_bps=discrepancy_bps,
+    )
 
 
 # Keep _get_quote available for RECOVER_USDC path in main.py

@@ -68,11 +68,15 @@ class RebalanceOrder:
     # Trade source (for logging)
     trade_source: str = 'rebalance'  # 'rebalance' or 'volume_capture'
 
+    # Execution venue: 'raydium' = direct CPMM; 'meteora' = via Jupiter
+    route_pool: str = 'raydium'
+
     def describe(self) -> str:
         direction = 'BUY TOKEN' if self.is_buy_token else 'SELL TOKEN'
         source_tag = f'[{self.trade_source.upper()}]' if self.trade_source != 'rebalance' else ''
+        pool_tag = f'@{self.route_pool}' if self.route_pool != 'raydium' else ''
         return (
-            f'{source_tag} {direction}: {self.sol_amount*1000:.3f} mSOL equiv | '
+            f'{source_tag} {direction}{pool_tag}: {self.sol_amount*1000:.3f} mSOL equiv | '
             f'ratio {self.current_ratio*100:.1f}% → {self.target_ratio*100:.1f}% '
             f'(Δ={self.deviation*100:.2f}%)'
         )
@@ -140,14 +144,41 @@ def calculate_volume_capture_size(
 
 
 def find_opportunity(
-    snapshot: PriceSnapshot,
+    snapshot,
     sol_balance: float,
     token_balance_raw: int = 0,
 ) -> Optional[RebalanceOrder]:
-    """Dispatch to the correct strategy based on STRATEGY_MODE."""
+    """
+    Dispatch to the correct strategy based on STRATEGY_MODE.
+    Accepts PriceSnapshot or DualPoolSnapshot. If dual, cross-pool routing is applied
+    after the order is built: the order is routed to whichever pool offers a better
+    price for that trade direction when discrepancy > ARB_MIN_DISCREPANCY_BPS.
+    """
+    from price_feed import DualPoolSnapshot
+    if isinstance(snapshot, DualPoolSnapshot):
+        dual = snapshot
+        raw_snap = dual.raydium
+    else:
+        dual = None
+        raw_snap = snapshot
+
     if config.STRATEGY_MODE in ('virtual_clmm', 'virtual_dlmm'):
-        return _find_opportunity_virtual(snapshot, sol_balance, token_balance_raw)
-    return _find_opportunity_inventory(snapshot, sol_balance, token_balance_raw)
+        order = _find_opportunity_virtual(raw_snap, sol_balance, token_balance_raw)
+    else:
+        order = _find_opportunity_inventory(raw_snap, sol_balance, token_balance_raw)
+
+    # Apply cross-pool routing if a significant discrepancy exists
+    if order and dual and dual.abs_discrepancy_bps >= config.ARB_MIN_DISCREPANCY_BPS:
+        route = dual.cheaper_buy_pool() if order.is_buy_token else dual.better_sell_pool()
+        if route != 'raydium':
+            log.info(
+                f'[CROSS-POOL ARB] Routing {"BUY" if order.is_buy_token else "SELL"} '
+                f'to {route.upper()}: discrepancy={dual.discrepancy_bps:+.1f}bps '
+                f'(threshold={config.ARB_MIN_DISCREPANCY_BPS}bps)'
+            )
+            order.route_pool = route
+
+    return order
 
 
 def _find_opportunity_inventory(
@@ -276,12 +307,6 @@ def _find_opportunity_virtual(
     # ── Virtual quote (for logging / future fee simulation) ──────────────────
     vq = simulate_clmm_quote(price, pos, config.PROBE_SOL, is_buy=True)
 
-    log.info(
-        f'[{config.STRATEGY_MODE.upper()}] {range_status} | '
-        f'range=[{pos.lower_price:.8f}, {pos.upper_price:.8f}] '
-        f'slippage={vq["slippage_vs_mid_pct"]:.4f}%'
-    )
-
     # Compute ratio deviation (same as inventory path)
     token_bal_whole = token_balance_raw / 10**config.TOKEN_DECIMALS
     token_value_sol = token_bal_whole * price
@@ -290,6 +315,13 @@ def _find_opportunity_virtual(
         return None
     current_ratio = token_value_sol / total_value_sol
     deviation = abs(current_ratio - config.TARGET_RATIO)
+    inner_tol = config.REBALANCE_TOLERANCE * 0.5
+
+    log.info(
+        f'[{config.STRATEGY_MODE.upper()}] {range_status} | '
+        f'range=[{pos.lower_price:.3e}, {pos.upper_price:.3e}] | '
+        f'ratio={current_ratio*100:.2f}% dev={deviation*100:.2f}% inner_tol={inner_tol*100:.2f}%'
+    )
 
     # ── Decision logic: REBALANCE vs VOLUME CAPTURE ──────────────────────────
     should_rebalance = False
@@ -303,7 +335,6 @@ def _find_opportunity_virtual(
     else:
         # Inside range — only rebalance if ratio has drifted significantly.
         # Use half the normal tolerance (range keeps us tighter).
-        inner_tol = config.REBALANCE_TOLERANCE * 0.5
         if deviation >= inner_tol:
             should_rebalance = True
             log.info(
@@ -508,9 +539,9 @@ def notify_trade_executed(new_price: float, total_sol: float) -> None:
     old_count = _virtual_pos.rebalance_count
     _virtual_pos = recenter_position(_virtual_pos, new_price, config.VIRTUAL_RANGE_BPS, capital_sol=total_sol)
     log.info(
-        f'[{config.STRATEGY_MODE.upper()}] Virtual position re-centered at {new_price:.8f} '
+        f'[{config.STRATEGY_MODE.upper()}] Virtual position re-centered at {new_price:.3e} '
         f'(rebalance #{old_count + 1}) '
-        f'new range=[{_virtual_pos.lower_price:.8f}, {_virtual_pos.upper_price:.8f}]'
+        f'new range=[{_virtual_pos.lower_price:.3e}, {_virtual_pos.upper_price:.3e}]'
     )
 
 
