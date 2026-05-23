@@ -1141,13 +1141,32 @@ def build_app() -> Application:
     # Free-text chat
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
 
-    # Redis liveness pulse every 3 min — keeps swarm:heartbeat:builder fresh (TTL=10 min)
+    # Redis liveness pulse every 3 min — writes swarm:heartbeat:{builder,redactedbuilder}
     async def _heartbeat_job(ctx) -> None:
         try:
             swarm_inbox.heartbeat("redactedbuilder", {"source": "telegram_bot", "status": "online"})
             swarm_inbox.heartbeat("builder",         {"source": "telegram_bot", "status": "online"})
         except Exception as e:
-            logger.debug(f"[builder] heartbeat job failed: {e}")
+            logger.debug(f"[builder] swarm_inbox heartbeat failed: {e}")
+        # Also write directly to swarm:heartbeat:{agent} so the webchat dashboard sees us
+        _redis_url = os.getenv("REDIS_URL", "")
+        if _redis_url:
+            try:
+                import redis.asyncio as _aioredis
+                import json as _json
+                import time as _time
+                _r = _aioredis.from_url(_redis_url, decode_responses=True)
+                _payload = _json.dumps({
+                    "agent": "builder",
+                    "ts": _time.strftime("%Y-%m-%dT%H:%M:%SZ", _time.gmtime()),
+                    "unix": _time.time(),
+                    "source": "telegram_bot",
+                })
+                await _r.set("swarm:heartbeat:builder",         _payload, ex=600)
+                await _r.set("swarm:heartbeat:redactedbuilder", _payload, ex=600)
+                await _r.aclose()
+            except Exception as e:
+                logger.debug(f"[builder] redis heartbeat failed: {e}")
     app.job_queue.run_repeating(_heartbeat_job, interval=180, first=5)
 
     # Background inbox poll every 60s
