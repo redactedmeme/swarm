@@ -335,6 +335,31 @@ async def chan_anticipation(request: Request):
         return {"anticipation": "", "error": "chan-bot unreachable"}
 
 
+@app.get("/api/swarm/capabilities")
+async def api_swarm_capabilities(request: Request):
+    """Read swarm:caps:{agent} keys from Redis for all known agents."""
+    authorization = request.headers.get("Authorization", "")
+    _validate_token(authorization)
+    if not REDIS_URL:
+        return JSONResponse({"capabilities": {}})
+    _KNOWN_AGENTS = ["swarm-runtime", "hermes", "smolting", "builder", "redacted-chan"]
+    try:
+        import redis.asyncio as aioredis
+        r = aioredis.from_url(REDIS_URL, decode_responses=True, socket_connect_timeout=3)
+        caps: dict[str, list[str]] = {}
+        for agent in _KNOWN_AGENTS:
+            raw = await r.get(f"swarm:caps:{agent}")
+            if raw:
+                try:
+                    caps[agent] = json.loads(raw)
+                except Exception:
+                    pass
+        await r.aclose()
+        return {"capabilities": caps}
+    except Exception as e:
+        return JSONResponse({"capabilities": {}, "error": str(e)})
+
+
 @app.get("/api/swarm/activity")
 async def api_swarm_activity(request: Request):
     authorization = request.headers.get("Authorization", "")

@@ -15,12 +15,15 @@ const AGENT_COLORS: Record<string, string> = {
 }
 
 const MSG_TYPE_BADGE: Record<string, string> = {
-  task:      'bg-cyan-500/10 text-cyan-400 border-cyan-500/20',
-  reply:     'bg-violet-500/10 text-violet-400 border-violet-500/20',
-  result:    'bg-emerald-500/10 text-emerald-400 border-emerald-500/20',
-  error:     'bg-red-500/10 text-red-400 border-red-500/20',
-  ping:      'bg-zinc-500/10 text-zinc-400 border-zinc-500/20',
-  heartbeat: 'bg-zinc-500/8 text-zinc-500 border-zinc-600/20',
+  task:         'bg-cyan-500/10 text-cyan-400 border-cyan-500/20',
+  task_request: 'bg-cyan-500/10 text-cyan-400 border-cyan-500/20',
+  task_result:  'bg-emerald-500/10 text-emerald-400 border-emerald-500/20',
+  reply:        'bg-violet-500/10 text-violet-400 border-violet-500/20',
+  result:       'bg-emerald-500/10 text-emerald-400 border-emerald-500/20',
+  thought:      'bg-fuchsia-500/15 text-fuchsia-300 border-fuchsia-500/25',
+  error:        'bg-red-500/10 text-red-400 border-red-500/20',
+  ping:         'bg-zinc-500/10 text-zinc-400 border-zinc-500/20',
+  heartbeat:    'bg-zinc-500/8 text-zinc-500 border-zinc-600/20',
 }
 
 function agentColor(name?: string) {
