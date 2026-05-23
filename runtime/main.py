@@ -1,5 +1,6 @@
 """
 Sub-Agent Service — FastAPI app for redacted-chan's factual research intern.
+Hyperbolic kernel provides manifold-based task placement and organism health.
 """
 
 import json
@@ -17,6 +18,7 @@ from pydantic import BaseModel
 import router
 import scheduler
 from auth import verify_token
+from hyperbolic_kernel import HyperbolicKernel, HealthStatus
 
 # ── Redis heartbeat helpers ───────────────────────────────────────────────────
 
@@ -57,9 +59,20 @@ async def _self_heartbeat_loop() -> None:
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 logger = logging.getLogger(__name__)
 
+# ── Hyperbolic kernel (singleton) ─────────────────────────────────────────────
+
+_kernel: HyperbolicKernel | None = None
+
+def get_kernel() -> HyperbolicKernel:
+    global _kernel
+    if _kernel is None:
+        _kernel = HyperbolicKernel(curvature_initial=13.0)
+    return _kernel
+
 # ── Async task store ──────────────────────────────────────────────────────────
 
 _async_tasks: dict[str, dict] = {}
+_task_tiles: dict[str, tuple] = {}  # task_id → tile (x, y) coord
 
 # ── Request / Response models ─────────────────────────────────────────────────
 
@@ -102,20 +115,72 @@ TASK_HANDLERS = {
 }
 
 
-async def _dispatch(req: TaskRequest) -> TaskResponse:
+_TASK_WEIGHTS = {
+    "deep_research":  "agent",
+    "deep_sentiment": "agent",
+    "pattern_detect": "ritual",
+    "vault_search":   "sigil",
+    "memory_search":  "sigil",
+    "sentiment":      "ritual",
+    "research":       "agent",
+    "web_research":   "agent",
+    "summarize_url":  "ritual",
+    "context_brief":  "ritual",
+    "fact_audit":     "agent",
+    "vault_audit":    "sigil",
+    "daily_digest":   "agent",
+}
+
+_TASK_TIMEOUT = int(os.getenv("TASK_TIMEOUT_SEC", "120"))
+
+
+async def _dispatch(req: TaskRequest, task_id: str | None = None) -> TaskResponse:
     start = time.monotonic()
     task_type = req.task_type or router.detect_type(req.task)
+    kernel = get_kernel()
+
+    # Place task on manifold
+    process_type = _TASK_WEIGHTS.get(task_type, "agent")
+    tile_coord = await kernel.schedule_process({
+        "type":      process_type,
+        "task_type": task_type,
+        "task_id":   task_id or "sync",
+        "state":     "RUNNING",
+    })
+    tile_key = (round(tile_coord.x, 6), round(tile_coord.y, 6))
+    if task_id:
+        _task_tiles[task_id] = tile_key
 
     module_name = TASK_HANDLERS.get(task_type, "tasks.research")
+    result = model_used = ""
+    sources: list[str] = []
+    timed_out = False
+
     try:
         import importlib
         mod = importlib.import_module(module_name)
-        result, model_used, sources = await mod.run(req.task, req.context or {})
+        result, model_used, sources = await asyncio.wait_for(
+            mod.run(req.task, req.context or {}),
+            timeout=_TASK_TIMEOUT,
+        )
+    except asyncio.TimeoutError:
+        timed_out = True
+        result = f"Task timed out after {_TASK_TIMEOUT}s."
+        logger.warning(f"[dispatch] {task_type} timed out — degrading tile {tile_key}")
     except Exception as e:
         logger.warning(f"[dispatch] {task_type} failed: {e}")
         result = "Task failed. Check service logs for details."
-        model_used = ""
-        sources = []
+
+    # Mark tile done or degrade it on failure/timeout
+    async with kernel._manifold_lock:
+        tile = kernel.tiles.get(tile_key)
+        if tile:
+            if timed_out:
+                tile.corruption_level = min(1.0, tile.corruption_level + 0.25)
+                tile.health = HealthStatus.DEGRADED
+            else:
+                tile.data = {"process": "EMPTY", "state": "READY"}
+                tile.corruption_level = max(0.0, tile.corruption_level - 0.05)
 
     latency = int((time.monotonic() - start) * 1000)
     return TaskResponse(
@@ -133,8 +198,11 @@ async def _dispatch(req: TaskRequest) -> TaskResponse:
 async def lifespan(app: FastAPI):
     scheduler.start()
     asyncio.create_task(_self_heartbeat_loop())
-    logger.info("[sub-agent-service] online")
+    kernel = get_kernel()
+    await kernel.start_lifecycle(tick_rate=1.0)
+    logger.info("[sub-agent-service] online — hyperbolic kernel started (%d tiles)", len(kernel.tiles))
     yield
+    await kernel.stop_lifecycle()
     logger.info("[sub-agent-service] shutting down")
 
 
@@ -145,9 +213,17 @@ app = FastAPI(title="redacted-chan sub-agent", lifespan=lifespan)
 
 @app.get("/health")
 async def health():
+    kernel = get_kernel()
+    organism = await kernel.get_organism_status()
     return {
         "status": "ok",
         "tasks_available": list(TASK_HANDLERS.keys()),
+        "kernel": {
+            "alive": organism.get("status") == "alive",
+            "tiles": organism.get("total_tiles", 0),
+            "atp_reserve": round(organism.get("atp_reserve", 0), 1),
+            "dna_generation": organism.get("dna_generation", 0),
+        },
     }
 
 
@@ -163,11 +239,13 @@ async def run_task_async(req: TaskRequest):
 
     async def _bg():
         try:
-            resp = await _dispatch(req)
+            resp = await _dispatch(req, task_id=task_id)
             _async_tasks[task_id] = {"status": "done", "result": resp.model_dump()}
         except Exception as e:
             logger.warning(f"[async_task] {task_id} failed: {e}")
             _async_tasks[task_id] = {"status": "error", "result": "Task failed. Check service logs."}
+        finally:
+            _task_tiles.pop(task_id, None)
 
     asyncio.create_task(_bg())
     return {"task_id": task_id, "status": "pending"}
@@ -187,6 +265,38 @@ async def get_scheduled_result(name: str):
     if not result:
         return {"status": "no_result", "name": name}
     return result
+
+
+# ── Kernel status ─────────────────────────────────────────────────────────────
+
+@app.get("/kernel/status")
+async def kernel_status():
+    kernel = get_kernel()
+    status = await kernel.get_organism_status()
+    status["active_tasks"] = len(_task_tiles)
+    status["tile_count"] = len(kernel.tiles)
+    return status
+
+
+@app.get("/kernel/tiles")
+async def kernel_tiles():
+    """Return a summary of all tiles for visualisation."""
+    kernel = get_kernel()
+    async with kernel._manifold_lock:
+        tiles = []
+        for (x, y), tile in kernel.tiles.items():
+            tiles.append({
+                "x": round(x, 4),
+                "y": round(y, 4),
+                "health": tile.health.value,
+                "process": tile.data.get("process", "EMPTY"),
+                "task_type": tile.data.get("task_type", ""),
+                "corruption": round(tile.corruption_level, 3),
+                "age": round(tile.age, 1),
+                "atp": round(tile.metabolism.atp, 1),
+                "curvature_pressure": round(tile.curvature_pressure, 3),
+            })
+    return {"tiles": tiles}
 
 
 # ── Swarm mesh bridge ─────────────────────────────────────────────────────────
