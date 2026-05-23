@@ -124,9 +124,109 @@ async def _poll_bundle(bundle_id: str, timeout: float = 30.0) -> bool:
     return False
 
 
+async def _execute_via_jupiter(
+    opportunity: RebalanceOrder, keypair, pubkey: str, rpc_url: str,
+) -> TradeResult:
+    """Execute via Jupiter API (for Meteora-routed orders)."""
+    if opportunity.is_buy_token:
+        input_mint  = config.SOL_MINT
+        output_mint = config.TOKEN_MINT
+        amount      = opportunity.sol_lamports
+    else:
+        input_mint  = config.TOKEN_MINT
+        output_mint = config.SOL_MINT
+        amount      = opportunity.token_amount
+
+    try:
+        async with httpx.AsyncClient() as client:
+            resp = await client.get(config.JUPITER_QUOTE, params={
+                'inputMint':        input_mint,
+                'outputMint':       output_mint,
+                'amount':           str(amount),
+                'slippageBps':      str(config.SLIPPAGE_BPS),
+                'onlyDirectRoutes': 'true',
+            }, timeout=8)
+            resp.raise_for_status()
+            quote = resp.json()
+
+            swap_resp = await client.post(config.JUPITER_SWAP, json={
+                'quoteResponse':              quote,
+                'userPublicKey':              pubkey,
+                'wrapAndUnwrapSol':           True,
+                'dynamicComputeUnitLimit':    True,
+                'prioritizationFeeLamports':  config.COMPUTE_UNIT_PRICE_MICRO,
+            }, timeout=15)
+            swap_resp.raise_for_status()
+            swap_b64 = swap_resp.json().get('swapTransaction')
+    except Exception as e:
+        return TradeResult(
+            success=False, bundle_id=None, actual_profit_sol=None,
+            error=f'Jupiter quote/swap failed: {type(e).__name__}: {e}',
+            opportunity=opportunity,
+        )
+
+    try:
+        swap_tx = _sign_tx(swap_b64, keypair)
+    except Exception as e:
+        return TradeResult(
+            success=False, bundle_id=None, actual_profit_sol=None,
+            error=f'Jupiter tx signing failed: {e}', opportunity=opportunity,
+        )
+
+    use_rpc = os.environ.get('USE_RPC_FALLBACK', '').lower() == 'true'
+    if use_rpc:
+        async with httpx.AsyncClient() as client:
+            r = await client.post(rpc_url, json={
+                'jsonrpc': '2.0', 'id': 1, 'method': 'sendTransaction',
+                'params': [base58.b58encode(swap_tx).decode(),
+                           {'encoding': 'base58', 'skipPreflight': False, 'maxRetries': 3}],
+            }, timeout=15)
+            data = r.json()
+            if 'error' in data:
+                return TradeResult(
+                    success=False, bundle_id=None, actual_profit_sol=None,
+                    error=f'Jupiter sendTransaction failed: {data["error"]}',
+                    opportunity=opportunity,
+                )
+            return TradeResult(
+                success=True, bundle_id=data.get('result'), actual_profit_sol=None,
+                error=None, opportunity=opportunity,
+            )
+
+    try:
+        tip_tx = await _build_tip_tx(keypair, config.JITO_TIP_LAMPORTS, rpc_url)
+    except Exception as e:
+        return TradeResult(
+            success=False, bundle_id=None, actual_profit_sol=None,
+            error=f'Tip tx build failed: {e}', opportunity=opportunity,
+        )
+
+    bundle_id = await _submit_bundle([swap_tx, tip_tx])
+    if not bundle_id:
+        return TradeResult(
+            success=False, bundle_id=None, actual_profit_sol=None,
+            error='Jupiter+Jito bundle submission failed', opportunity=opportunity,
+        )
+
+    landed = await _poll_bundle(bundle_id, timeout=30.0)
+    if landed:
+        log.info(f'Jupiter/Meteora bundle {bundle_id} landed ✓')
+        return TradeResult(
+            success=True, bundle_id=bundle_id, actual_profit_sol=None,
+            error=None, opportunity=opportunity,
+        )
+    else:
+        log.warning(f'Jupiter/Meteora bundle {bundle_id} did not confirm within 30s (may still land)')
+        return TradeResult(
+            success=False, bundle_id=bundle_id, actual_profit_sol=None,
+            error='Jupiter bundle timeout — did not confirm in 30s', opportunity=opportunity,
+        )
+
+
 async def execute_arb(opportunity: RebalanceOrder, keypair) -> TradeResult:
     """
-    Execute a single-leg rebalance swap via Raydium CPMM.
+    Execute a single-leg rebalance swap.
+    Routes to Raydium CPMM directly, or Meteora via Jupiter, based on opportunity.route_pool.
     Submits as a Jito bundle [swap_tx, tip_tx] unless USE_RPC_FALLBACK=true.
     """
     from dex.swap_tx import build_sol_to_token_tx, build_token_to_sol_tx
@@ -134,6 +234,14 @@ async def execute_arb(opportunity: RebalanceOrder, keypair) -> TradeResult:
 
     pubkey  = str(keypair.pubkey())
     rpc_url = _rpc_url()
+
+    # Route to Meteora via Jupiter if the order was cross-pool-routed
+    if getattr(opportunity, 'route_pool', 'raydium') == 'meteora':
+        log.info(
+            f'[METEORA] Executing via Jupiter '
+            f'(discrepancy >= {config.ARB_MIN_DISCREPANCY_BPS}bps)'
+        )
+        return await _execute_via_jupiter(opportunity, keypair, pubkey, rpc_url)
 
     # Refresh pool state right before building the tx to avoid stale reserves
     try:

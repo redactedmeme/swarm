@@ -23,7 +23,7 @@ logging.basicConfig(
 
 import config
 import logger as swarm_log
-from price_feed import get_price_snapshot
+from price_feed import get_dual_snapshot
 from detector import find_opportunity, notify_trade_executed
 from circuit_breaker import CircuitBreaker
 
@@ -115,7 +115,7 @@ async def run():
                     continue
 
             # ── Price snapshot ───────────────────────────────────────────────
-            snapshot = await get_price_snapshot(probe_sol=config.PROBE_SOL)
+            snapshot = await get_dual_snapshot(probe_sol=config.PROBE_SOL)
             if snapshot is None:
                 log.debug('Price snapshot unavailable — skipping')
                 await asyncio.sleep(config.POLL_INTERVAL)

@@ -97,8 +97,8 @@ def create_virtual_position(
     liquidity = (capital_sol * 0.5 / denom) if denom > 0 else capital_sol * 1e6
 
     log.info(
-        f'VirtualPosition created: center={center_price:.8f} '
-        f'range=[{lower:.8f}, {upper:.8f}] ±{range_bps/2:.0f}bps '
+        f'VirtualPosition created: center={center_price:.3e} '
+        f'range=[{lower:.3e}, {upper:.3e}] ±{range_bps/2:.0f}bps '
         f'strategy={strategy} mode={mode} L={liquidity:.2f}'
     )
     return VirtualPosition(
