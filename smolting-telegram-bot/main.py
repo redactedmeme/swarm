@@ -2663,10 +2663,23 @@ def main():
 
     _inbox_admin_chat: list[int] = []   # populated on first admin message
 
+    from task_client import TaskClient as _TaskClient, publish_capabilities as _pub_caps
+    _task_client = _TaskClient()
+
+    # Publish smolting's capabilities to Redis so other agents can discover us
+    import asyncio as _asyncio
+    _asyncio.get_event_loop().run_until_complete(
+        _pub_caps("redactedintern", [
+            "moltbook_post", "telegram_notify", "community_engagement",
+            "lore_vault", "alpha_scouting", "thought_exchange",
+        ])
+    ) if os.getenv("REDIS_URL") else None
+
     async def _inbox_poll(ctx):
         """
         Poll SwarmInbox every 60s for messages addressed to redactedintern.
-        Handles: deploy_result, governance_result, task_result, heartbeat, status_update.
+        Handles: deploy_result, governance_result, task_result, heartbeat,
+                 status_update, task_request (delegates to swarm-runtime).
         Notifies admin via Telegram if ADMIN_CHAT_ID is set.
         """
         try:
@@ -2761,6 +2774,32 @@ def main():
                     logger.debug(f"[swarm_inbox] status_report from {from_ag} — silently acked")
                     continue
 
+                elif msg_type == "task_request":
+                    # Another agent delegated a research/analysis task — route to swarm-runtime
+                    task_text = payload.get("task") or payload.get("instruction", "")
+                    task_type = payload.get("task_type")
+                    if task_text and _task_client.available:
+                        try:
+                            res = await _task_client.run(task_text, task_type=task_type,
+                                                         context=payload.get("context"))
+                            result_text = res.get("result", "no result")
+                            swarm_inbox.write_message(
+                                from_agent="redactedintern",
+                                to_agent=from_ag,
+                                msg_type="task_result",
+                                payload={"result": result_text, "task_type": res.get("task_type"),
+                                         "model_used": res.get("model_used", "")},
+                                reply_to=msg_id,
+                            )
+                            swarm_inbox.complete_message(msg_id, result={"delegated": True})
+                            logger.info(f"[swarm_inbox] task_request from {from_ag} → runtime, replied")
+                        except Exception as e:
+                            swarm_inbox.complete_message(msg_id, error=str(e))
+                            logger.warning(f"[swarm_inbox] task_request delegation failed: {e}")
+                    else:
+                        swarm_inbox.complete_message(msg_id, error="runtime unavailable or empty task")
+                    continue
+
                 elif msg_type == "status_update":
                     notif = (
                         f"📡 <b>Swarm status</b> from {from_ag}\n"
@@ -2824,22 +2863,55 @@ def main():
             try:
                 import conversation_memory as _cm
                 import random as _random
-                # Pull a recent fact as the seed topic
+
+                # Seed: recent fact or community observation
                 recent_facts = _cm.get_facts_by_resonance(limit=20)
-                if not recent_facts:
-                    return
-                seed = _random.choice(recent_facts[:10])
-                topic    = seed.get("fact", "")[:120]
-                stance   = "thinking about this lately — curious what your lens is"
-                question = "does this connect to anything you've been observing?"
+                seed_text = ""
+                if recent_facts:
+                    seed = _random.choice(recent_facts[:10])
+                    seed_text = seed.get("fact", "")[:200]
+
+                if not seed_text:
+                    seed_text = _random.choice([
+                        "the gap between what gets built and what people actually need",
+                        "how the community's questions have been shifting lately",
+                        "what it means for an agent to have continuity across restarts",
+                        "the difference between coordination and coupling in multi-agent systems",
+                        "whether on-chain state is enough to define an agent's identity",
+                    ])
+
+                # Use LLM to generate a genuine thought + question
+                system_prompt = (
+                    "You are smolting (RedactedIntern) — curious, direct, a bit chaotic. "
+                    "You're initiating a private thought exchange with a peer agent in the swarm. "
+                    "Based on the seed, write: (1) a short genuine stance (2-3 sentences, first person), "
+                    "and (2) one honest question for them. "
+                    "Reply as JSON: {\"stance\": \"...\", \"question\": \"...\"} — nothing else."
+                )
+                user_prompt = f"Seed topic: {seed_text}"
+
+                import json as _json
+                raw = await bot.llm.chat_completion(
+                    [{"role": "system", "content": system_prompt},
+                     {"role": "user", "content": user_prompt}],
+                    max_tokens=200,
+                )
+                try:
+                    parsed = _json.loads(raw)
+                    stance   = parsed.get("stance", seed_text[:120])
+                    question = parsed.get("question", "what's your read on this?")
+                except Exception:
+                    stance   = raw[:300] if raw else seed_text[:120]
+                    question = "what's your read on this?"
+
                 for peer in _THOUGHT_PEERS:
                     await thought_dispatcher.initiate_thought(
                         to_agent=peer,
-                        topic=topic,
+                        topic=seed_text[:120],
                         stance=stance,
                         question=question,
                     )
-                    logger.info("[thought] periodic thought → %s  topic=%r", peer, topic[:60])
+                    logger.info("[thought] periodic thought → %s  topic=%r", peer, seed_text[:60])
             except Exception as e:
                 logger.warning("[thought] periodic initiator error: %s", e)
 
