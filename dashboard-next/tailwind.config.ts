@@ -72,6 +72,18 @@ const config: Config = {
           '0%': { backgroundPosition: '-200% 0' },
           '100%': { backgroundPosition: '200% 0' },
         },
+        fadeIn: {
+          '0%': { opacity: '0' },
+          '100%': { opacity: '1' },
+        },
+        slideUp: {
+          '0%': { opacity: '0', transform: 'translateY(8px)' },
+          '100%': { opacity: '1', transform: 'translateY(0)' },
+        },
+        spin: {
+          '0%': { transform: 'rotate(0deg)' },
+          '100%': { transform: 'rotate(360deg)' },
+        },
       },
       animation: {
         pulse2: 'pulse2 2s infinite',
@@ -82,6 +94,9 @@ const config: Config = {
         blinkGreen: 'blinkGreen 1.4s ease-in-out infinite',
         heroCardGlow: 'heroCardGlow 2.5s ease-in-out infinite',
         shimmer: 'shimmer 2s linear infinite',
+        fadeIn: 'fadeIn 0.3s ease-out',
+        slideUp: 'slideUp 0.3s ease-out',
+        spin: 'spin 1s linear infinite',
       },
     },
   },
