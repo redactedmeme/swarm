@@ -3,6 +3,7 @@ import os
 import logging
 import asyncio
 import json
+import sys
 import threading
 from pathlib import Path
 from datetime import datetime
@@ -23,6 +24,9 @@ _REPO_ROOT = _BOT_DIR.parent
 _PYTHON_PATH = _BOT_DIR / "python" if (_BOT_DIR / "python").exists() else _REPO_ROOT / "python"
 if str(_PYTHON_PATH) not in _sys.path:
     _sys.path.insert(0, str(_PYTHON_PATH))
+from tg_fmt import TgFmt, from_llm, truncate
+
+fmt = TgFmt("HTML")
 
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import (

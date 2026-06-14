@@ -31,6 +31,10 @@ try:
 except ImportError:
     pass
 
+from tg_fmt import TgFmt, from_llm, truncate
+
+fmt = TgFmt("HTML")
+
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import (
     Application,
@@ -936,7 +940,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 
     bmem.record(kind="chat_reply", body=response, title=f"re: {user_text[:60]}", user_id=user_id)
 
-    await update.message.reply_text(response[:4000])
+    await update.message.reply_text(truncate(from_llm(response)), parse_mode="HTML")
 
 
 # ── Inbox poller (background job) ────────────────────────────────────────────
