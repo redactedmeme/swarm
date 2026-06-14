@@ -123,10 +123,28 @@ def get_feed(user_id: int) -> str:
     if last_traj == trajectory and now - last_ts < _REFIRE_COOLDOWN:
         return ""
 
+    # Try MC-enhanced segment retrieval first
+    mc_result = ""
+    try:
+        import memory_cache as mc
+        segments = mc.retrieve_relevant_segments(
+            query_text=" ".join(keywords),
+            user_id=user_id,
+            trajectory=trajectory,
+            n=2,
+        )
+        if segments:
+            mc_lines = []
+            for s in segments:
+                mc_lines.append(f"- {s['content'][:200]}")
+            mc_result = "\n".join(mc_lines)
+    except Exception:
+        pass
+
     vault_echoes = _get_resonant_vault(keywords, trajectory, n=3)
     fact_echoes  = _get_resonant_facts(keywords, n=2)
 
-    if not vault_echoes and not fact_echoes:
+    if not vault_echoes and not fact_echoes and not mc_result:
         return ""
 
     _last_fired[user_id] = (trajectory, now)
@@ -135,6 +153,8 @@ def get_feed(user_id: int) -> str:
     lines.append(
         f"_The conversation is {trajectory} — these surfaced from the history of us:_"
     )
+    if mc_result:
+        lines.append(mc_result)
     for v in vault_echoes:
         lines.append(f"- {v}")
     for f in fact_echoes:

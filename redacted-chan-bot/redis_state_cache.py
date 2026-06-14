@@ -119,6 +119,15 @@ def save_momentum() -> bool:
     except Exception:
         pass
 
+    # Memory cache — recent segment IDs for pre-warming after restart
+    try:
+        import memory_cache as mc
+        seg_ids = mc.get_recent_segment_ids(n=5)
+        if seg_ids:
+            bundle["recent_segment_ids"] = seg_ids
+    except Exception:
+        pass
+
     try:
         r.setex(_REDIS_KEY, _TTL_SEC, json.dumps(bundle, ensure_ascii=False))
         logger.debug("[redis_state_cache] momentum saved — %d keys", len(bundle))
@@ -208,6 +217,15 @@ def load_momentum() -> bool:
                 current["next_thread"] = bundle["session_state"]["next_thread"]
                 scon._save(current)
                 restored.append("next_thread")
+    except Exception:
+        pass
+
+    # Memory cache — sync segments from LCO on startup
+    try:
+        import memory_cache as mc
+        synced = mc.sync_from_lco()
+        if synced:
+            restored.append(f"segments({synced})")
     except Exception:
         pass
 

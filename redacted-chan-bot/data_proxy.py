@@ -280,7 +280,7 @@ async def handle_swarm_activity(request):
                     })
 
         await r.aclose()
-        messages.sort(key=lambda m: float(m.get("ts") or 0), reverse=True)
+        messages.sort(key=lambda m: str(m.get("ts") or ""), reverse=True)
         return web.json_response({"messages": messages[:n]})
     except Exception as e:
         logger.warning(f"[data_proxy] swarm_activity redis error: {e}")
