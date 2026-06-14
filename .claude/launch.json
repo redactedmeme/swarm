@@ -40,6 +40,13 @@
       "runtimeArgs": ["run", "dev", "--", "--port", "5173", "--host"],
       "port": 5173,
       "cwd": "webchat/frontend"
+    },
+    {
+      "name": "dashboard-next",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["run", "dev"],
+      "port": 3000,
+      "cwd": "dashboard-next"
     }
   ]
 }

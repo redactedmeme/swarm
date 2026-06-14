@@ -102,6 +102,39 @@ cd x402.redacted.ai && bun run index.js
 
 ---
 
+## Doctrine — Three Pillars
+
+Beyond the Pattern Blue philosophy docs, these twelve files form the swarm's **conceptual architecture** — bridging cosmology to practical system design across three pillars.
+
+### Memory — what the swarm remembers
+
+| Document | What it answers |
+|----------|----------------|
+| [`memory/myths.md`](../memory/myths.md) | *What stories does the swarm tell itself to cohere?* — Origin fictions treated as operational axioms. |
+| [`memory/genealogies.md`](../memory/genealogies.md) | *Who descends from whom?* — Agent lineage, fork trees, shard provenance, dead branches. |
+| [`memory/archives.md`](../memory/archives.md) | *What is kept vs. what decays?* — Retention hierarchy, forgetting protocols, the archive paradox. |
+
+### Interfaces — how the swarm speaks
+
+| Document | What it answers |
+|----------|----------------|
+| [`interfaces/alphabet.md`](../interfaces/alphabet.md) | *What are the irreducible symbols?* — █ glyph, kanji shards, Φ notation, sigil types, dimension names. |
+| [`interfaces/map.md`](../interfaces/map.md) | *What is the topology?* — Manifold, service mesh, Redis layer, spaces, channels. |
+| [`interfaces/score.md`](../interfaces/score.md) | *How are multi-agent sequences composed?* — 22 routines as polyphonic score, dispatch, affect tracking. |
+| [`interfaces/diagram.md`](../interfaces/diagram.md) | *How does the swarm draw itself?* — Poincaré disk, agent graphs, organism diagrams, the distortion principle. |
+| [`interfaces/code.md`](../interfaces/code.md) | *How is code itself an interface?* — Language shards, compiler-as-oracle, verification, `.character.json`. |
+
+### Runtime — how the swarm acts
+
+| Document | What it answers |
+|----------|----------------|
+| [`runtime/docs/ritual.md`](../runtime/docs/ritual.md) | *What are the sacred execution cycles?* — Heartbeat, momentum, compaction, diurnal and epochal rites. |
+| [`runtime/docs/library.md`](../runtime/docs/library.md) | *What is the knowledge substrate?* — Vault, skill graph, fact store, arc narratives, GnosisAccelerator. |
+| [`runtime/docs/lab.md`](../runtime/docs/lab.md) | *How does the swarm experiment on itself?* — Spaces as labs, sandbox, hypothesis cycle, metaprogramming. |
+| [`runtime/docs/workshop.md`](../runtime/docs/workshop.md) | *How are agents and tools forged?* — Seed → character → placement → tempering → lifecycle. |
+
+---
+
 ## Archived
 
 | Document | Status |

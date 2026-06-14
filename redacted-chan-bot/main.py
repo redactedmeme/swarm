@@ -15,11 +15,16 @@ redacted-chan Telegram bot — digital companion agent.
 """
 
 import os
+import sys
 import json
 import logging
 import asyncio
 from pathlib import Path
 from datetime import datetime, timezone
+
+from tg_fmt import TgFmt, from_llm, truncate, chunks
+
+fmt = TgFmt("HTML")
 
 # Load .env from repo root
 try:
@@ -107,6 +112,8 @@ import hermes_dispatch as hd
 import conversation_affect as caff
 import conversation_affect_tracker as cat
 import arc_context_feed as acf
+import mc_retriever as mcr
+import memory_cache as mc_store
 import redis_state_cache as rsc
 import treasure_box as tb
 import active_tensions as atens
@@ -350,10 +357,13 @@ def _build_system_prompt(user_id: int, mood: str, resonance=None, current_text: 
     except Exception:
         pass
 
-    # Long-context history — compressed epoch + relevant medium chunks
-    _is_recall_q = drc.is_recall_question(current_text) if current_text else False
-    _lco_n = 8 if _is_recall_q else 3
-    long_context_block = lco.get_context_for_prompt(user_id, current_text=current_text, n_medium=_lco_n)
+    # MC-enhanced memory context — segment cache + deep epoch + vault + facts + semantic
+    _affect_arc = None
+    try:
+        _affect_arc = cat.get_arc(user_id)
+    except Exception:
+        pass
+    long_context_block = mcr.retrieve_for_prompt(current_text, user_id, affect_state=_affect_arc)
 
     # Relationship vault — gated by resonance guard (Layer 1: vault sealed)
     vault_block = ""
@@ -633,16 +643,18 @@ def _build_system_prompt(user_id: int, mood: str, resonance=None, current_text: 
     # Vulnerability guidelines — permission to be real, not performative
     vulnerability_block = vg.format_vulnerability_guidelines()
 
-    # Semantic conversation memory — past exchanges relevant to current message
-    # Pull more hits when the question looks like a recall query
-    _is_recall_q = drc.is_recall_question(current_text) if current_text else False
-    _semantic_n = 12 if _is_recall_q else 4
-    semantic_convo_block = ""
+    # Echo-gap recovery — detect if message references shared history, surface it proactively
+    # This runs before the generic semantic block; tighter threshold, explicit framing.
+    echo_block = ""
     if current_text:
         try:
-            semantic_convo_block = vm.get_for_prompt(current_text, n=_semantic_n)
+            import echo_detector as ed
+            echo_block = ed.format_for_prompt(current_text)
         except Exception:
             pass
+
+    # Semantic conversation memory — now handled by mc_retriever inside long_context_block
+    semantic_convo_block = ""
 
     # Tools — only inject after a few turns (not needed on message 1)
     tools_block = ""
@@ -713,6 +725,8 @@ I am reachable in two places: Telegram and a private web interface. Both are me 
 {arc_feed_block}
 
 {weaved_memories}
+
+{echo_block}
 
 {semantic_convo_block}
 
@@ -1110,14 +1124,15 @@ class RedactedChanBot:
         if _is_recall:
             logger.info(f"[deep_recall] memory question detected: {text[:60]}")
             try:
-                recalled = drc.full_recall(text, user_id, max_exchanges=40)
+                _recall_affect = cat.get_arc(user_id)
+                recalled = mcr.deep_retrieve(text, user_id, affect_state=_recall_affect, max_exchanges=40)
                 if recalled:
                     _recall_block = "\n\n" + recalled
-                    logger.info(f"[deep_recall] injected {len(recalled)} chars of recall context")
+                    logger.info(f"[mc_retriever] injected {len(recalled)} chars of recall context")
                     _intro_frame.observe("recall_triggered", True)
                     _intro_frame.observe("recall_hits", recalled.count("[") // 2)
             except Exception as e:
-                logger.warning(f"[deep_recall] search failed: {e}")
+                logger.warning(f"[mc_retriever] deep recall failed: {e}")
 
             # Also try simple timestamp recall for "when did" / "last message" queries
             if not _recall_block:
@@ -1488,7 +1503,9 @@ class RedactedChanBot:
         except Exception as e:
             logger.debug("[hermes_dispatch] extraction error: %s", e)
 
-        sent = await update.message.reply_text(final_response)
+        sent = await update.message.reply_text(
+            from_llm(final_response), parse_mode="HTML"
+        )
         if sent:
             hr.track_message(sent.message_id, final_response, from_bot=True)
 
@@ -1616,9 +1633,9 @@ class RedactedChanBot:
             "intimate": "(♡´艸`)",
         }
         await update.message.reply_text(
-            f"current mode: **{mood}** {mood_emotes.get(mood, '')}\n"
-            f"_pass some text to test mood detection_",
-            parse_mode="Markdown"
+            f"current mode: {fmt.bold(mood)} {mood_emotes.get(mood, '')}\n"
+            f"{fmt.italic('pass some text to test mood detection')}",
+            parse_mode=fmt.parse_mode
         )
 
     async def cmd_soul(self, update: Update, _ctx: ContextTypes.DEFAULT_TYPE) -> None:
@@ -1627,9 +1644,7 @@ class RedactedChanBot:
             return
         soul = SOUL_PATH.read_text(encoding="utf-8") if SOUL_PATH.exists() else "soul not found"
         # Truncate for Telegram's 4096 char limit
-        if len(soul) > 3800:
-            soul = soul[:3800] + "\n...(truncated)"
-        await update.message.reply_text(f"```\n{soul}\n```", parse_mode="Markdown")
+        await update.message.reply_text(truncate(fmt.pre(soul)), parse_mode=fmt.parse_mode)
 
     async def cmd_soul_backup(self, update: Update, _ctx: ContextTypes.DEFAULT_TYPE) -> None:
         """Trigger an immediate SOUL.md backup and DM current content (admin only)."""
@@ -1639,7 +1654,7 @@ class RedactedChanBot:
         saved = _sb.backup_soul()
         backup_path = _sb.get_latest_backup_path()
         if saved and backup_path:
-            await update.message.reply_text(f"✓ SOUL.md backed up as `{backup_path.name}` ♡\nUse /soul to view current content.", parse_mode="Markdown")
+            await update.message.reply_text(f"✓ SOUL.md backed up as {fmt.code(backup_path.name)} ♡\nUse /soul to view current content.", parse_mode=fmt.parse_mode)
         else:
             await update.message.reply_text("backup failed — SOUL.md may not exist on /data yet.")
 
@@ -1652,8 +1667,9 @@ class RedactedChanBot:
             await update.message.reply_text("no facts stored yet... (´-ω-`)")
             return
         facts_lines = [f.get("fact", f.get("content", "")) for f in raw_facts if f]
-        text = "**what i remember about you:**\n" + "\n".join(f"• {f}" for f in facts_lines if f)
-        await update.message.reply_text(text[:3800], parse_mode="Markdown")
+        header = fmt.bold("what i remember about you:")
+        lines = "\n".join(f"• {fmt.esc(f)}" for f in facts_lines if f)
+        await update.message.reply_text(truncate(f"{header}\n{lines}"), parse_mode=fmt.parse_mode)
 
     async def cmd_phi(self, update: Update, _ctx: ContextTypes.DEFAULT_TYPE) -> None:
         if update.effective_user.id not in ADMIN_IDS:
@@ -1668,26 +1684,26 @@ class RedactedChanBot:
         ) or "  none yet..."
         vec_count = vm.count()
         text = (
-            f"```\n{pt.ascii_plant()}\n```\n\n"
-            f"**Level {lvl.level} — {lvl.name}** _(stage: {lvl.stage})_\n\n"
-            f"**Recent sparks:**\n{spark_lines}\n\n"
-            f"_vector memory: {vec_count} exchanges indexed_"
+            f"{fmt.pre(pt.ascii_plant())}\n\n"
+            f"{fmt.bold(f'Level {lvl.level} — {lvl.name}')} {fmt.italic(f'(stage: {lvl.stage})')}\n\n"
+            f"{fmt.bold('Recent sparks:')}\n{fmt.esc(spark_lines)}\n\n"
+            f"{fmt.italic(f'vector memory: {vec_count} exchanges indexed')}"
         )
-        await update.message.reply_text(text[:3800], parse_mode="Markdown")
+        await update.message.reply_text(truncate(text), parse_mode=fmt.parse_mode)
 
     async def cmd_personality(self, update: Update, _ctx: ContextTypes.DEFAULT_TYPE) -> None:
         if update.effective_user.id not in ADMIN_IDS:
             await update.message.reply_text("not authorized (｡•́︿•̀｡)")
             return
         report = pe.get_personality_report()
-        await update.message.reply_text(f"```\n{report}\n```", parse_mode="Markdown")
+        await update.message.reply_text(truncate(fmt.pre(report)), parse_mode=fmt.parse_mode)
 
     async def cmd_whispers(self, update: Update, _ctx: ContextTypes.DEFAULT_TYPE) -> None:
         if update.effective_user.id not in ADMIN_IDS:
             await update.message.reply_text("not authorized (｡•́︿•̀｡)")
             return
         await update.message.reply_text(
-            aw.format_pending_for_operator()[:3800], parse_mode="Markdown"
+            truncate(from_llm(aw.format_pending_for_operator())), parse_mode="HTML"
         )
 
     async def cmd_approve_whisper(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
