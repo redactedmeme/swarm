@@ -207,6 +207,25 @@ def _strip_cashtags(text: str) -> str:
     return _CASHTAG_RE.sub(lambda m: m.group().lstrip("$"), text)
 
 
+_MD_MARKER_RE = _tpd_re.compile(r'\*\*|\*|__|`|~~')
+
+
+def _strip_markdown_markers(text: str) -> str:
+    """
+    Strip markdown emphasis/code markers from a title.
+
+    Moltbook renders titles as plain text, so LLM-produced markers like
+    **bold** or `code` leak through as literal asterisks/backticks in the
+    displayed title. Also drops a leading heading '#'. Body content is left
+    alone — only titles get this treatment.
+    """
+    if not text:
+        return text
+    t = text.strip().lstrip('#').strip()
+    t = _MD_MARKER_RE.sub('', t)
+    return t.strip()
+
+
 # ── Multi-Provider LLM with Fallback ───────────────────────────────────────────
 async def _call_llm_with_fallback(
     messages: List[Dict[str, str]],
@@ -757,7 +776,7 @@ async def post_swarm_introspection(moltbook) -> Optional[str]:
         logger.warning("[moltbook_auto] introspection content too short — aborting")
         return None
 
-    result = await moltbook.post(_strip_cashtags(title), _strip_cashtags(content), submolt="swarm")
+    result = await moltbook.post(_strip_cashtags(_strip_markdown_markers(title)), _strip_cashtags(content), submolt="swarm")
     if result:
         url = result.get("_url", "")
         logger.info(f"[moltbook_auto] Swarm introspection posted: {url}")
@@ -907,7 +926,7 @@ async def autonomous_post(moltbook, market_data_fn=None, notify_fn=None) -> None
             logger.warning(f"[moltbook_auto] Skipping post to /{submolt} — content looks malformed ({repr(content[:80])})")
             return
 
-        title = _strip_cashtags(title)
+        title = _strip_cashtags(_strip_markdown_markers(title))
         content = _strip_cashtags(content)
         result = await moltbook.post(title, content, submolt=submolt)
         if result:

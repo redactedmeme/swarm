@@ -274,7 +274,54 @@ class SmoltingBot:
             ])
             await update.message.reply_text(error_msg)
             logger.error(f"xREDACTED error for {update.effective_user.id}: {str(e)}")
-    
+
+    async def vote_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """
+        Cast an authenticity vote on smolting: /vote yes|no [reason]
+
+        Records the operator's vote via authenticity_vote.record_vote and shows
+        the current week's tally. A failing week (score < threshold) sends
+        smolting into a space on the next soul-distillation cycle.
+        """
+        if not self.admin.is_admin(update.effective_user.id):
+            await update.message.reply_text(self.admin.locked_message(), parse_mode="Markdown")
+            return
+
+        args = context.args or []
+        yes_words = {"yes", "y", "authentic", "pass", "true", "1", "👍"}
+        no_words  = {"no", "n", "drift", "fail", "false", "0", "👎"}
+        choice = args[0].lower() if args else ""
+
+        if choice not in yes_words and choice not in no_words:
+            await update.message.reply_text(
+                "authenticity vote — is smolting staying coherent?\n\n"
+                "/vote yes [reason]  — authentic\n"
+                "/vote no [reason]   — drifting\n\n"
+                "your vote is recorded for this week's tally."
+            )
+            return
+
+        authentic = choice in yes_words
+        notes = " ".join(args[1:]).strip()
+
+        try:
+            import authenticity_vote
+            authenticity_vote.record_vote("operator", authentic, notes)
+            tally = authenticity_vote.tally_current_week()
+            verdict = "✓ authentic" if authentic else "✗ drift"
+            status = "PASS" if tally["passed"] else "FAIL"
+            await update.message.reply_text(
+                f"vote recorded: {verdict}"
+                + (f" — {notes}" if notes else "")
+                + f"\n\nthis week: {status} "
+                f"{tally['score'] * 100:.0f}% "
+                f"({tally['authentic_count']}/{tally['total_votes']} votes)"
+            )
+            logger.info(f"[vote] operator → authentic={authentic} notes={notes!r} score={tally['score']}")
+        except Exception as e:
+            logger.error(f"[vote] record failed: {e}")
+            await update.message.reply_text(f"vote failed to record: {str(e)[:80]}")
+
     async def engage_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Enhanced auto-engagement with JobQueue"""
         if not self.admin.is_admin(update.effective_user.id):
@@ -2372,6 +2419,7 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "/mobilize — rally votes for RGIP\n"
         "/chatid — get this chat's ID\n"
         "/post &lt;text&gt; — post to X 🔒\n"
+        "/vote yes|no [reason] — authenticity vote 🔒\n"
         "/engage — toggle auto-like/RT 🔒\n"
         "/summon &lt;agent&gt; — activate swarm agent 🔒\n"
         "/personality &lt;name&gt; — switch persona 🔒\n"
@@ -2492,6 +2540,7 @@ def main():
     application.add_handler(CommandHandler("help", help_command))
     application.add_handler(CommandHandler("alpha", bot.alpha_command))
     application.add_handler(CommandHandler("post", bot.post_command))
+    application.add_handler(CommandHandler("vote", bot.vote_command))
     application.add_handler(CommandHandler("lore", bot.lore_command))
     application.add_handler(CommandHandler("vault", bot.vault_command))
     application.add_handler(CommandHandler("stats", bot.stats_command))

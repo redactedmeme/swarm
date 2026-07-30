@@ -16,6 +16,10 @@ logger = logging.getLogger(__name__)
 
 _FS = Path(__file__).resolve().parent / "fs"
 VOTE_HISTORY = _FS / "authenticity_votes.jsonl"
+# Timestamp of the last failure-triggered dwell, so a failing week doesn't
+# fire a dwell on every 2h distillation cycle.
+_LAST_ENFORCE = _FS / "authenticity_last_enforce.txt"
+_ENFORCE_COOLDOWN_HOURS = 24.0
 VOTE_CONFIG = {
     "threshold": 0.70,  # 70% = pass
     "window_days": 7,
@@ -128,3 +132,59 @@ def authenticity_report() -> str:
         out.append(f"- `{ts}` {auth} {voter}{note_str}")
 
     return "\n".join(out)
+
+
+def _enforce_cooldown_active() -> bool:
+    """True if a failure dwell fired within the last _ENFORCE_COOLDOWN_HOURS."""
+    try:
+        if not _LAST_ENFORCE.exists():
+            return False
+        last = datetime.fromisoformat(_LAST_ENFORCE.read_text(encoding="utf-8").strip())
+        return (datetime.now(timezone.utc) - last) < timedelta(hours=_ENFORCE_COOLDOWN_HOURS)
+    except Exception:
+        return False
+
+
+def _mark_enforced() -> None:
+    try:
+        _FS.mkdir(exist_ok=True)
+        _LAST_ENFORCE.write_text(datetime.now(timezone.utc).isoformat(), encoding="utf-8")
+    except Exception as e:
+        logger.debug(f"[authenticity_vote] mark_enforced failed: {e}")
+
+
+async def enforce_and_maybe_dwell() -> dict:
+    """
+    Check this week's authenticity tally and, if it FAILED (votes exist and the
+    score is below threshold), send smolting into a space_dweller session — so a
+    failing coherence vote has a real consequence instead of being a no-op.
+
+    Rate-limited to at most once per _ENFORCE_COOLDOWN_HOURS so the 2h soul
+    distillation cycle can call this every time without spamming dwells.
+
+    Returns the tally dict (see tally_current_week).
+    """
+    tally = tally_current_week()
+
+    # Only act on a genuine failure with real votes on record.
+    if tally.get("total_votes", 0) == 0 or tally.get("passed", True):
+        return tally
+
+    if _enforce_cooldown_active():
+        logger.info("[authenticity_vote] failed week but dwell cooldown active — skipping")
+        return tally
+
+    score = tally.get("score", 0.0)
+    reason = (
+        f"authenticity vote failed — {score * 100:.0f}% "
+        f"({tally.get('authentic_count', 0)}/{tally.get('total_votes', 0)} this week)"
+    )
+    try:
+        import space_dweller
+        await space_dweller.dwell(reason=reason, mood="unsettled")
+        _mark_enforced()
+        logger.warning(f"[authenticity_vote] FAILED week → space_dweller triggered ({reason})")
+    except Exception as e:
+        logger.error(f"[authenticity_vote] enforce dwell failed: {e}")
+
+    return tally

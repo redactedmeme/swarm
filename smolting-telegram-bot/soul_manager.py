@@ -270,11 +270,17 @@ async def update_soul(llm_client) -> bool:
     except ImportError:
         debates_section = ""
 
+    auth_section = ""
     try:
         import authenticity_vote
         auth_section = authenticity_vote.authenticity_report() or ""
+        # If this week's vote failed, coherence drift has a cost: send smolting
+        # into a space (rate-limited internally so this is safe to call every cycle).
+        await authenticity_vote.enforce_and_maybe_dwell()
     except ImportError:
-        auth_section = ""
+        pass
+    except Exception as e:
+        logger.debug(f"[soul_manager] authenticity enforce skipped: {e}")
 
     # Provide existing beliefs so LLM can evolve rather than repeat them
     existing_beliefs = ""
