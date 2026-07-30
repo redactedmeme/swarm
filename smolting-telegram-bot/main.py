@@ -3067,8 +3067,10 @@ def main():
             async with application:
                 await application.start()
                 if swarm_mesh:
-                    asyncio.create_task(swarm_mesh.heartbeat_loop())
-                    logger.info("[swarm_mesh] mesh heartbeat started")
+                    async def _mesh_llm_call(messages):
+                        return await bot.llm.chat_completion(messages)
+                    asyncio.create_task(swarm_mesh.heartbeat_loop(_mesh_llm_call))
+                    logger.info("[swarm_mesh] mesh heartbeat started (thought dispatch enabled)")
                 await dash.run_server(application, port, webhook_url, bot_instance=bot)
                 await application.stop()
                 if swarm_mesh:

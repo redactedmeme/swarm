@@ -140,10 +140,17 @@ async def peers() -> list[dict]:
 
 # ─── Heartbeat loop ───────────────────────────────────────────────────────────
 
-async def heartbeat_loop() -> None:
+async def heartbeat_loop(llm_call=None) -> None:
     """
     Background loop: announce on first run then re-announce every 2 min.
-    Also polls for inbound messages and logs them.
+    Polls inbound messages and routes 'thought' / 'deliberation_challenge'
+    types to thought_dispatcher.handle_thought (closing the mesh deliberation
+    loop); other message types are logged.
+
+    Args:
+        llm_call: async fn(messages: list[dict]) -> str — smolting's LLM wrapper.
+                  When None, mesh thoughts are logged but not answered (parity
+                  with the old log-only behaviour).
     """
     if not _enabled():
         logger.info("[mesh] SWARM_MESH_URL not set — mesh disabled")
@@ -160,11 +167,74 @@ async def heartbeat_loop() -> None:
             # Process inbound messages
             msgs = await poll()
             for msg in msgs:
-                logger.info(f"[mesh] ← {msg.get('from','?')} [{msg.get('type','?')}]: {str(msg.get('payload',''))[:120]}")
+                await _dispatch(msg, llm_call)
         except asyncio.CancelledError:
             break
         except Exception as e:
             logger.debug(f"[mesh] heartbeat error: {e}")
+
+
+async def _dispatch(msg: dict, llm_call) -> None:
+    """
+    Route a single inbound mesh message.
+
+    'thought' and 'deliberation_challenge' are handed to the existing
+    thought_dispatcher (same handler the SwarmInbox poller uses), which replies
+    via SwarmInbox — mirroring hermes-bot's mesh dispatch. Everything else is
+    logged only.
+    """
+    from_node = msg.get("from", "?")
+    msg_type  = msg.get("type", "?")
+    payload   = msg.get("payload") or {}
+
+    logger.info(f"[mesh] ← {from_node} [{msg_type}]: {str(payload)[:120]}")
+
+    if msg_type not in ("thought", "deliberation_challenge"):
+        return
+
+    if llm_call is None:
+        logger.debug("[mesh] %s from %s dropped — no llm_call wired", msg_type, from_node)
+        return
+
+    try:
+        import thought_dispatcher as td
+    except Exception as e:
+        logger.warning(f"[mesh] thought_dispatcher import failed: {e}")
+        return
+
+    # Normalise both shapes into the swarm_inbox-format dict handle_thought expects.
+    if msg_type == "deliberation_challenge":
+        wrapped_payload = {
+            "topic":     payload.get("topic", ""),
+            "stance":    payload.get("stance", ""),
+            "question":  payload.get("question", ""),
+            "thread_id": payload.get("thread_id", ""),
+            "depth":     int(payload.get("depth", 1)),
+        }
+    else:
+        wrapped_payload = payload
+
+    wrapped = {
+        "id":      msg.get("id", f"mesh-{from_node}"),
+        "from":    from_node,
+        "to":      NODE_ID,
+        "type":    "thought",
+        "payload": wrapped_payload,
+    }
+
+    try:
+        reply_id = await td.handle_thought(wrapped, llm_call)
+        thread_id = wrapped_payload.get("thread_id", "")
+        depth     = int(wrapped_payload.get("depth", 1)) + 1
+        if reply_id:
+            logger.info(
+                f"[mesh] thought reply → {from_node} depth={depth} "
+                f"thread={thread_id} id={reply_id}"
+            )
+        else:
+            logger.info(f"[mesh] thought from {from_node} closed (depth/limit or no reply)")
+    except Exception as e:
+        logger.warning(f"[mesh] thought handling error: {e}")
 
 
 async def close() -> None:
