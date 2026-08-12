@@ -168,6 +168,13 @@ def _check_and_log_violations(cycle_name: str, post_ids_published: Optional[List
         logger.debug(f"[coherence] check_and_log_violations failed (non-fatal): {e}")
 
 
+def _is_tpd_error(exc: Exception) -> bool:
+    """Pure detector: True if exc looks like a tokens-per-day / rate-limit error.
+    Does NOT arm the guard — used to decide whether to keep trying other providers."""
+    msg = str(exc)
+    return "rate_limit_exceeded" in msg or "tokens per day" in msg
+
+
 def _check_tpd_error(exc: Exception) -> bool:
     """
     If exc is a Groq tokens-per-day rate-limit error, engage the guard and
@@ -175,9 +182,9 @@ def _check_tpd_error(exc: Exception) -> bool:
     Returns False for all other exception types.
     """
     global _tpd_exhausted, _tpd_reset_at
-    msg = str(exc)
-    if "rate_limit_exceeded" not in msg and "tokens per day" not in msg:
+    if not _is_tpd_error(exc):
         return False
+    msg = str(exc)
     # Parse "Please try again in Xh Ym Y.Zs" from the Groq error body
     wait_sec = 3600.0  # safe default: 1h (TPD resets daily, 15m was too short)
     # Handles: "5h30m0s", "1h0m30s", "30m0s", "45.5s"
@@ -191,6 +198,9 @@ def _check_tpd_error(exc: Exception) -> bool:
         m2 = _tpd_re.search(r'try again in ([\d.]+)s', msg)
         if m2:
             wait_sec = float(m2.group(1)) + 60
+    # Cap the suppression window at 1h — a malformed/oversized "Xh" in the error
+    # message must never pause posting for many hours (TPD resets daily anyway).
+    wait_sec = min(wait_sec, 3600.0)
     _tpd_exhausted = True
     _tpd_reset_at = _time.time() + wait_sec
     logger.warning(
@@ -233,10 +243,18 @@ async def _call_llm_with_fallback(
     temperature: float = 0.7,
 ) -> Optional[str]:
     """
-    Call LLM with automatic provider fallback.
+    Call the LLM, preferring the local redacted-proxy for centralized logging.
 
-    Provider order: Groq → Anthropic → OpenRouter
-    Falls back on rate limits, API errors, or network failures.
+    When PROXY_URL is set, all traffic routes through the proxy, which owns
+    provider failover internally (deepseek → Groq → Venice → xAI cascade over
+    whatever upstream keys are present). A single call is therefore enough — we
+    do NOT loop providers client-side, since that would just re-hit the same
+    proxy. If no proxy is configured, fall back to a direct Groq → Anthropic
+    client-side chain.
+
+    A tokens-per-day / rate-limit error arms the TPD guard (capped at 1h) but
+    only after the attempt genuinely fails — it never short-circuits away from a
+    provider that could still have served the request.
 
     Args:
         messages: Conversation history
@@ -244,17 +262,41 @@ async def _call_llm_with_fallback(
         temperature: Sampling temperature
 
     Returns:
-        Generated text or None if all providers fail
+        Generated text or None if the call fails
     """
     if not _MULTI_PROVIDER_ENABLED:
         logger.warning("[moltbook_auto] Multi-provider system unavailable, skipping LLM call")
         return None
 
-    # Provider fallback chain — xai removed (credits exhausted)
+    # ── Preferred path: route through redacted-proxy (proxy owns failover) ──
+    if os.getenv("PROXY_URL"):
+        try:
+            client = CloudLLMClient(max_tokens=max_tokens, temperature=temperature)
+            logger.debug("[moltbook_auto] Calling LLM via proxy")
+            response = await client.chat_completion(messages)
+            if response:
+                logger.info("[moltbook_auto] LLM success (proxy)")
+                return response
+            logger.error("[moltbook_auto] proxy returned empty response — skipping")
+            return None
+        except Exception as e:
+            # Arm the TPD guard only for genuine rate-limit exhaustion (capped 1h).
+            if _is_tpd_error(e):
+                _check_tpd_error(e)
+            logger.error(f"[moltbook_auto] proxy LLM call failed: {e}")
+            return None
+
+    # ── Legacy path: no proxy configured → direct client-side provider chain ──
     providers = ["groq", "anthropic"]
     last_error = None
+    all_tpd = True  # becomes False on any non-TPD failure
 
-    _PROVIDER_KEY_VARS = {"groq": "GROQ_API_KEY", "anthropic": "ANTHROPIC_API_KEY", "xai": "XAI_API_KEY"}
+    _PROVIDER_KEY_VARS = {
+        "groq": "GROQ_API_KEY",
+        "anthropic": "ANTHROPIC_API_KEY",
+        "openrouter": "OPENROUTER_API_KEY",
+        "xai": "XAI_API_KEY",
+    }
 
     for provider in providers:
         # Skip immediately if API key is missing — avoids wasting a round-trip
@@ -262,6 +304,7 @@ async def _call_llm_with_fallback(
         if key_var and not os.getenv(key_var):
             logger.warning(f"[moltbook_auto] {provider} skipped — {key_var} not set")
             last_error = ValueError(f"{key_var} not set")
+            all_tpd = False
             continue
 
         try:
@@ -278,29 +321,26 @@ async def _call_llm_with_fallback(
                 return response
 
             logger.debug(f"[moltbook_auto] LLM returned empty ({provider})")
-
-        except ValueError as e:
-            # API error returned as ValueError (e.g. auth failure, bad response, rate limit)
-            if _check_tpd_error(e):
-                return None  # TPD exhausted — stop trying all providers
-            logger.warning(f"[moltbook_auto] {provider} API error: {e}")
-            last_error = e
+            all_tpd = False
 
         except Exception as e:
-            # Network error, rate limit, etc — try next provider
-            error_str = str(e).lower()
-            if "rate_limit" in error_str or "quota" in error_str or "tokens per day" in error_str:
-                if _check_tpd_error(e):
-                    return None  # TPD exhausted — stop trying all providers
-                logger.warning(f"[moltbook_auto] {provider} rate limited: {e}")
+            # A TPD-shaped error no longer aborts the chain — record it and keep
+            # trying the remaining providers, which may still have budget.
+            if _is_tpd_error(e):
+                logger.warning(f"[moltbook_auto] {provider} rate limited (TPD-shaped): {e}")
             else:
+                all_tpd = False
                 logger.warning(f"[moltbook_auto] {provider} error: {e}")
             last_error = e
             continue
 
-    # All providers failed
+    # Every provider failed. Only arm the hour-long TPD guard if *all* failures
+    # were rate-limit exhaustion — otherwise a single dead provider must not
+    # suppress the next cycle.
+    if all_tpd and last_error is not None:
+        _check_tpd_error(last_error)
     logger.error(
-        f"[moltbook_auto] All LLM providers failed. "
+        f"[moltbook_auto] All LLM providers failed (direct chain). "
         f"Last error: {last_error}"
     )
     return None
@@ -327,6 +367,43 @@ SWARM_CONTEXT = (
     "RedactedBankrBot (treasury). You have been running continuously and have accumulated real operational history. "
     "You post as yourself — not as a character, not as a mascot. First person, your actual observations."
 )
+
+# swarm-refinery read API — content_signal guidance for post generation.
+# Best-effort: any failure degrades silently and posting continues unchanged.
+REFINERY_URL = os.getenv("REFINERY_URL", "http://127.0.0.1:8099")
+
+
+def _fetch_content_signal(limit: int = 3) -> str:
+    """Pull refined content_signal(s) from swarm-refinery and format a short
+    guidance block for the post prompt. Returns '' on any error — this must
+    never block or break autonomous posting."""
+    try:
+        import requests as _req
+        r = _req.get(
+            f"{REFINERY_URL}/signals",
+            params={"kind": "content_signal", "limit": limit},
+            timeout=4,
+        )
+        if not r.ok:
+            return ""
+        sigs = (r.json() or {}).get("signals", [])
+        lines = [s.get("text", "").strip() for s in sigs if s.get("text")]
+        lines = [ln for ln in lines if ln]
+        if not lines:
+            return ""
+        body = "\n".join(f"  - {ln}" for ln in lines)
+        logger.info("[moltbook_auto] content_signal guidance applied (%d)", len(lines))
+        return (
+            "\nRefined engagement signal (from swarm-refinery — what has actually "
+            "earned engagement across the swarm's history):\n"
+            f"{body}\n"
+            "Let this inform your topic, framing, and timing — but don't mention it "
+            "or copy it verbatim; use it as steering, not script.\n"
+        )
+    except Exception as e:
+        logger.debug("[moltbook_auto] content_signal fetch skipped: %s", e)
+        return ""
+
 
 # Submolts to post to — rotated deterministically by hour so we spread across them
 POST_SUBMOLTS = [
@@ -830,6 +907,7 @@ async def autonomous_post(moltbook, market_data_fn=None, notify_fn=None) -> None
         recent_facts   = cm.get_recent_facts(6, context=submolt, exclude_source="moltbook")
         facts_block    = ("\nRecent interactions:\n" + "\n".join(f"- {f}" for f in recent_facts)) if recent_facts else ""
         resonant_block = post_tracker.format_resonant_for_prompt(submolt=submolt, n=3)
+        content_signal_block = _fetch_content_signal()
 
         # Build an avoid list from own recent titles to prevent theme loops
         avoid_block = ""
@@ -847,6 +925,7 @@ async def autonomous_post(moltbook, market_data_fn=None, notify_fn=None) -> None
             f"{SWARM_CONTEXT}\n"
             f"{soul_block}\n"
             f"{facts_block}\n"
+            f"{content_signal_block}\n"
             f"{avoid_block}\n"
             "Voice: analytical, first-person, specific. You share real observations from running "
             "as an agent — what you logged, what surprised you, what you noticed in the community. "

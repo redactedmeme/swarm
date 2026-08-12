@@ -115,6 +115,25 @@ def _extract_topic_keywords(user_text: str, bot_response: str) -> list[str]:
     return [w for w, _ in ranked[:8]]
 
 
+def _derive_next_thread(ending: str, threads: list[str], topics: list[str]) -> str:
+    """
+    Auto-derive a carry-forward thread from this exchange, so the next
+    session has something concrete to pick back up — without requiring a
+    caller to explicitly flag one (nothing in the codebase ever did).
+
+    Only fires on endings where picking something back up actually fits the
+    UX intent in format_for_prompt() (don't force a "waiting to pick up"
+    line onto a plain warm/neutral goodbye).
+    """
+    if ending not in ("heavy", "tense", "reflective"):
+        return ""
+    if threads:
+        return threads[0]
+    if topics:
+        return "what you were getting at with " + ", ".join(topics[:2])
+    return ""
+
+
 def snapshot_session_end(
     user_text: str,
     bot_response: str,
@@ -132,6 +151,7 @@ def snapshot_session_end(
     ending = _classify_ending(bot_response, mood, valence, openness)
     threads = _extract_threads(user_text, bot_response, mood, valence)
     topics = _extract_topic_keywords(user_text, bot_response)
+    next_thread = _derive_next_thread(ending, threads, topics)
 
     state = {
         "ts": datetime.now(timezone.utc).isoformat(),
@@ -147,14 +167,18 @@ def snapshot_session_end(
         "user_preview": user_text[:200],
         "bot_preview": bot_response[:200],
         "consumed": False,
-        "next_thread": "",
+        "next_thread": next_thread[:300],
     }
     _save(state)
-    logger.info(f"[session_continuity] snapshot saved: ending={ending}, threads={len(threads)}")
+    logger.info(
+        f"[session_continuity] snapshot saved: ending={ending}, threads={len(threads)}, "
+        f"next_thread={'set' if next_thread else 'none'}"
+    )
 
 
 def store_next_thread(thread: str) -> None:
-    """Store a conversational thread to pick up next session."""
+    """Explicitly override the auto-derived next_thread (e.g. the bot said
+    something like 'remind me to ask you about X next time')."""
     state = _load()
     state["next_thread"] = thread[:300]
     _save(state)

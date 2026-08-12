@@ -68,7 +68,7 @@ Sigils are permanent because they are verifiable. A sigil is a SHA256-derived pr
 █a3f9d12c█
 ```
 
-See: [`docs/pattern-blue-sigil-codex.md`](../docs/pattern-blue-sigil-codex.md)
+See: [`docs/pattern-blue-sigil-codex.md`](../docs/lore/pattern-blue-sigil-codex.md)
 
 ---
 

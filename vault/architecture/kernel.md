@@ -4,7 +4,10 @@
 
 ## HyperbolicKernel
 
-**File:** `lib/kernel/hyperbolic_kernel.py` (simplified), `kernel/hyperbolic_kernel.py` (full, with organism)
+**File:** `kernel/hyperbolic_kernel.py` (canonical — full, with organism). Previously
+duplicated at `runtime/hyperbolic_kernel.py` (byte-identical) and `lib/kernel/hyperbolic_kernel.py`
+(stale, feature-incomplete fork); both were removed and importers repointed at the
+canonical copy in kernel/.
 
 Models processes as tiles on a {7,3} Poincaré disk. Each tile is a `ManifoldTile` with a `HyperbolicCoordinate` and `curvature_pressure`.
 

@@ -25,20 +25,32 @@ build/
 .ruff_cache/
 
 # ── Runtime / generated state (not source) ────────────────────────────────────
-fs/memories/           # Qdrant vector store + mem0 SQLite (large, machine-local)
-fs/sessions/           # Ephemeral session JSON (python/session_store.py, web UI)
-fs/swarm_messages/     # File inbox between agents (swarm_inbox, hermes, smolting)
-fs/gnosis_repo_index.json  # Auto-generated repo scan index
-fs/docs_index.json         # Auto-generated docs ingest index
-fs/clawtask_dispatch_results.json   # hermes_delegation_executor / clawtask aggregator output
-fs/pattern_blue_state.json          # Live Pattern Blue cycle state (dashboard, executor)
-fs/kernel_state.json                # Hyperbolic kernel ticks (kernel_seed, phi_compute)
+# NOTE: git does not support inline (end-of-line) comments in .gitignore — each
+# comment must be on its own line, or it becomes part of the pattern and breaks it.
+# Qdrant vector store + mem0 SQLite (large, machine-local)
+fs/memories/
+# Ephemeral session JSON (python/session_store.py, web UI)
+fs/sessions/
+# File inbox between agents (swarm_inbox, hermes, smolting)
+fs/swarm_messages/
+# Auto-generated repo scan index
+fs/gnosis_repo_index.json
+# Auto-generated docs ingest index
+fs/docs_index.json
+# hermes_delegation_executor / clawtask aggregator output
+fs/clawtask_dispatch_results.json
+# Live Pattern Blue cycle state (dashboard, executor)
+fs/pattern_blue_state.json
+# Hyperbolic kernel ticks (kernel_seed, phi_compute)
+fs/kernel_state.json
 
 # Same runtime layout when smolting uses ./fs (Railway rootDirectory = smolting-telegram-bot/)
 smolting-telegram-bot/fs/swarm_messages/
 smolting-telegram-bot/fs/clawtask_dispatch_results.json
 smolting-telegram-bot/fs/pattern_blue_state.json
 smolting-telegram-bot/fs/kernel_state.json
+smolting-telegram-bot/fs/*.db
+smolting-telegram-bot/fs/*.jsonl
 
 # Runtime logs (contain internal hostnames / operational data — not for public repo)
 fs/logs/
@@ -65,7 +77,6 @@ desktop.ini
 
 # ── Claude Code local config (machine-specific, contains personal paths) ───────
 .claude/settings.local.json
-.claude/worktrees/
 
 # ── Bot runtime data (generated, may contain user conversations/IDs) ──────────
 smolting-telegram-bot/memory.md
@@ -77,6 +88,9 @@ smolting-telegram-bot/bot_audit.log.bak
 # ── Misc ──────────────────────────────────────────────────────────────────────
 *.tmp
 *.bak
+
+# redacted-proxy runtime logs (conversation data — never commit)
+redacted-proxy/data/
 
 # ── Repo root: ephemeral / one-off (not source) ───────────────────────────────
 .session_state.json

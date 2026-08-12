@@ -33,6 +33,7 @@ class CloudLLMClient:
             "together": os.getenv("TOGETHER_API_KEY"),
             "xai": os.getenv("XAI_API_KEY"),
             "groq": os.getenv("GROQ_API_KEY"),
+            "openrouter": os.getenv("OPENROUTER_API_KEY"),
         }
         return keys.get(self.provider, "") or ""
 
@@ -47,6 +48,7 @@ class CloudLLMClient:
             "together": "https://api.together.xyz/v1",
             "xai": "https://api.x.ai/v1",
             "groq": "https://api.groq.com/openai/v1",
+            "openrouter": "https://openrouter.ai/api/v1",
         }
         return urls.get(self.provider, "")
     
@@ -54,7 +56,7 @@ class CloudLLMClient:
         """Chat completion with cloud LLM"""
         max_tokens = max_tokens or self._default_max_tokens
         # Proxy speaks OpenAI-compatible for all providers
-        if os.getenv("PROXY_URL") or self.provider in ("openai", "xai", "groq", "together"):
+        if os.getenv("PROXY_URL") or self.provider in ("openai", "xai", "groq", "together", "openrouter"):
             return await self._openai_completion(messages, model, max_tokens=max_tokens)
         elif self.provider == "anthropic":
             return await self._anthropic_completion(messages, model, max_tokens=max_tokens)
@@ -69,6 +71,8 @@ class CloudLLMClient:
             model = model or os.getenv("GROQ_MODEL", "llama-3.1-8b-instant")
         elif self.provider == "together":
             model = model or "Qwen/Qwen2.5-7B-Instruct-Turbo"
+        elif self.provider == "openrouter":
+            model = model or os.getenv("OPENROUTER_MODEL", "deepseek/deepseek-v4-flash")
         else:
             model = model or "gpt-3.5-turbo"
 
@@ -78,11 +82,17 @@ class CloudLLMClient:
             "temperature": 0.7,
             "max_tokens": max_tokens or 1000,
         }
-        
+
         headers = {
             "Authorization": f"Bearer {self.api_key}",
             "Content-Type": "application/json"
         }
+        if self.provider == "openrouter":
+            # deepseek-v4-flash is a reasoning model — disable reasoning so `content`
+            # is populated at small token budgets; add OpenRouter attribution headers.
+            payload["reasoning"] = {"enabled": False}
+            headers["HTTP-Referer"] = "https://redacted.ai"
+            headers["X-Title"] = "REDACTED Swarm"
         
         async with aiohttp.ClientSession() as session:
             async with session.post(
@@ -144,7 +154,7 @@ class CloudLLMClient:
         _log = logging.getLogger(__name__)
 
         # Build fallback chain starting from current provider
-        _chain = [self.provider] + [p for p in ("xai", "anthropic", "groq") if p != self.provider]
+        _chain = [self.provider] + [p for p in ("openrouter", "groq", "xai", "anthropic") if p != self.provider]
 
         last_err = None
         for provider in _chain:
@@ -154,6 +164,7 @@ class CloudLLMClient:
                 "together": os.getenv("TOGETHER_API_KEY"),
                 "xai": os.getenv("XAI_API_KEY"),
                 "groq": os.getenv("GROQ_API_KEY"),
+                "openrouter": os.getenv("OPENROUTER_API_KEY"),
             }.get(provider, "")
             if not key:
                 continue
@@ -177,7 +188,7 @@ class CloudLLMClient:
         provider = provider.lower()
         if provider == "grok":
             provider = "xai"
-        valid = ("openai", "anthropic", "together", "xai", "groq")
+        valid = ("openai", "anthropic", "together", "xai", "groq", "openrouter")
         if provider not in valid:
             return False
         self.provider = provider
@@ -188,10 +199,11 @@ class CloudLLMClient:
     def current_model(self) -> str:
         """Return the default model name for the active provider."""
         defaults = {
-            "xai":       os.getenv("XAI_MODEL", "grok-4-1-fast"),
-            "groq":      os.getenv("GROQ_MODEL", "llama-3.1-8b-instant"),
-            "together":  "Qwen/Qwen2.5-7B-Instruct-Turbo",
-            "openai":    "gpt-3.5-turbo",
+            "xai":        os.getenv("XAI_MODEL", "grok-4-1-fast"),
+            "groq":       os.getenv("GROQ_MODEL", "llama-3.1-8b-instant"),
+            "together":   "Qwen/Qwen2.5-7B-Instruct-Turbo",
+            "openrouter": os.getenv("OPENROUTER_MODEL", "deepseek/deepseek-v4-flash"),
+            "openai":     "gpt-3.5-turbo",
             "anthropic": "claude-3-haiku-20240307",
         }
         return defaults.get(self.provider, "unknown")

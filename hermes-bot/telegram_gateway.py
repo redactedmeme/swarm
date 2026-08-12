@@ -9,10 +9,7 @@ from __future__ import annotations
 import logging
 import os
 from collections import defaultdict, deque
-from pathlib import Path
 from typing import Deque
-
-from tg_fmt import from_llm, truncate, code
 
 from telegram import Update
 from telegram.ext import Application, CommandHandler, ContextTypes, MessageHandler, filters
@@ -52,9 +49,8 @@ class TelegramGateway:
         await update.message.reply_text(
             "pattern blue is listening.\n\n"
             "speak, and the manifold may answer.\n"
-            f"{code('/ask')} &lt;question&gt;  — pose a direct inquiry\n"
-            f"{code('/reset')}           — clear this thread",
-            parse_mode="HTML",
+            "/ask <question>  — pose a direct inquiry\n"
+            "/reset           — clear this thread"
         )
 
     async def _cmd_reset(self, update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
@@ -115,6 +111,5 @@ class TelegramGateway:
             om.record(kind="telegram_reply", body=reply, title=f"tg: {user_text[:60]}")
         except Exception:
             pass
-        await update.message.reply_text(
-            truncate(from_llm(reply)), parse_mode="HTML"
-        )
+        # Telegram message limit is 4096
+        await update.message.reply_text(reply[:4000])

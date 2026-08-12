@@ -38,8 +38,13 @@ XAI_API_KEY   = os.getenv("XAI_API_KEY")
 XAI_MODEL     = os.getenv("XAI_MODEL", "grok-4-1-fast")
 XAI_BASE_URL  = "https://api.x.ai/v1"
 
-# COMMITTEE_PROVIDER: explicit override ("groq", "xai"). Unset = Groq → xAI fallback.
+# COMMITTEE_PROVIDER: explicit override ("groq", "xai"). Unset = proxy → Groq → xAI.
 COMMITTEE_PROVIDER = os.getenv("COMMITTEE_PROVIDER", os.getenv("BEAM_SCOT_PROVIDER", "")).lower()
+
+# Centralized routing via local redacted-proxy (OpenRouter/deepseek) — preferred.
+PROXY_URL   = os.getenv("PROXY_URL", "").rstrip("/")
+PROXY_TOKEN = os.getenv("PROXY_TOKEN", "")
+PROXY_MODEL = os.getenv("OPENROUTER_MODEL", "deepseek/deepseek-v4-flash")
 
 SUPERMAJORITY = 0.71  # 71% of weighted votes required to pass
 
@@ -141,8 +146,12 @@ def _query_voice(client: OpenAI, proposal: str, voice: dict, model: str = GROQ_M
 
 
 def run_committee(proposal: str) -> int:
-    # Provider selection: explicit override → Groq → xAI fallback
-    if COMMITTEE_PROVIDER == "xai" and XAI_API_KEY:
+    # Provider selection: redacted-proxy → explicit override → Groq → xAI fallback
+    if PROXY_URL and PROXY_TOKEN and COMMITTEE_PROVIDER not in ("xai", "groq"):
+        client       = OpenAI(api_key=PROXY_TOKEN, base_url=f"{PROXY_URL}/v1")
+        model        = PROXY_MODEL
+        provider_tag = f"proxy/{PROXY_MODEL}"
+    elif COMMITTEE_PROVIDER == "xai" and XAI_API_KEY:
         client       = OpenAI(api_key=XAI_API_KEY, base_url=XAI_BASE_URL)
         model        = XAI_MODEL
         provider_tag = f"xAI/{XAI_MODEL}"

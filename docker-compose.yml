@@ -1,0 +1,100 @@
+version: '3.9'
+
+services:
+  swarm-orchestrator:
+    build: .
+    container_name: redacted-swarm-orchestrator
+    command: bun run --watch --cwd runtime index.ts # dev mode with hot-reload
+    volumes:
+      - .:/app
+      - ./runtime/dist:/app/runtime/dist              # built TS output
+      - ./data:/app/data                               # manifold memory + logs
+    environment:
+      - NODE_ENV=development
+      - DEFAULT_MODEL=qwen2.5                          # or claude, grok, etc.
+      - OLLAMA_HOST=http://ollama:11434
+      - POSTGRES_URL=postgres://user:pass@postgres:5432/swarm
+      - P2P_ENABLED=true
+      - P2P_BOOTSTRAP=/dns4/bootstrap.redacted.meme/tcp/4002/ws
+      - P2P_LISTEN=/ip4/0.0.0.0/tcp/4001/ws
+      - MEMORY_PATH=/app/data/manifold
+      - LOG_LEVEL=info
+    depends_on:
+      ollama:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+      bootstrap:
+        condition: service_started           # optional — can run without bootstrap
+    ports:
+      - "3000:3000"                          # future HTTP dashboard / API
+      - "4001:4001"                          # p2p websocket port
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000/health"]  # add /health route later
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  bootstrap:                                 # dedicated p2p bootstrap node
+    build: .
+    container_name: redacted-swarm-bootstrap
+    command: bun run runtime/src/p2p/bootstrap.ts
+    volumes:
+      - ./data:/app/data                     # optional log persistence
+    ports:
+      - "4002:4002"                          # public bootstrap port
+    environment:
+      - NODE_ENV=production
+      - LOG_LEVEL=info
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:4002/health"]  # add simple health endpoint
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  ollama:
+    image: ollama/ollama:latest
+    container_name: ollama
+    volumes:
+      - ollama:/root/.ollama
+    ports:
+      - "11434:11434"
+    command: serve
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:11434/api/tags"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  ollama-pull-model:                         # one-shot model pull
+    image: ollama/ollama:latest
+    depends_on:
+      - ollama
+    command: pull qwen2.5                      # match your agents' needs
+    restart: "no"
+
+  postgres:
+    image: ankane/pgvector:latest              # pgvector for embeddings / RAG
+    container_name: swarm-postgres
+    environment:
+      POSTGRES_USER: user
+      POSTGRES_PASSWORD: pass
+      POSTGRES_DB: swarm
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    ports:
+      - "5433:5432"                            # avoid local postgres conflict
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U user -d swarm"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+volumes:
+  ollama:
+  pgdata:
+  data:                                        # new: manifold memory + logs + p2p persistence

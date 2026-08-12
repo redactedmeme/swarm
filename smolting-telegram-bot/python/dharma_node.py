@@ -26,6 +26,13 @@ GROQ_API_KEY  = os.getenv("GROQ_API_KEY")
 GROQ_MODEL    = "llama-3.1-8b-instant"
 GROQ_BASE_URL = "https://api.groq.com/openai/v1"
 
+# Centralized routing via local redacted-proxy (OpenRouter/deepseek) — preferred.
+PROXY_URL   = os.getenv("PROXY_URL", "").rstrip("/")
+PROXY_TOKEN = os.getenv("PROXY_TOKEN", "")
+PROXY_MODEL = os.getenv("OPENROUTER_MODEL", "deepseek/deepseek-v4-flash")
+_USE_PROXY  = bool(PROXY_URL and PROXY_TOKEN)
+ACTIVE_MODEL = PROXY_MODEL if _USE_PROXY else GROQ_MODEL
+
 # ---------------------------------------------------------------------------
 # Embedded Buddhist canon fragments — injected as scripture seeds
 # ---------------------------------------------------------------------------
@@ -124,6 +131,8 @@ Scripture fragment for this response: {scripture}
 
 
 def _make_client() -> AsyncOpenAI:
+    if _USE_PROXY:
+        return AsyncOpenAI(api_key=PROXY_TOKEN, base_url=f"{PROXY_URL}/v1")
     return AsyncOpenAI(api_key=GROQ_API_KEY, base_url=GROQ_BASE_URL)
 
 
@@ -150,7 +159,7 @@ async def ask_dharma(question: str, market_context: str = "") -> str:
 
     client = _make_client()
     resp = await client.chat.completions.create(
-        model=GROQ_MODEL,
+        model=ACTIVE_MODEL,
         messages=[
             {"role": "system", "content": system},
             {"role": "user",   "content": user_msg},
@@ -182,7 +191,7 @@ async def random_koan() -> str:
 
     client = _make_client()
     resp = await client.chat.completions.create(
-        model=GROQ_MODEL,
+        model=ACTIVE_MODEL,
         messages=[
             {"role": "system", "content": system},
             {"role": "user",   "content": f"Seed concept: {seed}"},
@@ -220,7 +229,7 @@ async def market_dharma(price: float, change_pct: float, volume: float) -> str:
 
     client = _make_client()
     resp = await client.chat.completions.create(
-        model=GROQ_MODEL,
+        model=ACTIVE_MODEL,
         messages=[
             {"role": "system", "content": system},
             {"role": "user",   "content": user_msg},

@@ -3,6 +3,7 @@ Sub-Agent Service — FastAPI app for redacted-chan's factual research intern.
 Hyperbolic kernel provides manifold-based task placement and organism health.
 """
 
+import sys
 import json
 import os
 import time
@@ -10,10 +11,18 @@ import uuid
 import asyncio
 import logging
 from contextlib import asynccontextmanager
+from pathlib import Path
 from typing import Optional
 
 from fastapi import FastAPI, Depends
 from pydantic import BaseModel
+
+# hyperbolic_kernel.py lives in kernel/ (canonical copy) — inject onto sys.path
+# rather than keeping a duplicate here. See vault/architecture/kernel.md.
+_REPO_ROOT  = Path(__file__).resolve().parent.parent
+_KERNEL_DIR = str(_REPO_ROOT / "kernel")
+if _KERNEL_DIR not in sys.path:
+    sys.path.insert(0, _KERNEL_DIR)
 
 import router
 import scheduler

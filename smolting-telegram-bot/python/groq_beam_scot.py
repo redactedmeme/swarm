@@ -41,8 +41,13 @@ OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434/v1")
 OLLAMA_MODEL    = os.getenv("OLLAMA_MODEL_BEAM", "gemma3:4b")
 
 # BEAM_SCOT_PROVIDER: explicit override ("groq", "xai", "ollama")
-# Unset = auto-select: Groq → xAI → Ollama
+# Unset = auto-select: redacted-proxy → Groq → xAI → Ollama
 BEAM_SCOT_PROVIDER = os.getenv("BEAM_SCOT_PROVIDER", "").lower()
+
+# Centralized routing via local redacted-proxy (OpenRouter/deepseek) — preferred.
+PROXY_URL   = os.getenv("PROXY_URL", "").rstrip("/")
+PROXY_TOKEN = os.getenv("PROXY_TOKEN", "")
+PROXY_MODEL = os.getenv("OPENROUTER_MODEL", "deepseek/deepseek-v4-flash")
 
 # One distinct angle per branch slot (cycles if beam_width > 6)
 BRANCH_ANGLES = [
@@ -130,8 +135,13 @@ def _query_branch(
 
 
 def run_beam_scot(task: str, beam_width: int = 4) -> int:
-    # Provider selection: explicit override → Groq → xAI → Ollama
-    if BEAM_SCOT_PROVIDER == "xai" and XAI_API_KEY:
+    # Provider selection: redacted-proxy → explicit override → Groq → xAI → Ollama
+    if PROXY_URL and PROXY_TOKEN and BEAM_SCOT_PROVIDER not in ("xai", "ollama", "groq"):
+        client       = OpenAI(api_key=PROXY_TOKEN, base_url=f"{PROXY_URL}/v1")
+        model        = PROXY_MODEL
+        use_json_fmt = False  # deepseek via OpenRouter may reject response_format
+        provider_tag = f"proxy/{PROXY_MODEL}"
+    elif BEAM_SCOT_PROVIDER == "xai" and XAI_API_KEY:
         client       = OpenAI(api_key=XAI_API_KEY, base_url=XAI_BASE_URL)
         model        = XAI_MODEL
         use_json_fmt = True

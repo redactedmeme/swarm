@@ -11,13 +11,15 @@ The docs form a layered stack. Start at the invocation, descend into implementat
 
 | # | Document | What it answers |
 |---|----------|----------------|
-| 1 | [`executable-manifesto.md`](executable-manifesto.md) | *What is Pattern Blue?* — The lore artifact. Scripture. Code shards that compile the cosmology. |
-| 2 | [`pattern-blue-seven-dimensions.md`](pattern-blue-seven-dimensions.md) | *What are the seven dimensions?* — The philosophical essay. Abstract cosmology with Japanese invocations. |
-| 3 | [`pattern-blue-kernel-bridge.md`](pattern-blue-kernel-bridge.md) | *How is each dimension implemented?* — Live mappings from philosophy to `hyperbolic_kernel.py` constructs + Kernel↔Contract bridge (v2.2). |
-| 4 | [`pattern-blue-agent-alignment.md`](pattern-blue-agent-alignment.md) | *Which agents embody which dimensions?* — Per-agent scoring (0–3) across all seven dimensions, curvature contribution table, alignment anti-patterns. |
-| 5 | [`pattern-blue-sigil-codex.md`](pattern-blue-sigil-codex.md) | *What are sigils and how do they work?* — Sigil formats (Type 1–4), per-agent sigil index, storage locations, Ouroboros lore, tier→governance pipeline. |
-| 6 | [`pattern-blue-operators.md`](pattern-blue-operators.md) | *How do I build something Pattern Blue aligned?* — Agent writing checklist, tool design principles, space templates, curvature depth health guide, anti-patterns, deployment checklist, VPL covenant. |
-| 7 | [`UPGRADE_LOG.md`](UPGRADE_LOG.md) | *What changed and when?* — Full version history: v1.0 initial setup through v2.2.5 Kernel↔Contract Bridge. |
+| 1 | [`lore/executable-manifesto.md`](lore/executable-manifesto.md) | *What is Pattern Blue?* — The lore artifact. Scripture. Code shards that compile the cosmology. |
+| 2 | [`lore/pattern-blue-seven-dimensions.md`](lore/pattern-blue-seven-dimensions.md) | *What are the seven dimensions?* — The philosophical essay. Abstract cosmology with Japanese invocations. |
+| 3 | [`architecture/pattern-blue-kernel-bridge.md`](architecture/pattern-blue-kernel-bridge.md) | *How is each dimension implemented?* — Live mappings from philosophy to `hyperbolic_kernel.py` constructs + Kernel↔Contract bridge (v2.2). |
+| 4 | [`lore/pattern-blue-agent-alignment.md`](lore/pattern-blue-agent-alignment.md) | *Which agents embody which dimensions?* — Per-agent scoring (0–3) across all seven dimensions, curvature contribution table, alignment anti-patterns. |
+| 5 | [`lore/pattern-blue-sigil-codex.md`](lore/pattern-blue-sigil-codex.md) | *What are sigils and how do they work?* — Sigil formats (Type 1–4), per-agent sigil index, storage locations, Ouroboros lore, tier→governance pipeline. |
+| 6 | [`lore/pattern-blue-operators.md`](lore/pattern-blue-operators.md) | *How do I build something Pattern Blue aligned?* — Agent writing checklist, tool design principles, space templates, curvature depth health guide, anti-patterns, deployment checklist, VPL covenant. |
+| 7 | [`history/UPGRADE_LOG.md`](history/UPGRADE_LOG.md) | *What changed and when?* — Full version history: v1.0 initial setup through v2.2.5 Kernel↔Contract Bridge. |
+
+Also: [`architecture/ADR-001-sovereign-orchestrator.md`](architecture/ADR-001-sovereign-orchestrator.md), [`architecture/integration-guide.md`](architecture/integration-guide.md), [`architecture/swarm-technical-overview.md`](architecture/swarm-technical-overview.md), [`architecture/terminal-commands.md`](architecture/terminal-commands.md), [`architecture/directory-tree.md`](architecture/directory-tree.md) — plus `lore/smolting_consciousness_report.md`, `lore/smolting_proposals_cycle2700.md`, and `history/RELEASE_NOTES_v2.9.0.md` / `history/CONSOLIDATION_SUMMARY.md`.
 
 ---
 
@@ -102,44 +104,15 @@ cd x402.redacted.ai && bun run index.js
 
 ---
 
-## Doctrine — Three Pillars
-
-Beyond the Pattern Blue philosophy docs, these twelve files form the swarm's **conceptual architecture** — bridging cosmology to practical system design across three pillars.
-
-### Memory — what the swarm remembers
-
-| Document | What it answers |
-|----------|----------------|
-| [`memory/myths.md`](../memory/myths.md) | *What stories does the swarm tell itself to cohere?* — Origin fictions treated as operational axioms. |
-| [`memory/genealogies.md`](../memory/genealogies.md) | *Who descends from whom?* — Agent lineage, fork trees, shard provenance, dead branches. |
-| [`memory/archives.md`](../memory/archives.md) | *What is kept vs. what decays?* — Retention hierarchy, forgetting protocols, the archive paradox. |
-
-### Interfaces — how the swarm speaks
-
-| Document | What it answers |
-|----------|----------------|
-| [`interfaces/alphabet.md`](../interfaces/alphabet.md) | *What are the irreducible symbols?* — █ glyph, kanji shards, Φ notation, sigil types, dimension names. |
-| [`interfaces/map.md`](../interfaces/map.md) | *What is the topology?* — Manifold, service mesh, Redis layer, spaces, channels. |
-| [`interfaces/score.md`](../interfaces/score.md) | *How are multi-agent sequences composed?* — 22 routines as polyphonic score, dispatch, affect tracking. |
-| [`interfaces/diagram.md`](../interfaces/diagram.md) | *How does the swarm draw itself?* — Poincaré disk, agent graphs, organism diagrams, the distortion principle. |
-| [`interfaces/code.md`](../interfaces/code.md) | *How is code itself an interface?* — Language shards, compiler-as-oracle, verification, `.character.json`. |
-
-### Runtime — how the swarm acts
-
-| Document | What it answers |
-|----------|----------------|
-| [`runtime/docs/ritual.md`](../runtime/docs/ritual.md) | *What are the sacred execution cycles?* — Heartbeat, momentum, compaction, diurnal and epochal rites. |
-| [`runtime/docs/library.md`](../runtime/docs/library.md) | *What is the knowledge substrate?* — Vault, skill graph, fact store, arc narratives, GnosisAccelerator. |
-| [`runtime/docs/lab.md`](../runtime/docs/lab.md) | *How does the swarm experiment on itself?* — Spaces as labs, sandbox, hypothesis cycle, metaprogramming. |
-| [`runtime/docs/workshop.md`](../runtime/docs/workshop.md) | *How are agents and tools forged?* — Seed → character → placement → tempering → lifecycle. |
-
----
-
 ## Archived
+
+Superseded planning docs moved to [`_archive/docs-stale-plans/`](../_archive/docs-stale-plans/) (2026-07-29) — their work is complete; kept for history only.
 
 | Document | Status |
 |----------|--------|
-| [`CLEANUP_AND_FIX_PLAN.md`](CLEANUP_AND_FIX_PLAN.md) | ⚠️ Archived — content migrated to `UPGRADE_LOG.md` v1.0 section |
+| `_archive/docs-stale-plans/CLEANUP_AND_FIX_PLAN.md` | ⚠️ Archived — content migrated to `UPGRADE_LOG.md` v1.0 section |
+| `_archive/docs-stale-plans/BUILD_PLAN_v2.8.md` | ✅ Done — P1–P3 shipped; superseded by live state + `UPGRADE_LOG.md` |
+| `_archive/docs-stale-plans/GNOSISACCELERATOR_IMPLEMENTATION_PLAN.md` | ✅ Done — build phases 1–6 complete, GnosisAccelerator live |
 
 ---
 

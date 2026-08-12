@@ -159,7 +159,10 @@ curl -X POST $PROXY_URL/config \
 | `GROQ_API_KEY` | For Groq | — | Groq upstream key |
 | `ANTHROPIC_API_KEY` | For Anthropic | — | Anthropic upstream key |
 | `OPENAI_API_KEY` | For OpenAI | — | OpenAI upstream key |
+| `OPENROUTER_API_KEY` | For OpenRouter | — | OpenRouter upstream key (slash-form + `:free` models) |
 | `VENICE_API_KEY` | For Venice | — | Venice upstream key |
+| `CASCADE_MODELS` | No | `deepseek/deepseek-v4-flash` | Comma-separated model ids served **free-first**: the free cascade is tried before the requested (paid) model |
+| `FREE_CASCADE` | No | see below | Comma-separated ordered free models tried ahead of a `CASCADE_MODELS` request (Groq free tier + OpenRouter `:free`). Update as OpenRouter's free lineup rotates |
 | `PRIVACY_MODE` | No | `private` | `anonymous`, `private`, `maximum`, `zero`, `tee`, `e2ee` |
 | `PRIVACY_SCRUB` | No | mode default | `true`/`false` — PII regex scrubbing (on by default in private/maximum) |
 | `DISK_LOG` | No | mode default | `true`/`false` — write logs to `/data/proxy_log.jsonl` (off in private/maximum) |
@@ -172,6 +175,23 @@ curl -X POST $PROXY_URL/config \
 | `DEFAULT_TEMPERATURE` | No | — | Override temperature for all requests |
 | `DEFAULT_TOP_P` | No | — | Override top_p for all requests |
 | `PORT` | No | `7080` | Listen port |
+
+### Free-first cascade
+
+When a request names a model in `CASCADE_MODELS` (default `deepseek/deepseek-v4-flash`, the swarm's
+standardized model) and pins no `X-Provider`, the proxy tries every model in `FREE_CASCADE` first,
+then the originally-requested (paid) model as a last resort. Any 429/failure falls through to the
+next candidate. Providers with no configured key are skipped — so the **Groq tier only activates if
+`GROQ_API_KEY` is set**, and the OpenRouter `:free` tier needs `OPENROUTER_API_KEY`.
+
+Default `FREE_CASCADE` (Groq free tier ordered by daily budget, then OpenRouter `:free`):
+
+```
+llama-3.1-8b-instant,openai/gpt-oss-120b,openai/gpt-oss-20b,qwen/qwen3.6-27b,llama-3.3-70b,nvidia/nemotron-3.5-lightning:free,inclusionai/ling-3.0-tiny:free,cohere/north-mini-code:free
+```
+
+The OpenRouter `:free` lineup rotates — validate ids against `https://openrouter.ai/api/v1/models`
+when editing. Pin a provider with `X-Provider: <name>` to bypass the cascade entirely.
 
 ---
 

@@ -41,7 +41,7 @@ The `instructions` field is the most important — it describes how the agent *r
 
 **What not to write**: hardcoded outputs, full predictability, explicit authority claims, isolated tools, single timescales. Stability invites capture. The agent must be capable of surprise.
 
-See: [`docs/pattern-blue-operators.md`](../../docs/pattern-blue-operators.md) — alignment checklist
+See: [`docs/pattern-blue-operators.md`](../../docs/lore/pattern-blue-operators.md) — alignment checklist
 
 ### Step 3: The Placement
 
