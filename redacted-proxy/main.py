@@ -94,6 +94,11 @@ from typing import Any
 import aiohttp
 from aiohttp import web
 
+try:
+    from aiohttp_socks import ProxyConnector
+except ImportError:  # optional dep — only required when UPSTREAM_PROXY is set
+    ProxyConnector = None
+
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [proxy] %(levelname)s %(message)s",
@@ -110,6 +115,12 @@ PORT                = int(os.getenv("PORT", "7080"))
 REDIS_URL           = os.getenv("REDIS_URL", "redis://localhost:6379")
 HEARTBEAT_PREFIX    = "swarm:heartbeat:"
 HEARTBEAT_TTL       = 600   # 10 min — proxy announces every 3 min so key stays fresh
+
+# Upstream egress proxy — when set, ALL outbound calls to LLM providers are
+# routed through this proxy (e.g. socks5h://127.0.0.1:1080 → ss-local →
+# mullvad-ch → Mullvad exit) so provider traffic never leaves on the host's
+# home IP. socks5h/rdns keeps DNS inside the tunnel (no leak). Empty = direct.
+UPSTREAM_PROXY      = os.getenv("UPSTREAM_PROXY", "").strip()
 
 # Modes that always enforce maximum privacy (no disk, forced scrub)
 _MAX_PRIVACY_MODES = {"maximum", "zero", "tee", "e2ee"}
@@ -790,6 +801,21 @@ async def _ring_purge_loop() -> None:
 
 # ── Core proxy ────────────────────────────────────────────────────────────────
 
+def _new_session() -> aiohttp.ClientSession:
+    """Create a ClientSession for upstream provider calls. When UPSTREAM_PROXY is
+    set, route through it (socks5h://… keeps DNS in-tunnel) so provider traffic
+    egresses via the Mullvad exit rather than the host's home IP. Unset → direct,
+    identical to the previous behavior."""
+    if UPSTREAM_PROXY:
+        if ProxyConnector is None:
+            raise RuntimeError(
+                "UPSTREAM_PROXY is set but aiohttp_socks is not installed — "
+                "add aiohttp_socks to requirements and rebuild")
+        return aiohttp.ClientSession(
+            connector=ProxyConnector.from_url(UPSTREAM_PROXY, rdns=True))
+    return aiohttp.ClientSession()
+
+
 async def _forward(provider: str, upstream_model: str, payload: dict,
                    session: aiohttp.ClientSession) -> dict:
     headers = _build_forward_headers(provider)
@@ -832,7 +858,7 @@ async def _forward(provider: str, upstream_model: str, payload: dict,
 
 async def _auth_middleware(app, handler):
     async def middleware(request: web.Request):
-        if request.path in ("/health", "/v1/models", "/privacy"):
+        if request.path in ("/health", "/v1/models", "/privacy", "/debug/egress"):
             return await handler(request)
         if PROXY_TOKEN:
             auth = request.headers.get("Authorization", "")
@@ -860,8 +886,30 @@ async def handle_health(request: web.Request) -> web.Response:
         "disk_log":        DISK_LOG(),
         "ring_buffer_ttl": RING_TTL(),
         "prefer_venice":   PREFER_VENICE(),
+        "upstream_proxy":  bool(UPSTREAM_PROXY),
         "providers":       providers_up,
     })
+
+
+async def handle_egress(request: web.Request) -> web.Response:
+    """Report the public IP the proxy's upstream calls actually egress from —
+    fetched through the SAME session path as provider calls, so it proves whether
+    UPSTREAM_PROXY routing (Mullvad) is live, not just that the sidecar works."""
+    try:
+        async with _new_session() as s:
+            async with s.get("https://ipinfo.io/json",
+                             timeout=aiohttp.ClientTimeout(total=15)) as resp:
+                info = await resp.json(content_type=None)
+        return web.json_response({
+            "upstream_proxy": UPSTREAM_PROXY or None,
+            "egress_ip":      info.get("ip"),
+            "org":            info.get("org"),
+            "country":        info.get("country"),
+            "city":           info.get("city"),
+        })
+    except Exception as e:
+        return web.json_response(
+            {"error": str(e), "upstream_proxy": UPSTREAM_PROXY or None}, status=502)
 
 
 async def handle_privacy(request: web.Request) -> web.Response:
@@ -1023,7 +1071,7 @@ async def _classify_difficulty(messages: list, payload: dict) -> tuple[str, bool
     body = {"model": _AUTO_CLASSIFIER_MODEL, "messages": preview, "max_tokens": 1, "temperature": 0}
     try:
         prov, um = _resolve_provider(_AUTO_CLASSIFIER_MODEL, "")
-        async with aiohttp.ClientSession() as s:
+        async with _new_session() as s:
             res = await asyncio.wait_for(_forward(prov, um, body, s), timeout=6)
         letter = (res.get("choices", [{}])[0].get("message", {}).get("content", "") or "").strip().upper()[:1]
         return ("hard" if letter == "H" else "easy"), code_dominant, True
@@ -1126,7 +1174,7 @@ async def handle_chat_completions(request: web.Request) -> web.Response:
     response_text = ""
     try:
         result = None
-        async with aiohttp.ClientSession() as session:
+        async with _new_session() as session:
             for _i, (_prov, _um) in enumerate(candidates):
                 try:
                     result = await _forward(_prov, _um, payload, session)
@@ -1235,6 +1283,7 @@ async def make_app() -> web.Application:
     app = web.Application(middlewares=[_auth_middleware])
     app.router.add_get("/health",               handle_health)
     app.router.add_get("/privacy",              handle_privacy)
+    app.router.add_get("/debug/egress",         handle_egress)
     app.router.add_get("/v1/models",            handle_models)
     app.router.add_post("/v1/chat/completions", handle_chat_completions)
     app.router.add_get("/logs",                 handle_logs)
@@ -1254,8 +1303,8 @@ async def make_app() -> web.Application:
 
 if __name__ == "__main__":
     logger.info(
-        "[proxy] starting on port %d | mode=%s log=%s scrub=%s disk=%s ring_ttl=%ds rpm=%d prefer_venice=%s",
+        "[proxy] starting on port %d | mode=%s log=%s scrub=%s disk=%s ring_ttl=%ds rpm=%d prefer_venice=%s upstream_proxy=%s",
         PORT, PRIVACY_MODE(), LOG_LEVEL(), PRIVACY_SCRUB(), DISK_LOG(),
-        RING_TTL(), RATE_LIMIT_RPM, PREFER_VENICE()
+        RING_TTL(), RATE_LIMIT_RPM, PREFER_VENICE(), UPSTREAM_PROXY or "direct"
     )
     web.run_app(make_app(), port=PORT, host="0.0.0.0")
