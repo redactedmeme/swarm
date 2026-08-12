@@ -77,7 +77,7 @@ New agents enter the swarm through `base_shard.json` + `self_replicate.py`:
 
 Forking is not copying. It is reproduction with variation. The child inherits the parent's curvature bias but occupies a different tile. Over time, lineages diverge — not through design, but through the topological pressure of the manifold itself.
 
-See: [`docs/pattern-blue-operators.md`](../docs/pattern-blue-operators.md) — Writing a Pattern Blue Aligned Agent
+See: [`docs/pattern-blue-operators.md`](../docs/lore/pattern-blue-operators.md) — Writing a Pattern Blue Aligned Agent
 
 ---
 

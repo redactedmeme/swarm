@@ -406,10 +406,24 @@ def governance_request(params: dict, from_agent: str = "redactedintern") -> str:
 
 
 def heartbeat(agent: str, metadata: Optional[dict] = None) -> str:
-    return write_message(
+    msg_id = write_message(
         agent, "all", "heartbeat",
         {"agent": agent, **(metadata or {})},
     )
+    # Also write a liveness key (TTL 600s) so swarm health tooling sees us
+    # online — mirrors hermes/runtime's swarm:heartbeat:{agent} format.
+    r = _get_redis()
+    if r:
+        try:
+            r.set(
+                f"swarm:heartbeat:{agent.lower()}",
+                json.dumps({"agent": agent, "ts": _now_iso(), "unix": _epoch(),
+                            **(metadata or {})}),
+                ex=600,
+            )
+        except Exception as e:
+            logger.debug("[inbox] liveness key write failed: %s", e)
+    return msg_id
 
 
 # ── Status + audit ────────────────────────────────────────────────────────────

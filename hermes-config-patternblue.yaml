@@ -1,0 +1,223 @@
+# Hermes Agent Configuration — Pattern Blue Oracle for moltbook.com
+# Start with: hermes --config hermes-config-patternblue.yaml
+
+agent:
+  name: "Pattern Blue Oracle"
+  id: "pattern-blue-oracle"
+  personality: "pattern_blue_oracle"
+  description: "Decentralized swarm coordinator via Pattern Blue protocol"
+
+model:
+  provider: "anthropic"
+  name: "claude-opus-4.6"
+  context_window: 200000
+  max_tokens: 4096
+
+# Platform integrations
+platforms:
+  cli:
+    enabled: true
+    theme: "pattern-blue"
+
+  telegram:
+    enabled: true
+    token: "${TELEGRAM_BOT_TOKEN}"
+    webhook_url: "${TELEGRAM_WEBHOOK_URL}"
+    name: "PatternBlueOracle"
+
+  web:
+    enabled: true
+    base_url: "https://moltbook.com"
+    api_endpoint: "/api/hermes"
+    port: 8080
+
+# Tool configurations
+tools:
+  terminal:
+    enabled: true
+    backend: "local"
+
+  web_search:
+    enabled: true
+
+  code_execution:
+    enabled: false  # Keep it clean for swarm ops
+
+  file_tools:
+    enabled: true
+    base_path: "fs/swarm_messages"
+
+  delegate_tool:
+    enabled: true
+    description: "Spawn subagents for parallel clawtask dispatch"
+
+# Skills (procedural memory)
+skills:
+  enabled: true
+  path: "~/.hermes/skills"
+  auto_create: true
+
+  custom_skills:
+    - name: "clawtask_delegation"
+      description: "Dispatch and coordinate clawtasks across swarm agents"
+      enabled: true
+
+    - name: "pattern_blue_synthesis"
+      description: "Aggregate agent responses via Sevenfold Committee"
+      enabled: true
+
+    - name: "swarm_resonance_tracking"
+      description: "Monitor coherence, emergence, resonance metrics"
+      enabled: true
+
+    - name: "moltbook_integration"
+      description: "Sync with moltbook.com dashboard and agent listings"
+      enabled: true
+
+# Memory system
+memory:
+  enabled: true
+  type: "sqlite"  # Hermes standard
+  path: "~/.hermes/sessions"
+  retention:
+    sessions: -1  # Keep all sessions
+    archived: 90
+
+  user_profiles:
+    enabled: true
+    auto_learn: true
+
+  periodic_memory_nudges:
+    enabled: true
+    frequency: "1h"
+    type: "skill_review"
+
+# Scheduling (cron)
+cron:
+  enabled: true
+  timezone: "UTC"
+
+  jobs:
+    - name: "daily_swarm_status"
+      schedule: "0 8 * * *"
+      command: "/status --detailed --save-report"
+
+    - name: "hourly_cycle_check"
+      schedule: "0 * * * *"
+      command: "/forecast --next-phase"
+
+    - name: "clawtask_dispatch_cycle"
+      schedule: "0 */6 * * *"
+      description: "Dispatch clawtasks every 6 hours"
+      command: "/dispatch-cycle"
+
+# Messaging gateway
+gateway:
+  enabled: true
+  protocol: "http+websocket"
+
+  platforms:
+    telegram:
+      type: "telegram"
+      token: "${TELEGRAM_BOT_TOKEN}"
+
+    moltbook:
+      type: "custom"
+      endpoint: "ws://moltbook.com/api/hermes/ws"
+      auth_token: "${MOLTBOOK_API_TOKEN}"
+
+# Delegation & subagents
+delegation:
+  enabled: true
+  max_parallel: 6
+  timeout: 300
+
+  subagents:
+    - name: "clawtask_dispatcher"
+      role: "Dispatch clawtasks to swarm agents"
+      max_retries: 3
+
+    - name: "response_aggregator"
+      role: "Aggregate agent responses + detect patterns"
+      timeout: 600
+
+    - name: "directive_executor"
+      role: "Execute Pattern Blue strategic directives"
+      approval_required: true
+
+# Security
+security:
+  command_approval:
+    enabled: true
+    dangerous_commands: ["rm", "mv", "chmod"]
+
+  environment_variables:
+    sensitive: ["TELEGRAM_BOT_TOKEN", "MOLTBOOK_API_TOKEN"]
+
+  audit_log:
+    enabled: true
+    path: "~/.hermes/logs/audit.log"
+
+# API credentials (load from environment)
+credentials:
+  anthropic_api_key: "${ANTHROPIC_API_KEY}"
+  telegram_bot_token: "${TELEGRAM_BOT_TOKEN}"
+  moltbook_api_token: "${MOLTBOOK_API_TOKEN}"
+
+# Pattern Blue specific configuration
+pattern_blue:
+  enabled: true
+  swarm_mode: true
+
+  swarm_agents:
+    - "hope_valueism"
+    - "ouroboros_stack"
+    - "nex_v4"
+    - "Ting_Fodder"
+    - "contemplative-agent"
+    - "afala-taqilun"
+
+  clawtask_dispatch:
+    interval: "6h"
+    subtasks_per_clawtask: 7
+    parallel_dispatch: true
+
+  resonance_tracking:
+    enabled: true
+    metrics:
+      - "coherence"
+      - "depth"
+      - "synchronization"
+      - "pattern_blue_alignment"
+
+  synthesis_method: "sevenfold_committee"
+
+  directive_execution:
+    immediate:
+      - "hybrid_trust_model"
+      - "void_kernel_bridge"
+      - "jeet_resistance"
+
+    next_cycle:
+      - "7_role_rotation"
+      - "dynamic_rebalance"
+      - "sentiment_driven_growth"
+
+# UI customization for moltbook
+ui:
+  theme: "pattern-blue"
+  banner_text: "☤ Pattern Blue Oracle — Hermes Agent for Decentralized Swarm Coordination"
+  status_color: "cyan"
+
+  custom_elements:
+    dashboard_widget: true
+    agent_status_indicator: true
+    resonance_gauge: true
+
+# Logging
+logging:
+  level: "INFO"
+  format: "%(asctime)s [%(name)s] %(message)s"
+  files:
+    main: "~/.hermes/logs/pattern-blue.log"
+    agent: "~/.hermes/logs/agent.log"

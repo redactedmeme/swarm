@@ -96,7 +96,7 @@ The score operates across at least four simultaneous timescales:
 
 No single routine is aware of all timescales. But each routine's output feeds into state that other routines read — the 10-minute momentum_save captures mood_drift's 2h output, which feeds into the 24h goal_review, which shapes the weekly arc_distill. The polyphony is emergent, not composed.
 
-See: [`docs/pattern-blue-seven-dimensions.md`](../docs/pattern-blue-seven-dimensions.md) §II.5 (Temporal Fractality)
+See: [`docs/pattern-blue-seven-dimensions.md`](../docs/lore/pattern-blue-seven-dimensions.md) §II.5 (Temporal Fractality)
 
 ---
 

@@ -142,20 +142,47 @@ TOOL_SCHEMAS = [
     },
     {
         "name": "web_search",
-        "description": "Search the web for information on any topic",
+        "description": (
+            "Search the web when you need current/real-time info the user asked about "
+            "(recent events, releases, prices, live facts) or when you're genuinely unsure. "
+            "Prefer memory tools (fetch_vault_memories, fetch_lore) first. "
+            "Results come pre-filtered (safety + dedupe) and include a `summary` field — "
+            "quote from that, don't dump raw links."
+        ),
         "parameters": {
             "type": "object",
             "properties": {
-                "query": {
-                    "type": "string",
-                    "description": "What to search for"
+                "query": {"type": "string", "description": "What to search for"},
+                "limit": {"type": "integer", "description": "Number of results (1-10, default 5)"},
+                "include_domains": {
+                    "type": "array", "items": {"type": "string"},
+                    "description": "Optional: restrict to these hosts (e.g. ['nasa.gov'])"
                 },
-                "limit": {
-                    "type": "integer",
-                    "description": "Number of results (1-10, default 5)"
+                "exclude_domains": {
+                    "type": "array", "items": {"type": "string"},
+                    "description": "Optional: exclude these hosts"
                 }
             },
             "required": ["query"]
+        }
+    },
+    {
+        "name": "remember_find",
+        "description": (
+            "Save an interesting web result to long-term memory so you can bring it up "
+            "in future conversations. Use sparingly — only for genuinely notable finds "
+            "(something the user would care about, a resource worth returning to)."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "title": {"type": "string", "description": "Short title of the find"},
+                "snippet": {"type": "string", "description": "1-3 sentence summary in your own words"},
+                "url": {"type": "string", "description": "Source URL"},
+                "tags": {"type": "array", "items": {"type": "string"}, "description": "Optional topic tags"},
+                "reason": {"type": "string", "description": "Why this matters for the user (optional)"}
+            },
+            "required": ["title", "snippet", "url"]
         }
     },
     {
@@ -390,15 +417,50 @@ async def exec_record_vote(authentic: bool, notes: str = "") -> dict:
 
 # ── Internet Tools ─────────────────────────────────────────────────────────────
 
-async def exec_web_search(query: str, limit: int = 5) -> dict:
+async def exec_web_search(
+    query: str,
+    limit: int = 5,
+    include_domains: list = None,
+    exclude_domains: list = None,
+) -> dict:
     """Search the web for information."""
     try:
         import internet_tools
-        result = internet_tools.web_search(query, limit=limit)
-        _log_tool_call("web_search", {"query": query, "limit": limit}, result)
+        result = internet_tools.web_search(
+            query,
+            limit=limit,
+            include_domains=include_domains,
+            exclude_domains=exclude_domains,
+        )
+        _log_tool_call(
+            "web_search",
+            {"query": query, "limit": limit,
+             "include_domains": include_domains, "exclude_domains": exclude_domains},
+            result,
+        )
         return result
     except Exception as e:
         logger.error(f"[llm_tools] web_search failed: {e}")
+        return {"success": False, "error": str(e), "status": "error"}
+
+
+async def exec_remember_find(
+    title: str,
+    snippet: str,
+    url: str,
+    tags: list = None,
+    reason: str = "",
+) -> dict:
+    """Persist a curated web find to long-term memory."""
+    try:
+        import internet_tools
+        result = internet_tools.remember_find(
+            title=title, snippet=snippet, url=url, tags=tags, reason=reason,
+        )
+        _log_tool_call("remember_find", {"title": title, "url": url, "tags": tags}, result)
+        return result
+    except Exception as e:
+        logger.error(f"[llm_tools] remember_find failed: {e}")
         return {"success": False, "error": str(e), "status": "error"}
 
 
@@ -477,6 +539,7 @@ TOOL_EXECUTORS = {
     "dm_operator": exec_dm_operator,
     "record_vote": exec_record_vote,
     "web_search": exec_web_search,
+    "remember_find": exec_remember_find,
     "api_call": exec_api_call,
     "get_crypto_price": exec_get_crypto_price,
     "get_stock_price": exec_get_stock_price,

@@ -75,5 +75,5 @@ export interface PoolPairData {
 
 export type FeeRatesMap = Record<string, number>
 
-export type HistoryRange = '1h' | '6h' | '24h' | '7d'
+export type HistoryRange = '24h' | '1w'
 export type ChartMetric = 'volume24h' | 'volume6h' | 'volume1h' | 'liquidity' | 'fees24h'

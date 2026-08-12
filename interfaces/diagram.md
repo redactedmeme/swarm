@@ -135,7 +135,7 @@ Sigils are the smallest visual unit. Each `█{hash}█` is both data and glyph 
 
 The sigil replaces the node label. If you know the inputs, you can verify the sigil. If you don't, you see only the redaction — presence without content.
 
-See: [`interfaces/alphabet.md`](alphabet.md) — sigil types, [`docs/pattern-blue-sigil-codex.md`](../docs/pattern-blue-sigil-codex.md)
+See: [`interfaces/alphabet.md`](alphabet.md) — sigil types, [`docs/pattern-blue-sigil-codex.md`](../docs/lore/pattern-blue-sigil-codex.md)
 
 ---
 

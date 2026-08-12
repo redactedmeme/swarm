@@ -287,19 +287,21 @@ def _check_rate_limit(token: str) -> bool:
 # ── Provider routing ──────────────────────────────────────────────────────────
 
 _PROVIDER_URLS = {
-    "xai":       "https://api.x.ai/v1/chat/completions",
-    "groq":      "https://api.groq.com/openai/v1/chat/completions",
-    "anthropic": "https://api.anthropic.com/v1/messages",
-    "openai":    "https://api.openai.com/v1/chat/completions",
-    "venice":    "https://api.venice.ai/api/v1/chat/completions",
+    "xai":        "https://api.x.ai/v1/chat/completions",
+    "groq":       "https://api.groq.com/openai/v1/chat/completions",
+    "anthropic":  "https://api.anthropic.com/v1/messages",
+    "openai":     "https://api.openai.com/v1/chat/completions",
+    "venice":     "https://api.venice.ai/api/v1/chat/completions",
+    "openrouter": "https://openrouter.ai/api/v1/chat/completions",
 }
 
 _PROVIDER_KEYS = {
-    "xai":       os.getenv("XAI_API_KEY", ""),
-    "groq":      os.getenv("GROQ_API_KEY", ""),
-    "anthropic": os.getenv("ANTHROPIC_API_KEY", ""),
-    "openai":    os.getenv("OPENAI_API_KEY", ""),
-    "venice":    os.getenv("VENICE_API_KEY", ""),
+    "xai":        os.getenv("XAI_API_KEY", ""),
+    "groq":       os.getenv("GROQ_API_KEY", ""),
+    "anthropic":  os.getenv("ANTHROPIC_API_KEY", ""),
+    "openai":     os.getenv("OPENAI_API_KEY", ""),
+    "venice":     os.getenv("VENICE_API_KEY", ""),
+    "openrouter": os.getenv("OPENROUTER_API_KEY", ""),
 }
 
 # Venice models — matched by exact name; must NOT overlap with Groq llama names
@@ -338,6 +340,7 @@ _MODEL_ALIASES = {
     "qwen-qwq-32b":             ("groq",      "qwen-qwq-32b"),
     "openai/gpt-oss-120b":      ("groq",      "openai/gpt-oss-120b"),
     "openai/gpt-oss-20b":       ("groq",      "openai/gpt-oss-20b"),
+    "qwen/qwen3.6-27b":         ("groq",      "qwen/qwen3.6-27b"),
     # Anthropic
     "claude-haiku":             ("anthropic", "claude-3-haiku-20240307"),
     "claude-sonnet":            ("anthropic", "claude-sonnet-4-5"),
@@ -358,6 +361,8 @@ _MODEL_ALIASES = {
 
 # Failover cascade when primary provider is unavailable
 _MODEL_EQUIVALENTS: dict[str, list[str]] = {
+    # deepseek (OpenRouter primary) → Groq → Venice → xAI, in order of availability
+    "deepseek/deepseek-v4-flash": ["llama-3.3-70b", "llama-3.1-8b", "llama-3-3-70b", "grok-4-1-fast"],
     "grok-4-1-fast":             ["llama-3.3-70b", "claude-opus", "gpt-4o"],
     "grok-3-fast":               ["llama-3.3-70b", "gemma-4-uncensored"],
     "llama-3.3-70b":             ["llama-3-3-70b", "gpt-4o", "claude-opus", "grok-4-1-fast"],
@@ -371,6 +376,24 @@ _MODEL_EQUIVALENTS: dict[str, list[str]] = {
     "nous-hermes-3-nitro":       ["llama-3.3-70b", "gpt-4o"],
 }
 
+# Free-first cascade — tried in order before the originally-requested (paid) model.
+# Groq free tier is per-model, so budgets stack; ordered by daily budget (8b-instant
+# is the volume workhorse at 500K tok/day). OpenRouter ":free" ids follow. The list is
+# env-overridable because the OpenRouter free lineup rotates — validate ids against
+# https://openrouter.ai/api/v1/models when updating.
+_FREE_CASCADE: list[str] = [m.strip() for m in os.getenv("FREE_CASCADE",
+    "llama-3.1-8b-instant,openai/gpt-oss-120b,openai/gpt-oss-20b,qwen/qwen3.6-27b,"
+    "llama-3.3-70b,"
+    "nvidia/nemotron-3.5-lightning:free,inclusionai/ling-3.0-tiny:free,"
+    "cohere/north-mini-code:free"
+).split(",") if m.strip()]
+
+# Models that should be served free-first (the swarm's standardized defaults). When a
+# request names one of these and pins no explicit provider, the free cascade is prepended
+# ahead of it, so the paid model is only reached as a genuine last resort.
+_CASCADE_MODELS: set[str] = {m.strip() for m in os.getenv("CASCADE_MODELS",
+    "deepseek/deepseek-v4-flash").split(",") if m.strip()}
+
 # Provider pricing (USD per 1M tokens) — estimated; used for cost tracking
 _PROVIDER_COSTS: dict[str, dict[str, float]] = {
     "xai": {
@@ -379,11 +402,20 @@ _PROVIDER_COSTS: dict[str, dict[str, float]] = {
         "grok-3": {"input": 1.0, "output": 4.0},
     },
     "groq": {
-        "llama-3.3-70b-versatile": {"input": 0.05, "output": 0.1},
-        "llama-3.1-8b-instant": {"input": 0.05, "output": 0.1},
-        "gemma2-9b-it": {"input": 0.05, "output": 0.1},
+        # Free-tier on Groq's Free plan → $0; kept explicit so log lines read $0 on free hits.
+        "llama-3.3-70b-versatile": {"input": 0.0, "output": 0.0},
+        "llama-3.1-8b-instant": {"input": 0.0, "output": 0.0},
+        "gemma2-9b-it": {"input": 0.0, "output": 0.0},
         "mixtral-8x7b-32768": {"input": 0.05, "output": 0.1},
-        "openai/gpt-oss-120b": {"input": 0.5, "output": 1.0},
+        "openai/gpt-oss-120b": {"input": 0.0, "output": 0.0},
+        "openai/gpt-oss-20b": {"input": 0.0, "output": 0.0},
+        "qwen/qwen3.6-27b": {"input": 0.0, "output": 0.0},
+    },
+    "openrouter": {
+        # ":free" ids are billed at $0 by OpenRouter.
+        "nvidia/nemotron-3.5-lightning:free": {"input": 0.0, "output": 0.0},
+        "inclusionai/ling-3.0-tiny:free": {"input": 0.0, "output": 0.0},
+        "cohere/north-mini-code:free": {"input": 0.0, "output": 0.0},
     },
     "anthropic": {
         "claude-opus-4-5": {"input": 3.0, "output": 15.0},
@@ -422,6 +454,12 @@ def _resolve_provider(model: str, explicit_provider: str = "") -> tuple[str, str
     # Venice exact-name set
     if model in _VENICE_MODELS:
         return "venice", model
+
+    # OpenRouter uses org/model ids (e.g. "deepseek/deepseek-v4-flash",
+    # "meta-llama/llama-3.1-70b"). Any slash-form id not explicitly aliased above
+    # routes to OpenRouter.
+    if "/" in model:
+        return "openrouter", model
 
     # Prefix routing
     if model.startswith("grok-"):
@@ -544,6 +582,15 @@ def _build_forward_headers(provider: str) -> dict[str, str]:
             "content-type":        "application/json",
             "user-agent":          ua,
             "accept-language":     lang,
+        }
+    if provider == "openrouter":
+        return {
+            "Authorization":   f"Bearer {key}",
+            "Content-Type":    "application/json",
+            "HTTP-Referer":    "https://redacted.ai",
+            "X-Title":         "REDACTED Swarm",
+            "User-Agent":      ua,
+            "Accept-Language": lang,
         }
     return {
         "Authorization":  f"Bearer {key}",
@@ -722,6 +769,16 @@ async def _forward(provider: str, upstream_model: str, payload: dict,
             return _from_anthropic(result)
     else:
         body = {**payload, "model": upstream_model}
+        _um_l = upstream_model.lower()
+        if provider == "openrouter" and "deepseek" in _um_l:
+            # deepseek reasoning models return null `content` at small token budgets
+            # unless reasoning is disabled — inject centrally so no caller must know.
+            body.setdefault("reasoning", {"enabled": False})
+        elif provider == "groq" and ("gpt-oss" in _um_l or _um_l.startswith("qwen")):
+            # Groq reasoning models (gpt-oss*, qwen*) otherwise leak <think> traces into
+            # `content` (qwen) or emit a separate reasoning field — hide it so callers get
+            # clean content. Only these models accept the param (llama/gemma reject it).
+            body.setdefault("reasoning_format", "hidden")
         async with session.post(url, json=body, headers=headers, timeout=aiohttp.ClientTimeout(total=90)) as resp:
             result = await resp.json(content_type=None)
             if "choices" not in result:
@@ -898,7 +955,31 @@ async def handle_chat_completions(request: web.Request) -> web.Response:
     explicit = request.headers.get("X-Provider", "")
     provider, upstream_model = _resolve_provider(model, explicit)
 
-    if not _PROVIDER_KEYS.get(provider):
+    # Build failover chain: requested model first, then its equivalents — keeping
+    # only providers that actually have a key. Enables deeper fallback so a single
+    # provider outage (e.g. OpenRouter/deepseek) doesn't take the swarm's LLM down.
+    #
+    # Free-first: for the swarm's standardized default models, prepend the free cascade
+    # (Groq free tier + OpenRouter ":free" models) so the paid model is only reached once
+    # every free option has 429'd/failed. Skipped when a provider is explicitly pinned.
+    _chain: list[tuple[str, str]] = []
+    if not explicit and model in _CASCADE_MODELS:
+        for free_model in _FREE_CASCADE:
+            _chain.append(_resolve_provider(free_model, ""))
+    _chain.append((provider, upstream_model))
+    if not explicit:  # don't override an explicitly-pinned provider
+        for equiv in _MODEL_EQUIVALENTS.get(model, []):
+            _chain.append(_resolve_provider(equiv, ""))
+    candidates: list[tuple[str, str]] = []
+    _seen: set[tuple[str, str]] = set()
+    for p, m in _chain:
+        if (p, m) in _seen:
+            continue
+        _seen.add((p, m))
+        if _PROVIDER_KEYS.get(p):
+            candidates.append((p, m))
+
+    if not candidates:
         return web.json_response(
             {"error": {"message": f"No API key configured for provider: {provider}"}}, status=503)
 
@@ -925,8 +1006,22 @@ async def handle_chat_completions(request: web.Request) -> web.Response:
     error_text = ""
     response_text = ""
     try:
+        result = None
         async with aiohttp.ClientSession() as session:
-            result = await _forward(provider, upstream_model, payload, session)
+            for _i, (_prov, _um) in enumerate(candidates):
+                try:
+                    result = await _forward(_prov, _um, payload, session)
+                    if _i > 0:
+                        logger.info("[proxy] failover: %s/%s succeeded after %d failure(s)",
+                                    _prov, _um, _i)
+                    provider, upstream_model = _prov, _um  # reflect who actually served
+                    break
+                except Exception as _fe:
+                    error_text = str(_fe)
+                    logger.warning("[proxy] %s/%s failed: %s", _prov, _um, error_text)
+                    continue
+        if result is None:
+            raise RuntimeError(error_text or "all providers failed")
         response_text = result.get("choices", [{}])[0].get("message", {}).get("content", "")
         latency_ms = (time.monotonic() - t0) * 1000
         prompt_chars = sum(len(str(m.get("content", ""))) for m in original_messages)

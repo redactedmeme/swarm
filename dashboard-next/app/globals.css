@@ -2,19 +2,7 @@
 @tailwind components;
 @tailwind utilities;
 
-/* ── Base ─────────────────────────────────────────────── */
-::selection {
-  background: rgba(0, 220, 255, 0.2);
-  color: #f0f0f7;
-}
-
-/* ── Scrollbar ─────────────────────────────────────────── */
-::-webkit-scrollbar { width: 4px; height: 4px; }
-::-webkit-scrollbar-track { background: #0a0a0f; }
-::-webkit-scrollbar-thumb { background: #242430; border-radius: 2px; }
-::-webkit-scrollbar-thumb:hover { background: rgba(0, 220, 255, 0.5); }
-
-/* ── Wallet adapter dark theme ─────────────────────────── */
+/* Wallet adapter modal override */
 .wallet-adapter-modal-wrapper {
   background: #121218 !important;
   border: 1px solid #242430 !important;
@@ -25,17 +13,24 @@
   color: #f0f0f7 !important;
   font-family: 'SF Mono', 'Fira Code', monospace !important;
   font-size: 11px !important;
-  border-radius: 8px !important;
-  transition: border-color 0.15s !important;
 }
 .wallet-adapter-button:hover {
   border-color: #00dcff !important;
-  background: rgba(0, 220, 255, 0.04) !important;
 }
-.wallet-adapter-modal-title { color: #f0f0f7 !important; }
-.wallet-adapter-modal-list li { background: #121218 !important; }
+.wallet-adapter-modal-title {
+  color: #f0f0f7 !important;
+}
+.wallet-adapter-modal-list li {
+  background: #121218 !important;
+}
 
-/* ── Rotating gradient border (fee token hero) ────────── */
+/* Scrollbar */
+::-webkit-scrollbar { width: 4px; height: 4px; }
+::-webkit-scrollbar-track { background: #0a0a0f; }
+::-webkit-scrollbar-thumb { background: #242430; border-radius: 2px; }
+::-webkit-scrollbar-thumb:hover { background: #00dcff; }
+
+/* Animated rotating gradient border for fee token hero card */
 @keyframes rotateBorder {
   0%   { background-position: 0% 50%; }
   50%  { background-position: 100% 50%; }
@@ -63,30 +58,12 @@
   pointer-events: none;
 }
 
-/* ── Shimmer animation (used inline by Skeleton) ───────── */
-@keyframes shimmer {
-  0%   { background-position: -200% 0; }
-  100% { background-position:  200% 0; }
-}
-
-/* ── Film grain texture overlay ───────────────────────── */
+/* Film grain texture */
 body::before {
   content: '';
   position: fixed;
   inset: 0;
   pointer-events: none;
   z-index: 9999;
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='200' height='200'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='4' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='200' height='200' filter='url(%23noise)' opacity='0.02'/%3E%3C/svg%3E");
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='200' height='200'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='4' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='200' height='200' filter='url(%23noise)' opacity='0.025'/%3E%3C/svg%3E");
 }
-
-/* ── Focus ring ───────────────────────────────────────── */
-:focus-visible {
-  outline: 2px solid rgba(0, 220, 255, 0.5);
-  outline-offset: 2px;
-  border-radius: 4px;
-}
-
-/* ── Utility: glow text ───────────────────────────────── */
-.glow-accent  { text-shadow: 0 0 12px rgba(0, 220, 255, 0.6); }
-.glow-pos     { text-shadow: 0 0 12px rgba(0, 255, 136, 0.6); }
-.glow-neg     { text-shadow: 0 0 12px rgba(255, 68, 68, 0.6); }

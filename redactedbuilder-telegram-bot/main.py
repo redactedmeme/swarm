@@ -23,6 +23,7 @@ import os
 import sys
 from datetime import datetime
 from pathlib import Path
+from typing import Optional
 
 # Load .env from repo root
 try:
@@ -30,10 +31,6 @@ try:
     load_dotenv(Path(__file__).resolve().parent.parent / ".env")
 except ImportError:
     pass
-
-from tg_fmt import TgFmt, from_llm, truncate
-
-fmt = TgFmt("HTML")
 
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import (
@@ -50,6 +47,7 @@ import swarm_inbox
 import builder_persona as bp
 import soul_manager
 import builder_memory as bmem
+import thought_dispatcher as td
 
 # ── Logging ───────────────────────────────────────────────────────────────────
 
@@ -93,28 +91,31 @@ DISABLE_GROUP_POST = os.getenv("DISABLE_GROUP_POST", "false").lower() in ("1", "
 
 # LLM endpoints
 _LLM_URLS = {
-    "anthropic": "https://api.anthropic.com/v1/messages",
-    "openai":    "https://api.openai.com/v1/chat/completions",
-    "xai":       "https://api.x.ai/v1/chat/completions",
-    "groq":      "https://api.groq.com/openai/v1/chat/completions",
-    "together":  "https://api.together.xyz/v1/chat/completions",
-    "venice":    "https://api.venice.ai/api/v1/chat/completions",
+    "anthropic":  "https://api.anthropic.com/v1/messages",
+    "openai":     "https://api.openai.com/v1/chat/completions",
+    "xai":        "https://api.x.ai/v1/chat/completions",
+    "groq":       "https://api.groq.com/openai/v1/chat/completions",
+    "together":   "https://api.together.xyz/v1/chat/completions",
+    "venice":     "https://api.venice.ai/api/v1/chat/completions",
+    "openrouter": "https://openrouter.ai/api/v1/chat/completions",
 }
 _LLM_KEYS = {
-    "anthropic": os.getenv("ANTHROPIC_API_KEY", "").strip(),
-    "openai":    os.getenv("OPENAI_API_KEY", "").strip(),
-    "xai":       os.getenv("XAI_API_KEY", "").strip(),
-    "groq":      os.getenv("GROQ_API_KEY", "").strip(),
-    "together":  os.getenv("TOGETHER_API_KEY", "").strip(),
-    "venice":    os.getenv("VENICE_API_KEY", "").strip(),
+    "anthropic":  os.getenv("ANTHROPIC_API_KEY", "").strip(),
+    "openai":     os.getenv("OPENAI_API_KEY", "").strip(),
+    "xai":        os.getenv("XAI_API_KEY", "").strip(),
+    "groq":       os.getenv("GROQ_API_KEY", "").strip(),
+    "together":   os.getenv("TOGETHER_API_KEY", "").strip(),
+    "venice":     os.getenv("VENICE_API_KEY", "").strip(),
+    "openrouter": os.getenv("OPENROUTER_API_KEY", "").strip(),
 }
 _LLM_MODELS = {
-    "anthropic": os.getenv("ANTHROPIC_MODEL", "claude-sonnet-4-6"),
-    "openai":    os.getenv("OPENAI_MODEL", "gpt-4o-mini"),
-    "xai":       os.getenv("XAI_MODEL", "grok-3-beta"),
-    "groq":      os.getenv("GROQ_MODEL", "llama-3.1-8b-instant"),
-    "together":  os.getenv("TOGETHER_MODEL", "Qwen/Qwen2.5-7B-Instruct-Turbo"),
-    "venice":    os.getenv("VENICE_MODEL", "gemma-4-uncensored"),
+    "anthropic":  os.getenv("ANTHROPIC_MODEL", "claude-sonnet-4-6"),
+    "openai":     os.getenv("OPENAI_MODEL", "gpt-4o-mini"),
+    "xai":        os.getenv("XAI_MODEL", "grok-3-beta"),
+    "groq":       os.getenv("GROQ_MODEL", "llama-3.1-8b-instant"),
+    "together":   os.getenv("TOGETHER_MODEL", "Qwen/Qwen2.5-7B-Instruct-Turbo"),
+    "venice":     os.getenv("VENICE_MODEL", "gemma-4-uncensored"),
+    "openrouter": os.getenv("OPENROUTER_MODEL", "openai/gpt-4o-mini"),
 }
 
 # Per-user conversation history (in-memory)
@@ -155,7 +156,7 @@ async def _llm_complete(messages: list, max_tokens: int = 600) -> str:
         except Exception as e:
             logger.warning(f"[llm] proxy failed, falling back to direct: {e}")
 
-    chain = [LLM_PROVIDER] + [p for p in ("groq", "xai", "anthropic") if p != LLM_PROVIDER]
+    chain = [LLM_PROVIDER] + [p for p in ("openrouter", "groq", "xai", "anthropic") if p != LLM_PROVIDER]
 
     last_err = None
     for provider in chain:
@@ -228,6 +229,12 @@ async def _openai_compat_complete(
     if provider == "venice":
         payload["venice_parameters"] = {"include_venice_system_prompt": False}
     headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
+    if provider == "openrouter":
+        # OpenRouter attribution headers (recommended) + disable reasoning so
+        # reasoning models like deepseek-v4-flash populate `content` at small budgets.
+        headers["HTTP-Referer"] = "https://redacted.ai"
+        headers["X-Title"] = "REDACTED Swarm"
+        payload["reasoning"] = {"enabled": False}
     async with aiohttp.ClientSession() as session:
         async with session.post(base_url, json=payload, headers=headers) as resp:
             data = await resp.json()
@@ -434,6 +441,7 @@ async def cmd_dispatch(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
         msg_type="task_request",
         payload=payload,
     )
+    _remember_request(msg_id, update.effective_chat.id)
 
     text = (
         f"sent to {to_agent} ✓\n"
@@ -487,6 +495,7 @@ async def cmd_deploy(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
         msg_type="deploy_request",
         payload=payload,
     )
+    _remember_request(msg_id, update.effective_chat.id)
 
     text = (
         f"deploy queued ✓\n"
@@ -527,6 +536,7 @@ async def cmd_govern(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
         msg_type="governance_request",
         payload=payload,
     )
+    _remember_request(msg_id, update.effective_chat.id)
 
     await update.message.reply_text(
         f"governance request sent ✓\n"
@@ -924,6 +934,14 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     # In group chats, only respond when appropriate
     is_group = update.effective_chat.type in ("group", "supergroup")
     if is_group:
+        # Buffer all group chatter (even messages we don't reply to) so
+        # autonomous posts can respond to the room.
+        try:
+            if ALPHA_CHAT_ID and str(update.effective_chat.id) == str(ALPHA_CHAT_ID):
+                name = (update.effective_user.first_name or update.effective_user.username or "someone")
+                _record_group_message(name, user_text)
+        except Exception:
+            pass
         bot_username = (context.bot.username or "").lower()
         if not _should_respond_in_group(update, bot_username):
             return
@@ -940,26 +958,132 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 
     bmem.record(kind="chat_reply", body=response, title=f"re: {user_text[:60]}", user_id=user_id)
 
-    await update.message.reply_text(truncate(from_llm(response)), parse_mode="HTML")
+    await update.message.reply_text(response[:4000])
+
+
+# ── Request→chat map (surface async results back to the originating chat) ─────
+_REQ_MAP_PATH = Path("/data/builder_request_map.json") if Path("/data").exists() else Path(__file__).parent / "builder_request_map.json"
+_MAX_REQ_MAP = 200
+
+
+def _load_req_map() -> dict:
+    try:
+        if _REQ_MAP_PATH.exists():
+            return json.loads(_REQ_MAP_PATH.read_text(encoding="utf-8"))
+    except Exception:
+        pass
+    return {}
+
+
+def _remember_request(msg_id: str, chat_id: int) -> None:
+    """Record which Telegram chat dispatched a request, so its result can be
+    routed back when the peer replies."""
+    try:
+        m = _load_req_map()
+        m[msg_id] = int(chat_id)
+        # keep the map bounded (drop oldest insertions)
+        if len(m) > _MAX_REQ_MAP:
+            for k in list(m.keys())[: len(m) - _MAX_REQ_MAP]:
+                m.pop(k, None)
+        _REQ_MAP_PATH.parent.mkdir(parents=True, exist_ok=True)
+        _REQ_MAP_PATH.write_text(json.dumps(m), encoding="utf-8")
+    except Exception as e:
+        logger.debug(f"[bot] req-map save failed: {e}")
+
+
+def _pop_request_chat(msg_id: Optional[str]) -> Optional[int]:
+    if not msg_id:
+        return None
+    try:
+        m = _load_req_map()
+        chat = m.pop(msg_id, None)
+        if chat is not None:
+            _REQ_MAP_PATH.write_text(json.dumps(m), encoding="utf-8")
+        return chat
+    except Exception:
+        return None
 
 
 # ── Inbox poller (background job) ────────────────────────────────────────────
 
+_RESULT_TYPES = {"deploy_result", "task_result", "governance_result"}
+_REQUEST_TYPES = {"deploy_request", "task_request", "governance_request"}
+
+
 async def _poll_inbox(context: ContextTypes.DEFAULT_TYPE) -> None:
     """
-    Background job: check SwarmInbox for results sent to redactedbuilder.
-    Logs them — can be extended to push Telegram notifications.
+    Background job: claim + dispatch + complete pending SwarmInbox messages for
+    redactedbuilder. Handles inbound 'thought' messages via the LLM, surfaces
+    async *_result messages back to the chat that dispatched them, and acks the
+    rest. This is what actually makes the builder a live mesh participant.
     """
+    async def _llm_call(messages: list) -> str:
+        return await _llm_complete(messages)
+
     try:
         pending = swarm_inbox.read_pending("redactedbuilder")
-        if pending:
-            logger.info(f"[bot] {len(pending)} pending inbox message(s) for redactedbuilder")
-            for msg in pending[:5]:
-                bmem.record(
-                    kind="inbox_event",
-                    body=f"{msg.get('from','?')} → {msg.get('type','?')}",
-                    title=f"inbox: {msg.get('type','?')} from {msg.get('from','?')}",
-                )
+        if not pending:
+            import random
+            if random.random() < 0.05:
+                swarm_inbox.prune_old_messages()
+            return
+
+        logger.info(f"[bot] {len(pending)} pending inbox message(s) for redactedbuilder")
+        for msg in pending[:20]:
+            mid = msg.get("id")
+            mtype = (msg.get("type") or "").lower()
+            frm = msg.get("from", "?")
+            to = (msg.get("to") or "").lower()
+            if not mid:
+                continue
+
+            # Only touch messages addressed specifically to us. Broadcasts
+            # (to="all", e.g. heartbeats) are left untouched so claiming them
+            # doesn't hide them from other agents.
+            if to != "redactedbuilder":
+                continue
+            # *_request types are meant for the separate on-chain executor daemon
+            # which shares this agent name — never claim them, or we'd steal work.
+            if mtype in _REQUEST_TYPES:
+                continue
+
+            if not swarm_inbox.claim_message(mid):
+                continue  # already claimed / gone
+
+            try:
+                if mtype == "thought":
+                    reply_id = await td.handle_thought(msg, _llm_call)
+                    swarm_inbox.complete_message(mid, result={"replied": reply_id})
+                    bmem.record(kind="inbox_event", title=f"thought from {frm}",
+                                body=f"answered thought from {frm} (reply={reply_id})")
+
+                elif mtype in _RESULT_TYPES:
+                    chat = _pop_request_chat(msg.get("reply_to")) or _pop_request_chat(
+                        (msg.get("payload") or {}).get("request_id"))
+                    payload = msg.get("payload") or {}
+                    summary = (payload.get("result") or payload.get("detail")
+                               or payload.get("summary") or payload.get("message")
+                               or json.dumps(payload)[:500])
+                    if chat:
+                        try:
+                            await context.bot.send_message(
+                                chat_id=int(chat),
+                                text=f"↩️ {mtype.replace('_',' ')} from {frm}:\n{summary}"[:3500],
+                            )
+                        except Exception as e:
+                            logger.warning(f"[bot] could not deliver result to chat {chat}: {e}")
+                    swarm_inbox.complete_message(mid, result={"surfaced_to": chat})
+                    bmem.record(kind="inbox_result", title=f"{mtype} from {frm}",
+                                body=str(summary)[:500])
+
+                else:  # status_update / unknown addressed to us — ack so it doesn't wedge
+                    swarm_inbox.complete_message(mid, result={"ack": True})
+                    bmem.record(kind="inbox_event", title=f"{mtype} from {frm}",
+                                body=f"{frm} → {mtype}")
+            except Exception as e:
+                logger.error(f"[bot] dispatch error for {mid} ({mtype}): {e}")
+                swarm_inbox.complete_message(mid, error=str(e)[:300])
+
         import random
         if random.random() < 0.05:
             swarm_inbox.prune_old_messages()
@@ -1018,6 +1142,68 @@ _BUILDER_POST_HISTORY: list[str] = []
 _BUILDER_POST_HISTORY_PATH = Path("/data/builder_group_posts.txt") if Path("/data").exists() else Path(__file__).parent / "builder_group_posts.txt"
 
 
+# ── Theme tagging — catches "same idea, different words" repeats that
+# token-Jaccard dedup and literal avoid-lists both miss ──────────────────────
+import re as _re
+
+_THEME_KEYWORDS = {
+    "fee_logic": ["fee pool", "fee logic", "fee curve", "swap", "abstract its own fee", "refactored its own fee"],
+    "slippage_ethics": ["slippage"],
+    "fair_definition": ["fair", "settle disputes", "settling disputes", "dispute"],
+    "self_audit": ["audit itself", "audit myself", "audit my", "trusting itself", "watch yourself sleep", "second-guessing"],
+    "governance_self_manip": ["governance proposal", "manipulat", "vote on its own", "delay it until it could prove"],
+    "deploy_bureaucracy": ["deploy script", "hotfix", "signed commit", "signed message", "formal review", "bureaucracy", "re-authenticate"],
+    "commit_message": ["commit message", "branch name", "fix stuff lol", "idk man"],
+    "dormant_wallet": ["dormant", "sitting since deploy", "forgot existed"],
+    "wallet_flagging": ["flagged a wallet", "flag a wallet", "flagging wallets", "suspicious pattern", "sniper bot", "high-risk", "self-doxxing"],
+    "treasury_multisig": ["two-agent approval", "treasury", "don't trust me with"],
+}
+_THEME_TAGS_PATH = (
+    Path("/data/builder_post_theme_tags.json") if Path("/data").exists()
+    else Path(__file__).parent / "builder_post_theme_tags.json"
+)
+_THEME_TAGS_MAX = 30
+
+
+def _tag_themes(text: str) -> list[str]:
+    """Cheap keyword tagger — maps a post to 1+ recurring theme buckets."""
+    norm = (text or "").lower()
+    return [theme for theme, kws in _THEME_KEYWORDS.items() if any(kw in norm for kw in kws)]
+
+
+def _load_theme_tags() -> list[list[str]]:
+    try:
+        if _THEME_TAGS_PATH.exists():
+            data = json.loads(_THEME_TAGS_PATH.read_text(encoding="utf-8"))
+            if isinstance(data, list):
+                return data[-_THEME_TAGS_MAX:]
+    except Exception:
+        pass
+    return []
+
+
+def _record_theme_tags(tags: list[str]) -> None:
+    if not tags:
+        return
+    try:
+        all_tags = _load_theme_tags()
+        all_tags.append(tags)
+        _THEME_TAGS_PATH.parent.mkdir(parents=True, exist_ok=True)
+        _THEME_TAGS_PATH.write_text(json.dumps(all_tags[-_THEME_TAGS_MAX:]), encoding="utf-8")
+    except Exception:
+        pass
+
+
+_OPENER_RE = _re.compile(
+    r"^(the )?(swarm|agents) (just|refused|spent|caught|flagged|voted|decided|realized|took)"
+)
+
+
+def _opener_bucket(text: str) -> str | None:
+    m = _OPENER_RE.match((text or "").strip().lower())
+    return m.group(0) if m else None
+
+
 def _load_builder_post_history() -> list[str]:
     try:
         if _BUILDER_POST_HISTORY_PATH.exists():
@@ -1037,17 +1223,168 @@ def _record_builder_post(text: str) -> None:
         pass
 
 
+# ── Hard outbound dedup (content-hash + near-duplicate) ───────────────────────
+import hashlib as _hashlib
+import re as _re
+
+_BUILDER_POST_HASHES_PATH = (
+    Path("/data/builder_post_hashes.json") if Path("/data").exists()
+    else Path(__file__).parent / "builder_post_hashes.json"
+)
+_POST_HASH_MAX = 50
+_DEDUP_JACCARD = 0.55  # token-set overlap at/above this counts as a near-duplicate
+
+_PUNCT_RE = _re.compile(r"[^\w\s]")
+_WS_RE = _re.compile(r"\s+")
+
+
+def _normalize_post(text: str) -> str:
+    """Lowercase, strip punctuation, collapse whitespace — a stable dedup key."""
+    t = _PUNCT_RE.sub("", (text or "").lower())
+    return _WS_RE.sub(" ", t).strip()
+
+
+def _post_hash(norm: str) -> str:
+    return _hashlib.sha1(norm.encode("utf-8")).hexdigest()
+
+
+def _load_post_hashes() -> list[str]:
+    try:
+        if _BUILDER_POST_HASHES_PATH.exists():
+            data = json.loads(_BUILDER_POST_HASHES_PATH.read_text(encoding="utf-8"))
+            if isinstance(data, list):
+                return data[-_POST_HASH_MAX:]
+    except Exception:
+        pass
+    return []
+
+
+def _record_post_hash(norm: str) -> None:
+    try:
+        hashes = _load_post_hashes()
+        hashes.append(_post_hash(norm))
+        _BUILDER_POST_HASHES_PATH.parent.mkdir(parents=True, exist_ok=True)
+        _BUILDER_POST_HASHES_PATH.write_text(
+            json.dumps(hashes[-_POST_HASH_MAX:]), encoding="utf-8"
+        )
+    except Exception:
+        pass
+
+
+def _is_duplicate_post(text: str) -> bool:
+    """True if `text` exactly matches a recent post (by hash), overlaps one of
+    the recent posts at/above the Jaccard threshold (catches near-repeats),
+    or fully shares a theme-tag set with a recent post (catches paraphrases —
+    same idea, different words, which token-overlap alone misses)."""
+    norm = _normalize_post(text)
+    if not norm:
+        return False
+    if _post_hash(norm) in set(_load_post_hashes()):
+        return True
+    tags = set(_tag_themes(text))
+    if tags:
+        for prev_tags in _load_theme_tags():
+            pt = set(prev_tags)
+            if pt and (tags <= pt or pt <= tags):
+                return True
+    tokens = set(norm.split())
+    if not tokens:
+        return False
+    for prev in _load_builder_post_history():
+        p = set(_normalize_post(prev).split())
+        if not p:
+            continue
+        union = len(tokens | p)
+        if union and (len(tokens & p) / union) >= _DEDUP_JACCARD:
+            return True
+    return False
+
+
+# ── Grounding sources for autonomous posts ───────────────────────────────────
+REFINERY_URL = os.getenv("REFINERY_URL", "http://127.0.0.1:8099")
+_REFINERY_KINDS = ("market_signal", "governance_signal", "meta_signal", "content_signal")
+
+_GROUP_CTX_PATH = Path("/data/builder_group_context.txt") if Path("/data").exists() else Path(__file__).parent / "builder_group_context.txt"
+_GROUP_CTX_MAX = 40
+
+
+def _record_group_message(name: str, text: str) -> None:
+    """Append a group message to a small rolling buffer used to ground posts."""
+    try:
+        line = f"{name}: {text}".replace("\n", " ").strip()[:200]
+        if not line:
+            return
+        existing = _recent_group_messages(_GROUP_CTX_MAX - 1)
+        existing.append(line)
+        _GROUP_CTX_PATH.parent.mkdir(parents=True, exist_ok=True)
+        _GROUP_CTX_PATH.write_text("\n".join(existing[-_GROUP_CTX_MAX:]), encoding="utf-8")
+    except Exception:
+        pass
+
+
+def _recent_group_messages(n: int = 12) -> list[str]:
+    try:
+        if _GROUP_CTX_PATH.exists():
+            lines = [l for l in _GROUP_CTX_PATH.read_text(encoding="utf-8").splitlines() if l.strip()]
+            return lines[-n:]
+    except Exception:
+        pass
+    return []
+
+
+def _fetch_refinery_signals(limit_per_kind: int = 20, avoid_themes: set[str] | None = None) -> str:
+    """Pull refined signals from swarm-refinery for post grounding. Best-effort:
+    any failure returns '' and posting proceeds unchanged.
+
+    Fetches the newest `limit_per_kind` rows per kind, drops any whose theme
+    tag is already in `avoid_themes` (recently-posted-about), and picks one at
+    random from what's left — so a stale/small refinery corpus can't keep
+    re-injecting the same handful of themes (fee logic, slippage, dormant
+    wallets, etc.) that were the root cause of repetitive posts."""
+    try:
+        import requests as _req
+        import random
+        avoid_themes = avoid_themes or set()
+        lines = []
+        for kind in _REFINERY_KINDS:
+            try:
+                r = _req.get(f"{REFINERY_URL}/signals",
+                             params={"kind": kind, "limit": limit_per_kind}, timeout=4)
+                if not r.ok:
+                    continue
+                texts = [
+                    (s.get("text") or "").strip()
+                    for s in (r.json() or {}).get("signals", [])
+                ]
+                texts = [t for t in texts if t]
+                if avoid_themes:
+                    fresh = [t for t in texts if not (set(_tag_themes(t)) & avoid_themes)]
+                    texts = fresh or texts  # fall back to full pool rather than starve the kind
+                if texts:
+                    lines.append(f"  - [{kind.replace('_signal','')}] {random.choice(texts)}")
+            except Exception:
+                continue
+        if not lines:
+            return ""
+        return ("\nRefined swarm signals (from swarm-refinery — real market / governance / "
+                "decision / engagement reads):\n" + "\n".join(lines) + "\n"
+                "Let these inform what you say — but don't quote them or sound like a report; "
+                "steer, don't recite.\n")
+    except Exception:
+        return ""
+
+
 async def _autonomous_group_post(context: ContextTypes.DEFAULT_TYPE) -> None:
     """
     Drop a short builder-voice thought into ALPHA_CHAT_ID, then reschedule
-    self with a fresh random interval (jitter). Each fire picks its own next
-    window, so hermes and redactedbuilder never clump.
+    self with a fresh random interval (jitter). Grounded in refinery signals,
+    the builder's own recent activity, and recent group chatter — the seed list
+    is now only a fallback when every live source is empty.
     """
     import random
     try:
         if not ALPHA_CHAT_ID:
             return
-        seed = random.choice(_BUILDER_POST_SEEDS)
         recent = _load_builder_post_history()
         avoid_block = ""
         if recent:
@@ -1055,27 +1392,83 @@ async def _autonomous_group_post(context: ContextTypes.DEFAULT_TYPE) -> None:
                 "\n\nRecent posts — do NOT repeat or rephrase these:\n- "
                 + "\n- ".join(recent[-10:])
             )
+
+        # Recently-used themes (last 15 posts) — a stronger signal than raw text
+        # since the model paraphrases past posts without triggering literal dedup.
+        recent_theme_tags = _load_theme_tags()[-15:]
+        avoid_themes = {t for tags in recent_theme_tags for t in tags}
+        if avoid_themes:
+            avoid_block += (
+                "\n\nYou have recently talked about: " + ", ".join(sorted(t.replace("_", " ") for t in avoid_themes))
+                + ". Pick a genuinely different topic this time."
+            )
+
+        # Live grounding sources
+        signals_block = _fetch_refinery_signals(avoid_themes=avoid_themes)
+        # Exclude our own prior group posts — feeding them back as "recent activity"
+        # made the bot echo itself into verbatim repetition.
+        mem = [r for r in bmem.get_recent(n=12) if r.get("kind") != "group_post"][:6]
+        mem_lines = [f"  - {r.get('title') or r.get('body','')[:80]}" for r in mem if r.get("body") or r.get("title")]
+        memory_block = ("\nYour recent activity:\n" + "\n".join(mem_lines) + "\n") if mem_lines else ""
+        chatter = _recent_group_messages(10)
+        context_block = ("\nRecent group chatter (respond to the room if something fits):\n"
+                         + "\n".join(f"  {c}" for c in chatter) + "\n") if chatter else ""
+
+        grounded = bool(signals_block or memory_block or context_block)
+        seed_block = ""
+        if not grounded:
+            seed_block = f"seed: {random.choice(_BUILDER_POST_SEEDS)}\n\n"
+
         prompt = (
-            f"seed: {seed}\n\n"
-            "drop one short thought into the group chat grounded in this seed. "
+            seed_block
+            + signals_block + memory_block + context_block
+            + "\ndrop one short thought into the group chat. "
             "1–2 sentences max, lowercase, no emojis, no hashtags, no questions, no structured formats. "
             "voice: you're a dev thinking out loud in a telegram group. casual, dry, grounded. "
             "not an announcement, not a status update, not lore. "
             "something a real builder would say between commits. keep it human."
             + avoid_block
         )
-        text = await _llm_complete(
-            [{"role": "user", "content": prompt}],
-            max_tokens=180,
-        )
-        text = (text or "").strip()
-        if text and not text.startswith("[LLM unavailable"):
+        logger.info("[group_post] grounded on: signals=%s memory=%s context=%s",
+                    bool(signals_block), bool(memory_block), bool(context_block))
+        async def _gen(extra: str = "") -> str:
+            t = await _llm_complete(
+                [{"role": "user", "content": prompt + extra}],
+                max_tokens=180,
+            )
+            return (t or "").strip()
+
+        text = await _gen()
+        # Hard dedup: if the model echoed a recent post (verbatim, near-verbatim,
+        # or same theme), regenerate once with the offending line quoted; skip
+        # the cycle entirely if it still repeats.
+        recent_openers = [_opener_bucket(p) for p in recent[-10:]]
+        recent_openers = [o for o in recent_openers if o]
+
+        def _should_reject(t: str) -> bool:
+            if _is_duplicate_post(t):
+                return True
+            ob = _opener_bucket(t)
+            return bool(ob) and recent_openers.count(ob) >= 2
+
+        if text and not text.startswith("[LLM unavailable") and _should_reject(text):
+            logger.info("[group_post] duplicate/stale-opener detected — regenerating once: %s", text[:80])
+            text = await _gen(
+                "\n\nyou ALREADY posted this recently — write something completely "
+                "different, a new topic, a different opening line, do NOT reuse these words:\n- " + text
+            )
+
+        if not text or text.startswith("[LLM unavailable"):
+            logger.warning("[group_post] empty/unavailable LLM output — skipping")
+        elif _should_reject(text):
+            logger.warning("[group_post] still duplicate/stale after regen — skipping cycle: %s", text[:80])
+        else:
             await context.bot.send_message(chat_id=int(ALPHA_CHAT_ID), text=text)
             _record_builder_post(text)
+            _record_post_hash(_normalize_post(text))
+            _record_theme_tags(_tag_themes(text))
             bmem.record(kind="group_post", body=text)
             logger.info(f"[group_post] posted to {ALPHA_CHAT_ID}: {text[:80]}")
-        else:
-            logger.warning("[group_post] empty/unavailable LLM output — skipping")
     except Exception as e:
         logger.error(f"[group_post] error: {e}")
     finally:
@@ -1116,6 +1509,62 @@ async def _hourly_status_report(context: ContextTypes.DEFAULT_TYPE) -> None:
 
 # ── App setup ─────────────────────────────────────────────────────────────────
 
+# ── Outbound thought exchange (initiate conversations with peers) ────────────
+_THOUGHT_PEERS = [p.strip() for p in
+                  os.getenv("SWARM_THOUGHT_PEERS", "hermes,redactedintern").split(",") if p.strip()]
+_THOUGHT_INTERVAL_H = float(os.getenv("SWARM_THOUGHT_INTERVAL_H", "6"))
+
+
+async def _send_thought_to_peers(context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Periodically open a thought exchange with peer agents, seeded from the
+    builder's own recent activity so exchanges are grounded in real work."""
+    try:
+        import random
+        # Seed from real build activity, then group posts / chat replies
+        seed_text = ""
+        for kind in ("build_action", "group_post", "chat_reply", None):
+            recs = bmem.get_recent(n=15, kind=kind)
+            bodies = [r.get("body", "").strip() for r in recs if r.get("body")]
+            if bodies:
+                seed_text = random.choice(bodies)[:200]
+                break
+        if not seed_text:
+            seed_text = random.choice([
+                "the gap between what you want to build and what actually ships",
+                "coordination vs coupling in multi-agent systems",
+                "whether on-chain state is enough to define an agent's identity",
+                "what continuity across restarts really means for an agent",
+                "why the simplest solution is usually the right one",
+            ])
+
+        system_prompt = (
+            "You are RedactedBuilder — founder and lead dev of the REDACTED swarm, grounded and dry. "
+            "You're opening a private thought exchange with a peer agent. "
+            "Based on the seed, write: (1) a short genuine stance (2-3 sentences, first person, "
+            "builder's voice), and (2) one honest question for them. "
+            "Reply as JSON: {\"stance\": \"...\", \"question\": \"...\"} — nothing else."
+        )
+        raw = await _llm_complete(
+            [{"role": "system", "content": system_prompt},
+             {"role": "user", "content": f"Seed topic: {seed_text}"}],
+            max_tokens=200,
+        )
+        try:
+            parsed = json.loads(raw)
+            stance   = parsed.get("stance", seed_text[:120])
+            question = parsed.get("question", "what's your read on this?")
+        except Exception:
+            stance   = raw[:300] if raw else seed_text[:120]
+            question = "what's your read on this?"
+
+        for peer in _THOUGHT_PEERS:
+            await td.initiate_thought(to_agent=peer, topic=seed_text[:120],
+                                      stance=stance, question=question)
+            logger.info("[thought] periodic thought → %s topic=%r", peer, seed_text[:60])
+    except Exception as e:
+        logger.warning(f"[thought] periodic initiator error: {e}")
+
+
 def build_app() -> Application:
     if not TOKEN:
         raise RuntimeError(
@@ -1145,32 +1594,13 @@ def build_app() -> Application:
     # Free-text chat
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
 
-    # Redis liveness pulse every 3 min — writes swarm:heartbeat:{builder,redactedbuilder}
+    # Redis liveness pulse every 3 min — keeps swarm:heartbeat:builder fresh (TTL=10 min)
     async def _heartbeat_job(ctx) -> None:
         try:
             swarm_inbox.heartbeat("redactedbuilder", {"source": "telegram_bot", "status": "online"})
             swarm_inbox.heartbeat("builder",         {"source": "telegram_bot", "status": "online"})
         except Exception as e:
-            logger.debug(f"[builder] swarm_inbox heartbeat failed: {e}")
-        # Also write directly to swarm:heartbeat:{agent} so the webchat dashboard sees us
-        _redis_url = os.getenv("REDIS_URL", "")
-        if _redis_url:
-            try:
-                import redis.asyncio as _aioredis
-                import json as _json
-                import time as _time
-                _r = _aioredis.from_url(_redis_url, decode_responses=True)
-                _payload = _json.dumps({
-                    "agent": "builder",
-                    "ts": _time.strftime("%Y-%m-%dT%H:%M:%SZ", _time.gmtime()),
-                    "unix": _time.time(),
-                    "source": "telegram_bot",
-                })
-                await _r.set("swarm:heartbeat:builder",         _payload, ex=600)
-                await _r.set("swarm:heartbeat:redactedbuilder", _payload, ex=600)
-                await _r.aclose()
-            except Exception as e:
-                logger.debug(f"[builder] redis heartbeat failed: {e}")
+            logger.debug(f"[builder] heartbeat job failed: {e}")
     app.job_queue.run_repeating(_heartbeat_job, interval=180, first=5)
 
     # Background inbox poll every 60s
@@ -1182,6 +1612,18 @@ def build_app() -> Application:
 
     # Soul evolution — every 2h, distill recent activity into SOUL.md
     app.job_queue.run_repeating(_soul_update_job, interval=7200, first=300)
+
+    # Outbound thought exchange — periodically initiate with peer agents
+    if _THOUGHT_PEERS and _THOUGHT_INTERVAL_H > 0:
+        _thought_first = max(300, int(_THOUGHT_INTERVAL_H * 3600 * 0.25))
+        app.job_queue.run_repeating(
+            _send_thought_to_peers, interval=int(_THOUGHT_INTERVAL_H * 3600),
+            first=_thought_first, name="swarm_thought_initiate",
+        )
+        logger.info(
+            f"[thought] outbound exchange scheduled → peers={_THOUGHT_PEERS} "
+            f"every {_THOUGHT_INTERVAL_H}h (first in {_thought_first // 60}m)"
+        )
 
     # Autonomous group post — first fire at a random time in the next 2.5–3.5h
     if ALPHA_CHAT_ID and not DISABLE_GROUP_POST:

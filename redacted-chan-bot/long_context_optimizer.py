@@ -164,34 +164,6 @@ async def _summarize_deep(medium_summaries: list[str], llm_fn: Callable) -> str:
         return combined[:600]
 
 
-def _score_segment_emotion(raw_text: str) -> tuple[float, float]:
-    """
-    Score a raw exchange block for avg valence and peak intensity.
-    Uses conversation_affect_tracker keyword banks — no LLM calls.
-    """
-    try:
-        import conversation_affect_tracker as cat
-    except ImportError:
-        return 0.0, 0.0
-
-    lines = raw_text.split("\n")
-    intensities = []
-    valences = []
-    for line in lines:
-        if not line.strip():
-            continue
-        intensity, valence, _ = cat._score_text(line)
-        intensities.append(intensity)
-        valences.append(valence)
-
-    if not intensities:
-        return 0.0, 0.0
-
-    avg_valence = sum(valences) / len(valences)
-    peak_intensity = max(intensities)
-    return round(avg_valence, 3), round(peak_intensity, 3)
-
-
 async def run_compression_pass(
     llm_fn: Callable[[list, int], Awaitable[str]],
     user_id: int,
@@ -218,16 +190,6 @@ async def run_compression_pass(
 
     conn = _get_db()
 
-    # Ensure emotional annotation columns exist
-    try:
-        conn.execute("SELECT emotional_valence FROM compressed_chunks LIMIT 1")
-    except sqlite3.OperationalError:
-        conn.execute("ALTER TABLE compressed_chunks ADD COLUMN emotional_valence REAL DEFAULT 0.0")
-        conn.execute("ALTER TABLE compressed_chunks ADD COLUMN intensity_peak REAL DEFAULT 0.0")
-        conn.execute("ALTER TABLE compressed_chunks ADD COLUMN last_retrieved TEXT DEFAULT ''")
-        conn.commit()
-        logger.info("[lco] added emotional annotation columns")
-
     # Check what's already compressed (avoid reprocessing)
     already_done = conn.execute(
         "SELECT exchange_count FROM compressed_chunks WHERE user_id=? ORDER BY id DESC LIMIT 1",
@@ -252,24 +214,16 @@ async def run_compression_pass(
         ts_start = chunk[0]["ts"] or datetime.now(timezone.utc).isoformat()
         ts_end   = chunk[-1]["ts"] or ts_start
         keywords = _extract_keywords(text)
-        avg_valence, peak_intensity = _score_segment_emotion(text)
         conn.execute(
-            "INSERT INTO compressed_chunks (ts_created, ts_range_start, ts_range_end, tier, content, exchange_count, keywords, user_id, emotional_valence, intensity_peak) "
-            "VALUES (?,?,?,?,?,?,?,?,?,?)",
-            (datetime.now(timezone.utc).isoformat(), ts_start, ts_end, "medium", summary, len(chunk), keywords, user_id, avg_valence, peak_intensity),
+            "INSERT INTO compressed_chunks (ts_created, ts_range_start, ts_range_end, tier, content, exchange_count, keywords, user_id) "
+            "VALUES (?,?,?,?,?,?,?,?)",
+            (datetime.now(timezone.utc).isoformat(), ts_start, ts_end, "medium", summary, len(chunk), keywords, user_id),
         )
         new_medium_summaries.append(summary)
         new_chunks_created += 1
         await asyncio.sleep(0)  # yield to event loop between LLM calls
 
     conn.commit()
-
-    # Sync new segments to memory cache
-    try:
-        import memory_cache as mc
-        mc.sync_from_lco()
-    except Exception as e:
-        logger.debug("[lco] memory_cache sync failed: %s", e)
 
     # ── Deep tier: if we now have 5+ medium chunks, consolidate into epoch ──
     all_medium = conn.execute(

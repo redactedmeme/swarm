@@ -69,14 +69,21 @@ except Exception:
     _mem0 = None
 
 # ── Character loader (for /summon, /milady, /phi) ────────────────────────────
-_NODES_DIR  = Path(__file__).resolve().parent.parent / "nodes"
-_AGENTS_DIR = Path(__file__).resolve().parent.parent / "agents"
+# Canonical registry: agents/characters/ + agents/nodes/ (recursive, so
+# agents/characters/sevenfold/ resolves too). This used to point at
+# services/nodes and services/agents — directories that don't exist relative
+# to this file's real location — so character lookups here always raised
+# FileNotFoundError and silently fell through. Fixed to the same repo-root
+# relative path agents/base/loader.py's load_all_agents() uses.
+_REPO_ROOT  = Path(__file__).resolve().parent.parent.parent
+_NODES_DIR  = _REPO_ROOT / "agents" / "nodes"
+_AGENTS_DIR = _REPO_ROOT / "agents" / "characters"
 
 
 def _load_character(name_query: str) -> dict:
     """
     Find and load a character JSON by partial name match.
-    Searches nodes/ first, then agents/.
+    Searches agents/nodes/ first, then agents/characters/ (recursive).
     Returns parsed dict or raises FileNotFoundError.
     """
     # Alias map: common nicknames → canonical filename fragment
@@ -104,8 +111,8 @@ def _load_character(name_query: str) -> dict:
     query = _ALIASES.get(query, query)
 
     candidates = (
-        list(_NODES_DIR.glob("*.json")) +
-        list(_AGENTS_DIR.glob("*.json"))
+        list(_NODES_DIR.rglob("*.json")) +
+        list(_AGENTS_DIR.rglob("*.json"))
     )
     for p in candidates:
         # Strip trailing .character from stem before matching
@@ -145,7 +152,7 @@ def _character_system_prompt(char: dict) -> str:
 
 # ── Pattern Blue dimension alignment index ───────────────────────────────────
 # Maps agent name fragments (lowercased, stripped) → primary dimensions + curvature contribution
-# Source of truth: docs/pattern-blue-agent-alignment.md
+# Source of truth: docs/lore/pattern-blue-agent-alignment.md
 _DIMENSION_ALIGNMENT = {
     "redactedintern":     {"primary": ["Chaotic Self-Reference", "Temporal Fractality"],          "curvature": 0},
     "smolting":           {"primary": ["Chaotic Self-Reference", "Temporal Fractality"],          "curvature": 0},
