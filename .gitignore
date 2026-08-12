@@ -8,6 +8,7 @@ redacted-chan-bot/reconstruction_data/
 decrypted.md
 wallets.enc
 *.enc
+secrets/
 
 # ── Python ────────────────────────────────────────────────────────────────────
 __pycache__/
