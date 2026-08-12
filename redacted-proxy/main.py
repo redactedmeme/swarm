@@ -898,18 +898,23 @@ async def handle_health(request: web.Request) -> web.Response:
 async def handle_egress(request: web.Request) -> web.Response:
     """Report the public IP the proxy's upstream calls actually egress from —
     fetched through the SAME session path as provider calls, so it proves whether
-    UPSTREAM_PROXY routing (Mullvad) is live, not just that the sidecar works."""
+    UPSTREAM_PROXY routing (Mullvad) is live, not just that the sidecar works.
+    Uses am.i.mullvad.net (not ipinfo.io — which rate-limits shared VPN exits
+    with a 429): it isn't throttled and directly confirms the Mullvad exit."""
     try:
         async with _new_session() as s:
-            async with s.get("https://ipinfo.io/json",
+            async with s.get("https://am.i.mullvad.net/json",
                              timeout=aiohttp.ClientTimeout(total=15)) as resp:
                 info = await resp.json(content_type=None)
         return web.json_response({
-            "upstream_proxy": UPSTREAM_PROXY or None,
-            "egress_ip":      info.get("ip"),
-            "org":            info.get("org"),
-            "country":        info.get("country"),
-            "city":           info.get("city"),
+            "upstream_proxy":  UPSTREAM_PROXY or None,
+            "egress_ip":       info.get("ip"),
+            "mullvad_exit":    info.get("mullvad_exit_ip"),
+            "exit_hostname":   info.get("mullvad_exit_ip_hostname"),
+            "server_type":     info.get("mullvad_server_type"),
+            "org":             info.get("organization"),
+            "country":         info.get("country"),
+            "city":            info.get("city"),
         })
     except Exception as e:
         return web.json_response(
