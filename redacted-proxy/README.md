@@ -163,6 +163,10 @@ curl -X POST $PROXY_URL/config \
 | `VENICE_API_KEY` | For Venice | — | Venice upstream key |
 | `CASCADE_MODELS` | No | `deepseek/deepseek-v4-flash` | Comma-separated model ids served **free-first**: the free cascade is tried before the requested (paid) model |
 | `FREE_CASCADE` | No | see below | Comma-separated ordered free models tried ahead of a `CASCADE_MODELS` request (Groq free tier + OpenRouter `:free`). Update as OpenRouter's free lineup rotates |
+| `AUTO_MODELS` | No | `auto` | Model ids that trigger the auto-router (prompt-difficulty routing). Bots send `model:"auto"` to opt in |
+| `AUTO_CLASSIFIER_MODEL` | No | `llama-3.1-8b-instant` | Cheap free model used to judge the ambiguous middle band |
+| `AUTO_TIERS` | No | built-in | JSON `{tier: [model,…]}` overriding the easy/medium/hard/code entry lists |
+| `AUTO_EASY_MAX` / `AUTO_HARD_MIN` | No | `3` / `8` | Heuristic score thresholds: `≤EASY_MAX`→easy, `≥HARD_MIN`→hard, between→classifier |
 | `PRIVACY_MODE` | No | `private` | `anonymous`, `private`, `maximum`, `zero`, `tee`, `e2ee` |
 | `PRIVACY_SCRUB` | No | mode default | `true`/`false` — PII regex scrubbing (on by default in private/maximum) |
 | `DISK_LOG` | No | mode default | `true`/`false` — write logs to `/data/proxy_log.jsonl` (off in private/maximum) |
@@ -192,6 +196,21 @@ llama-3.1-8b-instant,openai/gpt-oss-120b,openai/gpt-oss-20b,qwen/qwen3.6-27b,lla
 
 The OpenRouter `:free` lineup rotates — validate ids against `https://openrouter.ai/api/v1/models`
 when editing. Pin a provider with `X-Provider: <name>` to bypass the cascade entirely.
+
+### Auto-router (`model: "auto"`)
+
+Send `model: "auto"` and the proxy inspects the prompt, estimates difficulty, and enters the
+free-first cascade at the cheapest capable tier (**cost-first**). Classification is **hybrid**:
+zero-cost heuristics (prompt size, turns, code/JSON/reasoning signals, requested `max_tokens`)
+settle the obvious cases instantly; only the ambiguous middle band costs one cheap call to
+`AUTO_CLASSIFIER_MODEL` (a free Groq model). Streaming requests skip the classifier to avoid added
+latency.
+
+Each tier (`easy` / `medium` / `hard`, plus a `code` override when code signals dominate) lists the
+cheapest capable free models first, then falls through the shared `FREE_CASCADE` tail and finally the
+paid `CASCADE_MODELS` — so a tier can escalate on failure and paid is always last resort. Empty/null
+responses (common from reasoning `:free` models) count as failures and trigger failover. The chosen
+tier is returned in the `X-Auto-Tier` response header. An `X-Provider` pin bypasses auto entirely.
 
 ---
 

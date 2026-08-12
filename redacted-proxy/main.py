@@ -394,6 +394,41 @@ _FREE_CASCADE: list[str] = [m.strip() for m in os.getenv("FREE_CASCADE",
 _CASCADE_MODELS: set[str] = {m.strip() for m in os.getenv("CASCADE_MODELS",
     "deepseek/deepseek-v4-flash").split(",") if m.strip()}
 
+# ── Auto-router ───────────────────────────────────────────────────────────────
+# When a request's model is in _AUTO_MODELS, the proxy inspects the prompt, estimates
+# difficulty (heuristics, plus a cheap classifier only for the ambiguous middle band),
+# and enters the free-first cascade at the cheapest capable tier (cost-first). Opt-in and
+# non-breaking: bots send model:"auto"; every other model id behaves exactly as before.
+_AUTO_MODELS: set[str] = {m.strip() for m in os.getenv("AUTO_MODELS", "auto").split(",") if m.strip()}
+_AUTO_CLASSIFIER_MODEL = os.getenv("AUTO_CLASSIFIER_MODEL", "llama-3.1-8b-instant")
+# Score bands: <= EASY_MAX → easy; >= HARD_MIN → hard; in between → classifier decides.
+_AUTO_EASY_MAX = int(os.getenv("AUTO_EASY_MAX", "3"))
+_AUTO_HARD_MIN = int(os.getenv("AUTO_HARD_MIN", "8"))
+
+def _auto_tiers() -> dict[str, list[str]]:
+    raw = os.getenv("AUTO_TIERS", "")
+    if raw:
+        try:
+            return json.loads(raw)
+        except Exception:
+            logger.warning("[proxy] AUTO_TIERS invalid JSON — using defaults")
+    # Cost-first: cheapest capable free model first in each tier. All tiers share the
+    # free-cascade tail + paid last resort (appended in _build_auto_chain).
+    return {
+        "easy":   ["llama-3.1-8b-instant", "inclusionai/ling-3.0-tiny:free", "openai/gpt-oss-20b"],
+        "medium": ["openai/gpt-oss-120b", "openai/gpt-oss-20b", "qwen/qwen3.6-27b", "llama-3.3-70b"],
+        "hard":   ["llama-3.3-70b", "openai/gpt-oss-120b", "nvidia/nemotron-3.5-lightning:free"],
+        "code":   ["cohere/north-mini-code:free", "openai/gpt-oss-120b", "llama-3.3-70b"],
+    }
+_AUTO_TIERS = _auto_tiers()
+
+# Prompt signals for the zero-cost heuristic pass.
+_CODE_SIGNALS = ("```", "def ", "function ", "class ", "import ", "traceback", "stack trace",
+                 "refactor", "compile", "syntax error", "npm ", "git ", "regex", "sql")
+_REASON_SIGNALS = ("prove", "step by step", "step-by-step", "analyz", "analyse", "derive",
+                   "reason", "explain why", "algorithm", "complexity", "optimize", "trade-off")
+_STRUCT_SIGNALS = ("json", "schema", "yaml", "csv", "table of", "format:")
+
 # Provider pricing (USD per 1M tokens) — estimated; used for cost tracking
 _PROVIDER_COSTS: dict[str, dict[str, float]] = {
     "xai": {
@@ -932,6 +967,76 @@ async def handle_models(request: web.Request) -> web.Response:
     return web.json_response({"object": "list", "data": models})
 
 
+# ── Auto-router helpers ───────────────────────────────────────────────────────
+
+def _heuristic_score(messages: list, payload: dict) -> tuple[int, bool]:
+    """Zero-cost difficulty score from prompt shape. Returns (score, code_dominant)."""
+    text = "\n".join(str(m.get("content", "")) for m in messages if isinstance(m, dict))
+    low = text.lower()
+    tokens = len(text) // 4
+    score = 0
+    if tokens > 400:  score += 1
+    if tokens > 1200: score += 2
+    if tokens > 3000: score += 3
+    if len(messages) > 6: score += 1
+    mt = payload.get("max_tokens") or 0
+    if isinstance(mt, int) and mt > 1024: score += 1
+    if payload.get("response_format") or payload.get("tools") or payload.get("functions"): score += 2
+    if any(s in low for s in _STRUCT_SIGNALS): score += 1
+    if any(s in low for s in _REASON_SIGNALS): score += 2
+    code_hits = sum(1 for s in _CODE_SIGNALS if s in low)
+    score += min(code_hits, 3)
+    code_dominant = code_hits >= 2 or "```" in low
+    return score, code_dominant
+
+
+async def _classify_difficulty(messages: list, payload: dict) -> tuple[str, bool, bool]:
+    """Return (tier, code_dominant, used_llm). Hybrid: heuristics settle the obvious
+    cases instantly; only the ambiguous middle band costs one cheap free-model call."""
+    score, code_dominant = _heuristic_score(messages, payload)
+    if score <= _AUTO_EASY_MAX:
+        return "easy", code_dominant, False
+    if score >= _AUTO_HARD_MIN:
+        return "hard", code_dominant, False
+    # Ambiguous middle. Don't add latency before a stream — use the medium tier.
+    if payload.get("stream"):
+        return "medium", code_dominant, False
+    last_user = ""
+    for m in reversed(messages):
+        if isinstance(m, dict) and m.get("role") == "user":
+            last_user = str(m.get("content", ""))[:500]
+            break
+    scrub = PRIVACY_SCRUB() or _is_max_privacy(PRIVACY_MODE())
+    preview = _clean_messages([
+        {"role": "system", "content": "Classify how hard this request is for an LLM. "
+         "Answer with exactly one letter: E for simple/short/casual, H for complex/long/"
+         "reasoning/coding. Output only the letter."},
+        {"role": "user", "content": last_user},
+    ], scrub)
+    body = {"model": _AUTO_CLASSIFIER_MODEL, "messages": preview, "max_tokens": 1, "temperature": 0}
+    try:
+        prov, um = _resolve_provider(_AUTO_CLASSIFIER_MODEL, "")
+        async with aiohttp.ClientSession() as s:
+            res = await asyncio.wait_for(_forward(prov, um, body, s), timeout=6)
+        letter = (res.get("choices", [{}])[0].get("message", {}).get("content", "") or "").strip().upper()[:1]
+        return ("hard" if letter == "H" else "easy"), code_dominant, True
+    except Exception as _e:
+        logger.warning("[proxy] auto classifier failed (%s) — medium fallback", _e)
+        return "medium", code_dominant, False  # still free; failover escalates if needed
+
+
+def _build_auto_chain(tier: str, code_dominant: bool) -> tuple[list[tuple[str, str]], str]:
+    """Cost-first candidate chain: tier entry models → shared free tail → paid last resort."""
+    key = "code" if (code_dominant and "code" in _AUTO_TIERS) else tier
+    entry = _AUTO_TIERS.get(key) or _AUTO_TIERS.get("medium", [])
+    chain: list[tuple[str, str]] = [_resolve_provider(m, "") for m in entry]
+    for m in _FREE_CASCADE:
+        chain.append(_resolve_provider(m, ""))
+    for paid in _CASCADE_MODELS:
+        chain.append(_resolve_provider(paid, ""))
+    return chain, key
+
+
 async def handle_chat_completions(request: web.Request) -> web.Response:
     t0 = time.monotonic()
 
@@ -953,23 +1058,30 @@ async def handle_chat_completions(request: web.Request) -> web.Response:
 
     model    = payload.get("model", "llama-3.1-8b-instant")
     explicit = request.headers.get("X-Provider", "")
-    provider, upstream_model = _resolve_provider(model, explicit)
 
-    # Build failover chain: requested model first, then its equivalents — keeping
-    # only providers that actually have a key. Enables deeper fallback so a single
-    # provider outage (e.g. OpenRouter/deepseek) doesn't take the swarm's LLM down.
-    #
-    # Free-first: for the swarm's standardized default models, prepend the free cascade
-    # (Groq free tier + OpenRouter ":free" models) so the paid model is only reached once
-    # every free option has 429'd/failed. Skipped when a provider is explicitly pinned.
-    _chain: list[tuple[str, str]] = []
-    if not explicit and model in _CASCADE_MODELS:
-        for free_model in _FREE_CASCADE:
-            _chain.append(_resolve_provider(free_model, ""))
-    _chain.append((provider, upstream_model))
-    if not explicit:  # don't override an explicitly-pinned provider
-        for equiv in _MODEL_EQUIVALENTS.get(model, []):
-            _chain.append(_resolve_provider(equiv, ""))
+    # Auto-router: when model is "auto" (and no provider is pinned), classify the prompt
+    # and enter the free-first cascade at the cheapest capable tier. Otherwise: normal
+    # resolution + free-first prepend for the swarm's standardized default models.
+    auto_tier = ""
+    if not explicit and model in _AUTO_MODELS:
+        tier, code_dominant, used_llm = await _classify_difficulty(payload.get("messages", []), payload)
+        _chain, auto_tier = _build_auto_chain(tier, code_dominant)
+        provider, upstream_model = _chain[0] if _chain else ("groq", "llama-3.1-8b-instant")
+        logger.info("[proxy] auto → tier=%s code=%s llm=%s", auto_tier, code_dominant, used_llm)
+    else:
+        provider, upstream_model = _resolve_provider(model, explicit)
+        # Build failover chain: requested model first, then its equivalents — keeping
+        # only providers that actually have a key. Free-first: for the swarm's standardized
+        # default models, prepend the free cascade so the paid model is only reached once
+        # every free option has 429'd/failed. Skipped when a provider is explicitly pinned.
+        _chain: list[tuple[str, str]] = []
+        if not explicit and model in _CASCADE_MODELS:
+            for free_model in _FREE_CASCADE:
+                _chain.append(_resolve_provider(free_model, ""))
+        _chain.append((provider, upstream_model))
+        if not explicit:  # don't override an explicitly-pinned provider
+            for equiv in _MODEL_EQUIVALENTS.get(model, []):
+                _chain.append(_resolve_provider(equiv, ""))
     candidates: list[tuple[str, str]] = []
     _seen: set[tuple[str, str]] = set()
     for p, m in _chain:
@@ -1011,6 +1123,12 @@ async def handle_chat_completions(request: web.Request) -> web.Response:
             for _i, (_prov, _um) in enumerate(candidates):
                 try:
                     result = await _forward(_prov, _um, payload, session)
+                    # Some models (esp. reasoning/agentic ":free" ones) return HTTP 200 with
+                    # null/empty content — useless as a chat reply. Treat that as a failure so
+                    # the cascade escalates, unless the reply carries tool_calls.
+                    _msg = (result.get("choices") or [{}])[0].get("message", {}) or {}
+                    if not (_msg.get("content") or _msg.get("tool_calls")):
+                        raise RuntimeError(f"empty content from {_prov}/{_um}")
                     if _i > 0:
                         logger.info("[proxy] failover: %s/%s succeeded after %d failure(s)",
                                     _prov, _um, _i)
@@ -1022,7 +1140,7 @@ async def handle_chat_completions(request: web.Request) -> web.Response:
                     continue
         if result is None:
             raise RuntimeError(error_text or "all providers failed")
-        response_text = result.get("choices", [{}])[0].get("message", {}).get("content", "")
+        response_text = (result.get("choices", [{}])[0].get("message", {}).get("content") or "")
         latency_ms = (time.monotonic() - t0) * 1000
         prompt_chars = sum(len(str(m.get("content", ""))) for m in original_messages)
         input_tokens = prompt_chars // 4
@@ -1035,6 +1153,8 @@ async def handle_chat_completions(request: web.Request) -> web.Response:
                    latency_ms, ephemeral=ephemeral, cost_usd=cost_usd)
         resp = web.json_response(result)
         resp.headers["X-Privacy-Mode"] = PRIVACY_MODE()
+        if auto_tier:
+            resp.headers["X-Auto-Tier"] = auto_tier
         return resp
 
     except Exception as e:
