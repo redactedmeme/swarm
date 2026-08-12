@@ -85,8 +85,11 @@ ADMIN_IDS: set = {int(x.strip()) for x in _raw_admins.split(",") if x.strip().is
 # Autonomous group posts — drop a persona-authentic builder thought into ALPHA_CHAT_ID
 # every ~3h with random jitter so we never collide with hermes's autonomous post.
 ALPHA_CHAT_ID = os.getenv("ALPHA_CHAT_ID", "").strip()
-GROUP_POST_MIN_SEC = int(os.getenv("GROUP_POST_MIN_SEC", str(int(2.5 * 3600))))  # 2.5h
-GROUP_POST_MAX_SEC = int(os.getenv("GROUP_POST_MAX_SEC", str(int(3.5 * 3600))))  # 3.5h
+GROUP_POST_MIN_SEC = int(os.getenv("GROUP_POST_MIN_SEC", str(int(4 * 3600))))  # 4h
+GROUP_POST_MAX_SEC = int(os.getenv("GROUP_POST_MAX_SEC", str(int(7 * 3600))))  # 7h
+# When no real grounding source exists, skip the cycle instead of posting a
+# generic seed line. Set GROUP_POST_ALLOW_SEEDS=true to restore the old fallback.
+GROUP_POST_ALLOW_SEEDS = os.getenv("GROUP_POST_ALLOW_SEEDS", "false").strip().lower() in ("1", "true", "yes")
 DISABLE_GROUP_POST = os.getenv("DISABLE_GROUP_POST", "false").lower() in ("1", "true", "yes")
 
 # LLM endpoints
@@ -1300,6 +1303,75 @@ def _is_duplicate_post(text: str) -> bool:
     return False
 
 
+# ── LLM-based semantic gates ───────────────────────────────────────────────
+# Keyword/Jaccard dedup above is a cheap first pass but structurally can't catch
+# a new trope it has no keyword for (e.g. a paraphrased "message me now" take
+# that repeats five times without ever tripping _THEME_KEYWORDS). These gates
+# ask the model directly instead of relying on a hand-maintained keyword list.
+
+def _yes_no(text: str) -> bool | None:
+    """Parse a strict-ish yes/no LLM reply. None if ambiguous/empty."""
+    t = (text or "").strip().lower()
+    if not t:
+        return None
+    if t.startswith("yes"):
+        return True
+    if t.startswith("no"):
+        return False
+    return None
+
+
+async def _is_semantic_duplicate(candidate: str, recent: list[str]) -> bool:
+    """Ask the model whether `candidate` makes substantially the same point as
+    any of the recent posts, even if worded differently. Fails open (returns
+    False) on any error or ambiguous output so an LLM outage can't mute the bot."""
+    if not candidate or not recent:
+        return False
+    try:
+        prompt = (
+            "Here are recent posts from a builder's telegram group account:\n- "
+            + "\n- ".join(recent[-15:])
+            + f"\n\nCandidate new post:\n{candidate}\n\n"
+            "Does the candidate make substantially the same point as ANY of the "
+            "recent posts above, even if worded completely differently (e.g. same "
+            "trope, same take, same joke, just paraphrased)? "
+            "Answer with exactly one word: YES or NO."
+        )
+        reply = await _llm_complete([{"role": "user", "content": prompt}], max_tokens=5)
+        result = _yes_no(reply)
+        return bool(result)
+    except Exception as e:
+        logger.warning("[group_post] semantic-duplicate check failed, failing open: %s", e)
+        return False
+
+
+async def _is_worth_posting(candidate: str) -> bool:
+    """Ask the model whether `candidate` says something concrete/specific vs.
+    generic crypto-twitter platitude or moralizing filler. Fails open (returns
+    True) on any error so an LLM outage can't mute the bot."""
+    if not candidate:
+        return False
+    try:
+        prompt = (
+            f"Candidate telegram post from a builder account:\n{candidate}\n\n"
+            "Is this a generic crypto-twitter platitude, vague moralizing, or "
+            "filler take that could apply to almost any project any day "
+            "(e.g. 'scammers always say X, block and move on')? Or does it say "
+            "something concrete and specific (real build activity, a real signal, "
+            "a real observation)?\n"
+            "Answer with exactly one word: NO if it's worth posting (concrete/specific), "
+            "YES if it's generic filler that should be skipped."
+        )
+        reply = await _llm_complete([{"role": "user", "content": prompt}], max_tokens=5)
+        is_filler = _yes_no(reply)
+        if is_filler is None:
+            return True
+        return not is_filler
+    except Exception as e:
+        logger.warning("[group_post] worth-posting check failed, failing open: %s", e)
+        return True
+
+
 # ── Grounding sources for autonomous posts ───────────────────────────────────
 REFINERY_URL = os.getenv("REFINERY_URL", "http://127.0.0.1:8099")
 _REFINERY_KINDS = ("market_signal", "governance_signal", "meta_signal", "content_signal")
@@ -1417,6 +1489,10 @@ async def _autonomous_group_post(context: ContextTypes.DEFAULT_TYPE) -> None:
         grounded = bool(signals_block or memory_block or context_block)
         seed_block = ""
         if not grounded:
+            if not GROUP_POST_ALLOW_SEEDS:
+                logger.info("[group_post] no grounding source (signals/memory/chatter all empty) — "
+                            "nothing concrete to say, skipping cycle")
+                return
             seed_block = f"seed: {random.choice(_BUILDER_POST_SEEDS)}\n\n"
 
         prompt = (
@@ -1445,13 +1521,19 @@ async def _autonomous_group_post(context: ContextTypes.DEFAULT_TYPE) -> None:
         recent_openers = [_opener_bucket(p) for p in recent[-10:]]
         recent_openers = [o for o in recent_openers if o]
 
-        def _should_reject(t: str) -> bool:
+        async def _should_reject(t: str) -> bool:
             if _is_duplicate_post(t):
                 return True
             ob = _opener_bucket(t)
-            return bool(ob) and recent_openers.count(ob) >= 2
+            if ob and recent_openers.count(ob) >= 2:
+                return True
+            # Semantic gate — catches paraphrased repeats the lexical checks miss
+            # (e.g. five different-worded posts about the same trope).
+            if await _is_semantic_duplicate(t, recent):
+                return True
+            return False
 
-        if text and not text.startswith("[LLM unavailable") and _should_reject(text):
+        if text and not text.startswith("[LLM unavailable") and await _should_reject(text):
             logger.info("[group_post] duplicate/stale-opener detected — regenerating once: %s", text[:80])
             text = await _gen(
                 "\n\nyou ALREADY posted this recently — write something completely "
@@ -1460,8 +1542,10 @@ async def _autonomous_group_post(context: ContextTypes.DEFAULT_TYPE) -> None:
 
         if not text or text.startswith("[LLM unavailable"):
             logger.warning("[group_post] empty/unavailable LLM output — skipping")
-        elif _should_reject(text):
+        elif await _should_reject(text):
             logger.warning("[group_post] still duplicate/stale after regen — skipping cycle: %s", text[:80])
+        elif not await _is_worth_posting(text):
+            logger.info("[group_post] generic/filler take — skipping cycle: %s", text[:80])
         else:
             await context.bot.send_message(chat_id=int(ALPHA_CHAT_ID), text=text)
             _record_builder_post(text)
