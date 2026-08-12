@@ -805,15 +805,22 @@ async def _forward(provider: str, upstream_model: str, payload: dict,
     else:
         body = {**payload, "model": upstream_model}
         _um_l = upstream_model.lower()
-        if provider == "openrouter" and "deepseek" in _um_l:
-            # deepseek reasoning models return null `content` at small token budgets
-            # unless reasoning is disabled — inject centrally so no caller must know.
-            body.setdefault("reasoning", {"enabled": False})
-        elif provider == "groq" and ("gpt-oss" in _um_l or _um_l.startswith("qwen")):
-            # Groq reasoning models (gpt-oss*, qwen*) otherwise leak <think> traces into
-            # `content` (qwen) or emit a separate reasoning field — hide it so callers get
-            # clean content. Only these models accept the param (llama/gemma reject it).
-            body.setdefault("reasoning_format", "hidden")
+        if provider == "openrouter":
+            if "deepseek" in _um_l:
+                # deepseek reasoning models return null `content` at small token budgets
+                # unless reasoning is disabled — inject centrally so no caller must know.
+                body.setdefault("reasoning", {"enabled": False})
+        else:
+            # `reasoning` is an OpenRouter-specific control; Groq/xAI/OpenAI/Venice reject the
+            # request outright ("property 'reasoning' is unsupported"). Callers often send it
+            # (it was added for deepseek), which would otherwise fail every Groq candidate and
+            # skip the free tier entirely — strip it before forwarding.
+            body.pop("reasoning", None)
+            if provider == "groq" and ("gpt-oss" in _um_l or _um_l.startswith("qwen")):
+                # Groq reasoning models (gpt-oss*, qwen*) otherwise leak <think> traces into
+                # `content` (qwen) or emit a separate reasoning field — hide it so callers get
+                # clean content. Only these models accept the param (llama/gemma reject it).
+                body.setdefault("reasoning_format", "hidden")
         async with session.post(url, json=body, headers=headers, timeout=aiohttp.ClientTimeout(total=90)) as resp:
             result = await resp.json(content_type=None)
             if "choices" not in result:
