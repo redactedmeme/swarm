@@ -811,8 +811,12 @@ def _new_session() -> aiohttp.ClientSession:
             raise RuntimeError(
                 "UPSTREAM_PROXY is set but aiohttp_socks is not installed — "
                 "add aiohttp_socks to requirements and rebuild")
+        # aiohttp_socks only knows socks5/socks4/http schemes; the "h" (remote
+        # DNS) variants are expressed via rdns=True instead. Normalize so a
+        # socks5h:// value (natural to write) doesn't get rejected.
+        url = UPSTREAM_PROXY.replace("socks5h://", "socks5://", 1).replace("socks4a://", "socks4://", 1)
         return aiohttp.ClientSession(
-            connector=ProxyConnector.from_url(UPSTREAM_PROXY, rdns=True))
+            connector=ProxyConnector.from_url(url, rdns=True))
     return aiohttp.ClientSession()
 
 
