@@ -27,6 +27,13 @@
       INGEST_INTERVAL_MIN: "30"
       REFINE_INTERVAL_MIN: "60"
       REFINERY_PRUNE: "false"          # keep OFF until ingest is verified
+      # --- liveness / alerting (read-only observation of the mesh) ---
+      ALERT_INTERVAL_SEC: "120"        # how often the liveness sweep runs
+      STALE_THRESHOLD_SEC: "300"       # agent stale when heartbeat older than this
+      QUEUE_DEPTH_ALERT: "200"         # alert when a pending queue exceeds this
+      # Telegram delivery is not wired yet (log-only). When added:
+      #   ALERT_BOT_TOKEN: ${ALERT_BOT_TOKEN}
+      #   ALERT_CHAT_ID: ${ALERT_CHAT_ID}
       SRC_SMOLTING: /sources/smolting
       SRC_HERMES: /sources/hermes
       SRC_REDACTED_CHAN: /sources/redacted-chan
