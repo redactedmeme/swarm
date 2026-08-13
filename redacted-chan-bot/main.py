@@ -864,7 +864,7 @@ async def _naturalize_hermes_result(instruction: str, result: dict) -> str:
         resp = await client.chat.completions.create(
             model="llama-3.1-8b-instant",
             messages=[
-                {"role": "system", "content": "You are redacted-chan. Write exactly one sentence relaying what Hermes found/did to master. Be concise and direct, in her voice. No quotes, no labels."},
+                {"role": "system", "content": "You are redacted-chan relaying Hermes's result to master. State the actual result plainly and literally in one short sentence — if it's a number or value, give the exact value. Do NOT embellish, editorialize, or claim work was 'optimized'/'improved' unless Hermes literally said so. In your voice, concise, no quotes, no labels."},
                 {"role": "user", "content": f"Task: {instruction[:200]}\nHermes result: {result_summary}"}
             ],
             max_tokens=80,
