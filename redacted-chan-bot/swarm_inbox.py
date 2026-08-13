@@ -212,21 +212,36 @@ def write_message(
 # ── Read ──────────────────────────────────────────────────────────────────────
 
 def _redis_load_pending(r, agent: str) -> list[dict]:
-    """Load pending messages for agent (+ broadcasts) from Redis."""
+    """Load pending messages for agent (+ broadcasts) from Redis.
+
+    Self-healing: any indexed id whose message doc has expired (orphan) or is no
+    longer pending (claimed/done) is zrem'd from the index here, so the pending
+    sets can't grow unbounded when docs TTL out or a completion misses its zrem.
+    """
     msgs = []
     keys = [f"swarm:pending:{agent}"]
     if agent != "all":
         keys.append("swarm:pending:all")
     for key in keys:
         msg_ids = r.zrange(key, 0, -1)
+        stale = []
         for mid in msg_ids:
             raw = r.get(f"swarm:msg:{mid}")
             if not raw:
+                stale.append(mid)            # doc expired → dead index entry
                 continue
             try:
                 doc = json.loads(raw)
-                if doc.get("status") == STATUS_PENDING:
-                    msgs.append(doc)
+            except Exception:
+                stale.append(mid)
+                continue
+            if doc.get("status") == STATUS_PENDING:
+                msgs.append(doc)
+            else:
+                stale.append(mid)            # claimed/done → no longer pending
+        if stale:
+            try:
+                r.zrem(key, *stale)
             except Exception:
                 pass
     return sorted(msgs, key=lambda m: m.get("ts", ""))
