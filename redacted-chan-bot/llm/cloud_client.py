@@ -71,16 +71,8 @@ class CloudLLMClient:
         """Route completion through redacted-proxy (privacy layer)."""
         # Determine model to request
         if model is None:
-            if self.provider == "xai":
-                model = os.getenv("XAI_MODEL", "grok-4-1-fast")
-            elif self.provider == "groq":
-                model = os.getenv("GROQ_MODEL", "llama-3.1-8b-instant")
-            elif self.provider == "anthropic":
-                model = "claude-3-haiku-20240307"
-            elif self.provider == "venice":
-                model = os.getenv("VENICE_MODEL", "gemma-4-uncensored")
-            else:
-                model = "llama-3.1-8b-instant"
+            # PROXY_MODEL (default "auto") lets redacted-proxy's auto-router pick per prompt.
+            model = os.getenv("PROXY_MODEL", "auto")
 
         budget = max_tokens or 1000
         content, finish = await self._proxy_post(model, messages, budget)
@@ -116,9 +108,10 @@ class CloudLLMClient:
         headers = {
             "Authorization": f"Bearer {_PROXY_TOKEN}",
             "Content-Type": "application/json",
-            # Tell proxy which provider to use for this request
-            "X-Provider": self.provider,
         }
+        # Only pin the provider (bypassing the auto-router/free cascade) when explicitly asked.
+        if os.getenv("PROXY_PIN_PROVIDER", "false").lower() == "true":
+            headers["X-Provider"] = self.provider
         async with aiohttp.ClientSession() as session:
             async with session.post(
                 f"{_PROXY_URL}/v1/chat/completions",
