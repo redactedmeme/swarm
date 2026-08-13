@@ -11,6 +11,7 @@ import json
 import logging
 import re
 import time as _time
+import uuid as _uuid
 from pathlib import Path
 from typing import Optional
 
@@ -18,6 +19,11 @@ logger = logging.getLogger("hermes_dispatch")
 
 HERMES_AGENT = "hermes"
 SELF_AGENT = "redacted-chan"
+
+# msg_id → reply_key. Hermes writes each task's result to the reply_key we embed in the
+# payload (see inbox_tools._complete_message), so we poll that key rather than waiting for
+# a separate reply message. Kept in-process; results are short-lived (Hermes TTLs them).
+_reply_keys: dict[str, str] = {}
 
 # ── Pending task tracking ─────────────────────────────────────────────────────
 
@@ -112,9 +118,40 @@ async def send_to_hermes(
         payload["params"] = params
     if context:
         payload["context"] = context
+    # Embed a reply_key so Hermes writes its result somewhere we can poll directly.
+    reply_key = f"swarm:reply:{_uuid.uuid4().hex}"
+    payload["reply_key"] = reply_key
     msg_id = inbox.write_message(SELF_AGENT, HERMES_AGENT, "task_request", payload)
+    if msg_id:
+        _reply_keys[msg_id] = reply_key
     logger.info("[hermes_dispatch] Sent %s to hermes: %s (msg_id=%s)", task_type, instruction[:80], msg_id)
     return msg_id
+
+
+def get_reply(msg_id: str) -> Optional[dict]:
+    """Poll the reply_key Hermes writes its result to. Returns the result dict or None.
+
+    Hermes stores {"content": <text>} (or {"content":..., "error":True}) at the reply_key
+    embedded in the task payload. Falls back to the completed task doc's result if present.
+    """
+    reply_key = _reply_keys.get(msg_id)
+    if not reply_key:
+        return None
+    try:
+        import swarm_inbox as _si
+        r = _si._get_redis()
+        if not r:
+            return None
+        raw = r.get(reply_key)
+        if raw:
+            _reply_keys.pop(msg_id, None)
+            try:
+                return json.loads(raw)
+            except Exception:
+                return {"content": str(raw)}
+    except Exception as e:
+        logger.debug("[hermes_dispatch] get_reply error: %s", e)
+    return None
 
 
 def check_results() -> list[dict]:
