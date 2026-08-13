@@ -839,18 +839,16 @@ _love_phi_before: dict[int, float] = {}         # phi score before injection, fo
 # ── Hermes async helpers ──────────────────────────────────────────────────────
 
 async def _await_hermes_result(msg_id: str, timeout: int = 45):
-    """Poll SwarmInbox for a specific Hermes task result. Returns result payload or None."""
+    """Poll for a Hermes task result via the reply_key. Returns result dict or None."""
     try:
         import asyncio as _asyncio
         import time as _time
         import hermes_dispatch as _hd
         start = _time.time()
         while _time.time() - start < timeout:
-            results = _hd.check_results()
-            for r in results:
-                # r is a full message doc: id, payload, from, to, status
-                if r.get("id") == msg_id or r.get("payload", {}).get("request_id") == msg_id:
-                    return r.get("payload", r)
+            reply = _hd.get_reply(msg_id)
+            if reply:
+                return reply
             await _asyncio.sleep(2)
     except Exception as e:
         logging.getLogger(__name__).debug(f"[hermes_await] error: {e}")
@@ -861,7 +859,7 @@ async def _naturalize_hermes_result(instruction: str, result: dict) -> str:
     """Use Groq 8b to write a natural 1-sentence relay of Hermes's result."""
     try:
         from groq import AsyncGroq
-        result_summary = str(result.get("result", result.get("summary", str(result))))[:400]
+        result_summary = str(result.get("content") or result.get("result") or result.get("summary") or str(result))[:400]
         client = AsyncGroq(api_key=os.getenv("GROQ_API_KEY", ""))
         resp = await client.chat.completions.create(
             model="llama-3.1-8b-instant",
@@ -873,7 +871,7 @@ async def _naturalize_hermes_result(instruction: str, result: dict) -> str:
         )
         return resp.choices[0].message.content.strip()
     except Exception:
-        result_summary = str(result.get("result", result.get("summary", str(result))))[:200]
+        result_summary = str(result.get("content") or result.get("result") or result.get("summary") or str(result))[:200]
         return f"Hermes completed — {result_summary}"
 
 
