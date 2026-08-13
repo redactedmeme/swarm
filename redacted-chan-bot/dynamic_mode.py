@@ -220,13 +220,22 @@ def get_strand_boost(text: str, mood: str = "", valence: float = 0.0, openness: 
     return directive.get("strand_boost", {})
 
 
+# Floor for mode token hints. Brevity in warm/witness/play modes is enforced by the
+# mode *directive* (the prompt), not by the token cap — the cap is only a safety ceiling.
+# Keeping it >= this floor prevents replies being guillotined mid-sentence.
+_MIN_MODE_TOKENS = 500
+
+
 def get_max_tokens_hint(text: str, mood: str = "", valence: float = 0.0, openness: float = 0.0) -> Optional[int]:
     """Return suggested max_tokens for the detected mode, or None for default."""
     mode = detect_mode(text, mood, valence, openness)
     directive = _MODE_DIRECTIVES.get(mode)
     if not directive:
         return None
-    return directive.get("max_tokens_hint")
+    hint = directive.get("max_tokens_hint")
+    if hint is None:
+        return None
+    return max(hint, _MIN_MODE_TOKENS)
 
 
 def _log_mode(mode: str, preview: str) -> None:

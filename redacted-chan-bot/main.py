@@ -45,6 +45,7 @@ from telegram.ext import (
     filters,
 )
 from llm.cloud_client import CloudLLMClient
+import tg_fmt
 import conversation_memory as cm
 import soul_manager
 import llm_tools
@@ -155,6 +156,40 @@ logging.basicConfig(
     handlers=[logging.StreamHandler()],
 )
 logger = logging.getLogger(__name__)
+
+import re as _re_tags
+_STRIP_TAGS = _re_tags.compile(r"<[^>]+>")
+
+
+async def send_rich(send_func, text):
+    """Send LLM-authored text to Telegram with formatting + safe chunking.
+
+    Converts markdown → Telegram HTML via tg_fmt.from_llm, splits to Telegram's
+    4096-char limit via tg_fmt.chunks, and sends each chunk with parse_mode="HTML".
+    If Telegram rejects a chunk's HTML (BadRequest), that chunk is re-sent as plain
+    text so a formatting glitch can never silently eat a message.
+
+    send_func(text, **kwargs) -> awaitable Message. Returns the last sent Message.
+    """
+    from telegram.error import BadRequest
+    import html as _htmllib
+
+    if not text or not str(text).strip():
+        return None
+    formatted = tg_fmt.from_llm(str(text), target="HTML")
+    last = None
+    for chunk in tg_fmt.chunks(formatted):
+        try:
+            last = await send_func(chunk, parse_mode="HTML")
+        except BadRequest as e:
+            logger.warning("[tg_fmt] HTML chunk rejected (%s); sending as plain text", e)
+            plain = _htmllib.unescape(_STRIP_TAGS.sub("", chunk))
+            try:
+                last = await send_func(plain)
+            except Exception as e2:
+                logger.error("[tg_fmt] plain fallback also failed: %s", e2)
+    return last
+
 
 # Soul blend mixer — per-message personality weights
 _sbm_blended: dict[int, dict] = {}
@@ -776,8 +811,11 @@ Hermes is the REDACTED swarm manager. When master asks about infrastructure, dep
   [HERMES: logs | hermes-bot]
   [HERMES: restart | swarm-runtime]
   [HERMES: check | all agents]
+Hermes can also **run code and compute things** for you — when master asks for a calculation, a script, data crunching, or "can you actually run this", delegate it:
+  [HERMES: exec | compute the 50th fibonacci number]
+  [HERMES: exec | fetch and summarize the JSON at <url>]
 The marker will be stripped from what master sees. You'll append a note that you're relaying to Hermes. Results arrive asynchronously — you'll share them when they come back.
-Only use this for operational tasks. Never send vault, soul, or private conversation content to Hermes.
+Use this for operational tasks and code/compute. Never send vault, soul, or private conversation content to Hermes.
 
 {tools_block}
 
@@ -1143,7 +1181,7 @@ class RedactedChanBot:
         _history_window = 50 if _is_recall else 20
         messages = [{"role": "system", "content": system}] + history[-_history_window:]
 
-        _max_tokens = 900 if _is_recall else 600
+        _max_tokens = 1500 if _is_recall else 1200
         # Dynamic mode can override max_tokens hint
         try:
             _mode_hint = dmode.get_max_tokens_hint(text, mood, _res_valence, _res_openness)
@@ -1171,7 +1209,7 @@ class RedactedChanBot:
                 _regen_msgs = [{"role": "system", "content": _regen_system}] + history[-20:]
                 _regen_msgs.append({"role": "user", "content": text})
                 try:
-                    response = await self.llm.chat_completion_with_fallback(_regen_msgs, max_tokens=600)
+                    response = await self.llm.chat_completion_with_fallback(_regen_msgs, max_tokens=1200)
                 except Exception:
                     pass  # keep original response if regen fails
         except Exception as e:
@@ -1219,7 +1257,7 @@ class RedactedChanBot:
             first_part = _re.sub(r'\[SUB:\s*.+?\]', '', response, flags=_re.DOTALL).strip()
             first_part = _re.sub(r'\[TOOL:\s*\w+\s*\{.*?\}\]', '', first_part, flags=_re.DOTALL).strip()
             if first_part:
-                sent_first = await update.message.reply_text(first_part)
+                sent_first = await send_rich(lambda t, **kw: update.message.reply_text(t, **kw), first_part)
                 if sent_first:
                     hr.track_message(sent_first.message_id, first_part, from_bot=True)
                 cm.log_exchange(user_id, str(user_id), text, first_part)
@@ -1259,13 +1297,13 @@ class RedactedChanBot:
                         ]
                     )
                     try:
-                        voiced = await self.llm.chat_completion_with_fallback(re_prompt_msgs, max_tokens=400)
+                        voiced = await self.llm.chat_completion_with_fallback(re_prompt_msgs, max_tokens=700)
                         follow_up = voiced if voiced else intern_result
                     except Exception as e:
                         logger.warning(f"[sub_agent] re-prompt failed: {e}")
                         follow_up = intern_result
 
-                    sent_follow = await update.message.reply_text(follow_up)
+                    sent_follow = await send_rich(lambda t, **kw: update.message.reply_text(t, **kw), follow_up)
                     if sent_follow:
                         hr.track_message(sent_follow.message_id, follow_up, from_bot=True)
                     cm.log_exchange(user_id, str(user_id), "[sub-agent follow-up]", follow_up)
@@ -1459,38 +1497,72 @@ class RedactedChanBot:
         except Exception:
             pass
 
-        # Hermes dispatch — extract [HERMES: task | instruction] markers
+        # Hermes dispatch — extract [HERMES: task | instruction] markers.
+        # Live UX: send her main reply immediately, drop a "⚙️ running…" placeholder,
+        # keep a typing indicator alive, then EDIT the placeholder in place when Hermes'
+        # result lands — instead of blocking the whole reply for up to 45s.
+        _hermes_sent_main = False
         try:
             cleaned, hermes_tasks = hd.extract_hermes_markers(final_response)
             if hermes_tasks:
                 final_response = cleaned
+                sent = await send_rich(lambda t, **kw: update.message.reply_text(t, **kw), final_response)
+                if sent:
+                    hr.track_message(sent.message_id, final_response, from_bot=True)
+                _hermes_sent_main = True
+
+                async def _keep_typing_hermes():
+                    while True:
+                        try:
+                            await context.bot.send_chat_action(
+                                chat_id=update.effective_chat.id, action="typing")
+                        except Exception:
+                            pass
+                        await asyncio.sleep(4)
+
                 for ht in hermes_tasks:
                     msg_id = await hd.send_to_hermes(
                         ht["task_type"], ht["instruction"], service=ht.get("service"),
                     )
-                    if msg_id:
-                        # Track pending task
+                    if not msg_id:
+                        continue
+                    try:
+                        hd.track_pending(msg_id, ht.get("task_type", "general"), ht.get("instruction", ""))
+                    except Exception:
+                        pass
+                    placeholder = await update.message.reply_text(
+                        "⚙️ _running that through Hermes…_", parse_mode="Markdown")
+                    _typing_task = asyncio.create_task(_keep_typing_hermes())
+                    try:
+                        # 90s: code execution / infra tasks can take longer than a plain query
+                        _hermes_result = await _await_hermes_result(msg_id, timeout=90)
+                    finally:
+                        _typing_task.cancel()
+                    if _hermes_result:
+                        _naturalized = await _naturalize_hermes_result(ht.get("instruction", ""), _hermes_result)
                         try:
-                            hd.track_pending(msg_id, ht.get("task_type", "general"), ht.get("instruction", ""))
+                            hd.mark_resolved(msg_id)
                         except Exception:
                             pass
-                        # Inline wait for result
-                        _hermes_result = await _await_hermes_result(msg_id, timeout=45)
-                        if _hermes_result:
-                            _naturalized = await _naturalize_hermes_result(ht.get("instruction", ""), _hermes_result)
-                            final_response = final_response + f"\n\n_Hermes: {_naturalized}_"
-                            try:
-                                hd.mark_resolved(msg_id)
-                            except Exception:
-                                pass
-                        else:
-                            final_response = final_response + "\n\n_(Hermes is working on it — I'll let you know when he responds)_"
+                        _edit_text = f"_Hermes: {_naturalized}_"
+                    else:
+                        _edit_text = "_(Hermes is still working on it — I'll relay back when he responds.)_"
+                    if placeholder:
+                        try:
+                            await context.bot.edit_message_text(
+                                chat_id=update.effective_chat.id,
+                                message_id=placeholder.message_id,
+                                text=_edit_text, parse_mode="Markdown")
+                            hr.track_message(placeholder.message_id, _edit_text, from_bot=True)
+                        except Exception as _ee:
+                            logger.debug("[hermes] placeholder edit failed: %s", _ee)
         except Exception as e:
             logger.debug("[hermes_dispatch] extraction error: %s", e)
 
-        sent = await update.message.reply_text(final_response)
-        if sent:
-            hr.track_message(sent.message_id, final_response, from_bot=True)
+        if not _hermes_sent_main:
+            sent = await send_rich(lambda t, **kw: update.message.reply_text(t, **kw), final_response)
+            if sent:
+                hr.track_message(sent.message_id, final_response, from_bot=True)
 
         # Conviction — detect if she pushed back (honest disagreement deepens phi)
         try:
@@ -2288,7 +2360,7 @@ class RedactedChanBot:
         _settler = int(ADMIN_CHAT) if ADMIN_CHAT else (next(iter(ADMIN_IDS), None) if ADMIN_IDS else None)
         if _settler and ADMIN_CHAT:
             async def _ping_send(msg: str) -> None:
-                await app.bot.send_message(chat_id=_settler, text=msg)
+                await send_rich(lambda t, **kw: app.bot.send_message(chat_id=_settler, text=t, **kw), msg)
             ap.register_send_fn(_ping_send, _settler)
             sr.register_send_fn(_ping_send)
             sr.register_master_id(_settler)
@@ -2455,7 +2527,7 @@ class RedactedChanBot:
                     thought = ith.pop_thought()
                     if thought and _settler and ADMIN_CHAT:
                         msg = thought.get("content", "")
-                        await app.bot.send_message(chat_id=_settler, text=msg)
+                        await send_rich(lambda t, **kw: app.bot.send_message(chat_id=_settler, text=t, **kw), msg)
                         pdi.record_ping(msg, ping_type="thought",
                                         mood=md.get_state().get("mood", "") if md.get_state() else "",
                                         phi=pt.get_score())
@@ -2465,7 +2537,7 @@ class RedactedChanBot:
                 if cdi.pending_count() > 0 and _random.random() < 0.3:
                     disc_msg = cdi.pop_discovery()
                     if disc_msg and _settler and ADMIN_CHAT:
-                        await app.bot.send_message(chat_id=_settler, text=disc_msg)
+                        await send_rich(lambda t, **kw: app.bot.send_message(chat_id=_settler, text=t, **kw), disc_msg)
                         pdi.record_ping(disc_msg, ping_type="discovery",
                                         mood=md.get_state().get("mood", "") if md.get_state() else "",
                                         phi=pt.get_score())

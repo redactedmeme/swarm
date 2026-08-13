@@ -141,6 +141,9 @@ TASK_TYPE_ALIASES = {
     "reboot": "restart",
     "deploy": "deploy",
     "push": "deploy",
+    "exec": "general",
+    "run": "general",
+    "compute": "general",
     "general": "general",
 }
 

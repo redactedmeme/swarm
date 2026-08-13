@@ -82,6 +82,31 @@ class CloudLLMClient:
             else:
                 model = "llama-3.1-8b-instant"
 
+        budget = max_tokens or 1000
+        content, finish = await self._proxy_post(model, messages, budget)
+
+        # Auto-continue on truncation: when the model stopped because it hit the token
+        # budget (finish_reason == "length"), fetch the remainder and stitch it on so
+        # replies don't end mid-sentence. Bounded to 2 extra rounds to cap latency/cost.
+        full = content or ""
+        rounds = 0
+        while finish == "length" and rounds < 2 and full.strip():
+            rounds += 1
+            cont_msgs = list(messages) + [
+                {"role": "assistant", "content": full},
+                {"role": "user", "content": "Continue exactly from where you left off. Do not repeat anything you already said, no preamble."},
+            ]
+            try:
+                more, finish = await self._proxy_post(model, cont_msgs, budget)
+            except Exception:
+                break
+            if not (more or "").strip():
+                break
+            full = full.rstrip() + " " + more.lstrip()
+        return full
+
+    async def _proxy_post(self, model: str, messages: list, max_tokens: int):
+        """Single proxy completion. Returns (content, finish_reason)."""
         payload = {
             "model": model,
             "messages": messages,
@@ -104,8 +129,10 @@ class CloudLLMClient:
                 result = await response.json(content_type=None)
                 if "choices" not in result:
                     raise ValueError(f"Proxy error: {result.get('error', result)}")
-                return result["choices"][0]["message"]["content"]
-    
+                choice = result["choices"][0]
+                content = choice.get("message", {}).get("content") or ""
+                return content, choice.get("finish_reason")
+
     async def _openai_completion(self, messages: list, model: str = None, max_tokens: int = None) -> str:
         """OpenAI GPT completion (also used for xAI/Grok OpenAI-compatible API)"""
         if self.provider == "xai":
