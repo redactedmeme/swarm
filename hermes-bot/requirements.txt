@@ -6,7 +6,10 @@ requests==2.31.0
 httpx~=0.25.2
 python-dotenv==1.0.0
 APScheduler>=3.10
-groq>=0.4.0
-openai>=1.0.0
+groq>=0.4.0,<0.12
+# Pin below the release that vendors httpx_aiohttp (imports aiohttp.SocketTimeoutError at
+# import time, which needs aiohttp>=3.10 — but aiohttp is pinned 3.9.1 for PTB[webhooks]).
+# A newer unpinned openai crash-loops hermes on `import openai`. 1.30.1 predates that.
+openai==1.30.1
 PyYAML>=6.0
 tweepy>=4.14

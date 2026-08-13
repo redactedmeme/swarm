@@ -87,14 +87,29 @@ def _read_pending(for_agent: str = "hermes") -> list[dict]:
     r = _get_redis()
     if not r:
         return []
-    msg_ids = r.zrange(f"swarm:pending:{for_agent}", 0, -1)
+    key = f"swarm:pending:{for_agent}"
+    msg_ids = r.zrange(key, 0, -1)
     msgs = []
+    stale = []  # self-heal: drop dead index entries so the set can't grow unbounded
     for mid in msg_ids:
         raw = r.get(f"swarm:msg:{mid}")
-        if raw:
+        if not raw:
+            stale.append(mid)                # orphaned entry (doc expired)
+            continue
+        try:
             doc = json.loads(raw)
-            if doc.get("status") == "pending":
-                msgs.append(doc)
+        except Exception:
+            stale.append(mid)
+            continue
+        if doc.get("status") == "pending":
+            msgs.append(doc)
+        else:
+            stale.append(mid)                # claimed/done → drop from index
+    if stale:
+        try:
+            r.zrem(key, *stale)
+        except Exception:
+            pass
     return msgs
 
 

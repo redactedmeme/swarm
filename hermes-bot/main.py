@@ -181,6 +181,12 @@ async def _amain() -> None:
                     msg_type = msg.get("type", "")
                     from_ag  = msg.get("from", "unknown")
                     payload  = msg.get("payload") or {}
+                    # task_request is owned by the swarm_manager loop (real tools:
+                    # python_exec etc., and it replies via the sender's reply_key). Skip it
+                    # here so the two pollers don't race — otherwise this poller may claim it
+                    # and answer with a plain-LLM guess the sender's reply_key poll can't read.
+                    if msg_type == "task_request":
+                        continue
                     swarm_inbox.claim_message(msg_id)
                     logger.info("[swarm_inbox] Received %s from %s id=%s", msg_type, from_ag, msg_id)
 
