@@ -15,6 +15,74 @@ _PROXY_URL   = os.getenv("PROXY_URL", "").rstrip("/")
 _PROXY_TOKEN = os.getenv("PROXY_TOKEN", "")
 
 
+# ── LLM reasoning-leak scrubbing ──────────────────────────────────────────────
+# Reasoning models (via the proxy auto-router) sometimes narrate their planning
+# into `content` instead of just producing the message — e.g. "Here's a thinking
+# process:\n1. Analyze the Request..." or "The user wants me to...". This is
+# distinct from <think>-tagged traces (the proxy already strips those); this is
+# bare prose. chan speaks in the first person to "master", so these third-person,
+# meta references to "the user"/"the request"/"persona" never appear in a genuine
+# message and are safe to detect and drop.
+import re as _re
+
+_THINK_RE = _re.compile(r"<(think|thinking|reasoning)>.*?</\1>", _re.DOTALL | _re.IGNORECASE)
+
+# Phrases that essentially never occur in a real chan message but are hallmarks of
+# leaked chain-of-thought. Presence anywhere flags the text as reasoning.
+_REASONING_SIGNALS = (
+    "here's a thinking process",
+    "here's my thinking process",
+    "here is a thinking process",
+    "the user wants me to",
+    "the user is asking me to",
+    "the user is asking for",
+    "the user says:",
+    "the user also says",
+    "analyze the request",
+    "analyze user input",
+    "analyze user request",
+    "persona: redacted-chan",
+    "let me re-read",
+    "continue exactly from where you left off",
+    "looking at the conversation history",
+    "looking at my previous response",
+    "the previous turn was me",
+    "no preamble.",
+)
+
+
+def looks_like_reasoning(text: str) -> bool:
+    """True if `text` reads as leaked meta-reasoning rather than a real message."""
+    if not text:
+        return False
+    return any(sig in text.lower() for sig in _REASONING_SIGNALS)
+
+
+def strip_reasoning(text: str) -> str:
+    """Scrub leaked chain-of-thought from an LLM response.
+
+    Removes <think>/<reasoning> blocks, then — if the result still reads as
+    reasoning — tries to salvage a trailing genuine message by dropping leading
+    reasoning paragraphs. If nothing clean survives, returns "" so callers treat
+    it as an empty generation (fallback chain retries / proactive senders skip)
+    rather than posting the reasoning verbatim. Never raises.
+    """
+    if not text:
+        return text
+    try:
+        cleaned = _THINK_RE.sub("", text).strip()
+        if not looks_like_reasoning(cleaned):
+            return cleaned
+        # Salvage: drop leading paragraphs until a clean tail remains.
+        parts = _re.split(r"\n\s*\n", cleaned)
+        while parts and looks_like_reasoning(parts[0]):
+            parts = parts[1:]
+        tail = "\n\n".join(parts).strip()
+        return tail if (tail and not looks_like_reasoning(tail)) else ""
+    except Exception:
+        return text
+
+
 class CloudLLMClient:
     """Cloud LLM client supporting multiple providers (OpenAI, Anthropic, Together, xAI/Grok)"""
 
@@ -77,6 +145,13 @@ class CloudLLMClient:
         budget = max_tokens or 1000
         content, finish = await self._proxy_post(model, messages, budget)
 
+        # If the model narrated its reasoning instead of answering, do NOT auto-continue
+        # — asking it to "continue" just amplifies the leak (it narrates more meta-
+        # reasoning about the continue instruction). Bail with "" so the caller retries
+        # a different provider / skips the proactive message.
+        if looks_like_reasoning(content or ""):
+            return ""
+
         # Auto-continue on truncation: when the model stopped because it hit the token
         # budget (finish_reason == "length"), fetch the remainder and stitch it on so
         # replies don't end mid-sentence. Bounded to 2 extra rounds to cap latency/cost.
@@ -95,7 +170,7 @@ class CloudLLMClient:
             if not (more or "").strip():
                 break
             full = full.rstrip() + " " + more.lstrip()
-        return full
+        return strip_reasoning(full)
 
     async def _proxy_post(self, model: str, messages: list, max_tokens: int):
         """Single proxy completion. Returns (content, finish_reason)."""
@@ -166,7 +241,7 @@ class CloudLLMClient:
                 result = await response.json()
                 if "choices" not in result:
                     raise ValueError(f"API error from {self.provider}: {result.get('error', result)}")
-                return result["choices"][0]["message"]["content"]
+                return strip_reasoning(result["choices"][0]["message"]["content"])
 
     async def chat_completion_with_tools(
         self, messages: list, tools: list, model: str = None, max_tokens: int = None
@@ -254,7 +329,7 @@ class CloudLLMClient:
                 result = await response.json()
                 if "content" not in result:
                     raise ValueError(f"Anthropic API error: {result.get('error', result)}")
-                return result["content"][0]["text"]
+                return strip_reasoning(result["content"][0]["text"])
     
     async def chat_completion_with_fallback(self, messages: list, max_tokens: int = None) -> str:
         """
@@ -390,7 +465,7 @@ class CloudLLMClient:
                 result = await response.json()
                 if "choices" not in result:
                     raise ValueError(f"xAI alpha error: {result.get('error', result)}")
-                return result["choices"][0]["message"]["content"]
+                return strip_reasoning(result["choices"][0]["message"]["content"])
 
     async def _together_completion(self, messages: list, model: str = None) -> str:
         """Together AI completion (mix of open source models)"""
@@ -415,4 +490,4 @@ class CloudLLMClient:
                 headers=headers
             ) as response:
                 result = await response.json()
-                return result["choices"][0]["message"]["content"]
+                return strip_reasoning(result["choices"][0]["message"]["content"])
