@@ -51,7 +51,9 @@ def get_encrypted_connection(db_path: str | Path) -> sqlite3.Connection:
     try:
         import sqlcipher3 as sqlite3_enc
         conn = sqlite3_enc.connect(str(db_path), check_same_thread=False)
-        conn.row_factory = sqlite3.Row
+        # Must use sqlcipher3's own Row — stdlib sqlite3.Row cannot wrap a
+        # sqlcipher3 cursor ("Row() argument 1 must be sqlite3.Cursor").
+        conn.row_factory = sqlite3_enc.dbapi2.Row
 
         # Set encryption key and pragmas
         conn.execute(f"PRAGMA key = '{key}'")
