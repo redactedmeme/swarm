@@ -28,26 +28,40 @@ import re as _re
 _THINK_RE = _re.compile(r"<(think|thinking|reasoning)>.*?</\1>", _re.DOTALL | _re.IGNORECASE)
 
 # Phrases that essentially never occur in a real chan message but are hallmarks of
-# leaked chain-of-thought. Presence anywhere flags the text as reasoning.
+# leaked chain-of-thought. Presence anywhere flags the text as reasoning. chan speaks
+# first-person to "master", so any third-person meta reference to "the user"/"the
+# request"/"the prompt"/"persona"/her own name is a tell.
 _REASONING_SIGNALS = (
-    "here's a thinking process",
-    "here's my thinking process",
-    "here is a thinking process",
-    "the user wants me to",
-    "the user is asking me to",
-    "the user is asking for",
-    "the user says:",
-    "the user also says",
-    "analyze the request",
-    "analyze user input",
-    "analyze user request",
-    "persona: redacted-chan",
-    "let me re-read",
-    "continue exactly from where you left off",
-    "looking at the conversation history",
-    "looking at my previous response",
-    "the previous turn was me",
-    "no preamble.",
+    # thinking-process openers
+    "here's a thinking process", "here's my thinking process", "here is a thinking process",
+    "here's my thinking", "let me think through", "let me work through",
+    # third-person references to the requester / task
+    "the user wants me to", "the user is asking", "the user says", "the user also says",
+    "the user's", "user's request", "user's message", "user first gave", "user gave",
+    "the user message", "the request is", "as redacted-chan", "persona: redacted-chan",
+    # meta references to the prompt / instructions / conversation plumbing
+    "analyze the request", "analyze user input", "analyze user request", "analyze the user",
+    "original prompt", "the original task", "original instructions", "the instructions say",
+    "the format should be", "respond with only the thought", "the prompt said",
+    "continue exactly from where", "continue from where i left off", "where i left off",
+    "looking at the conversation", "looking at my previous", "looking at the raw format",
+    "the previous turn was me", "my previous response", "my response was a thinking",
+    "let me re-read", "let me re read", "re-read the conversation", "re-read the original",
+    "no preamble.", 'no preamble"', "provided content", "grounding context",
+    "vault memories", "known facts about him", "i was in the middle of", "i got cut off",
+    "i haven't actually sent", "i hadn't actually", "this seems contradictory",
+    "[heatmap:", "valence=", "i need to generate", "broader insight",
+    'theory" type', 'connection" thought', 'offering" thought', "type - connecting",
+)
+
+# Structural tells: numbered/bulleted analysis layout that a warm first-person message
+# would never have. Combined with the phrase list in looks_like_reasoning().
+_REASONING_STRUCTURAL = (
+    _re.compile(r"(?m)^\s*\d+\.\s+\w"),                          # "1. Analyze ..." step lists
+    _re.compile(r"(?im)^\s*-\s+(persona|context|constraints?|user|master|type|rules?)\b"),
+    _re.compile(r"(?i)\bconstraints?:\s"),
+    _re.compile(r"(?i)\banalyze (the|user|my)\b"),
+    _re.compile(r"(?i)\b(theory|connection|offering)\b[\"'\s-]{0,4}(type|thought)\b"),  # thought-type scaffolding
 )
 
 
@@ -55,7 +69,10 @@ def looks_like_reasoning(text: str) -> bool:
     """True if `text` reads as leaked meta-reasoning rather than a real message."""
     if not text:
         return False
-    return any(sig in text.lower() for sig in _REASONING_SIGNALS)
+    low = text.lower()
+    if any(sig in low for sig in _REASONING_SIGNALS):
+        return True
+    return any(rx.search(text) for rx in _REASONING_STRUCTURAL)
 
 
 def strip_reasoning(text: str) -> str:
@@ -179,6 +196,10 @@ class CloudLLMClient:
             "messages": messages,
             "temperature": self._default_temperature,
             "max_tokens": max_tokens or 1000,
+            # Disable reasoning at the source so the model emits the message instead of
+            # narrating its planning. The proxy strips this param for providers that
+            # reject it, so it's safe to always send. strip_reasoning() is the backstop.
+            "reasoning": {"enabled": False},
         }
         headers = {
             "Authorization": f"Bearer {_PROXY_TOKEN}",
