@@ -704,8 +704,39 @@ def _to_anthropic(payload: dict) -> dict:
     return body
 
 
+_THINK_RE = re.compile(r"<(think|thinking|reasoning)>.*?</\1>", re.DOTALL | re.IGNORECASE)
+
+
+def _strip_think(s: str) -> str:
+    """Strip inline <think>/<reasoning> traces that weaker fallback models leak
+    into `content` even when the reasoning param is honored elsewhere."""
+    if not s:
+        return s
+    try:
+        return _THINK_RE.sub("", s).strip()
+    except Exception:
+        return s
+
+
+def _clean_choices(result: dict) -> dict:
+    """Scrub reasoning traces from an OpenAI-shape response in place, and drop any
+    separate reasoning field so callers only ever see clean content."""
+    try:
+        for choice in result.get("choices", []):
+            msg = choice.get("message")
+            if not isinstance(msg, dict):
+                continue
+            if isinstance(msg.get("content"), str):
+                msg["content"] = _strip_think(msg["content"])
+            msg.pop("reasoning", None)
+            msg.pop("reasoning_content", None)
+    except Exception:
+        pass
+    return result
+
+
 def _from_anthropic(result: dict) -> dict:
-    text  = result.get("content", [{}])[0].get("text", "")
+    text  = _strip_think(result.get("content", [{}])[0].get("text", ""))
     usage = result.get("usage", {})
     return {
         "id":      result.get("id", ""),
@@ -855,7 +886,7 @@ async def _forward(provider: str, upstream_model: str, payload: dict,
             result = await resp.json(content_type=None)
             if "choices" not in result:
                 raise ValueError(f"{provider} error: {result.get('error', result)}")
-            return result
+            return _clean_choices(result)
 
 
 # ── Auth middleware ───────────────────────────────────────────────────────────
