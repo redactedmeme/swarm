@@ -8,3 +8,4 @@ groq>=0.4.0
 redis>=5.0.0
 chromadb>=0.4.0
 numpy<2.0
+sqlcipher3-binary>=0.5.0  # at-rest SQLite encryption (database_encryption.py); prebuilt x86_64 wheel
