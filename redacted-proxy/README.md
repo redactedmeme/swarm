@@ -164,7 +164,7 @@ curl -X POST $PROXY_URL/config \
 | `CASCADE_MODELS` | No | `deepseek/deepseek-v4-flash` | Comma-separated model ids served **free-first**: the free cascade is tried before the requested (paid) model |
 | `FREE_CASCADE` | No | see below | Comma-separated ordered free models tried ahead of a `CASCADE_MODELS` request (Groq free tier + OpenRouter `:free`). Update as OpenRouter's free lineup rotates |
 | `AUTO_MODELS` | No | `auto` | Model ids that trigger the auto-router (prompt-difficulty routing). Bots send `model:"auto"` to opt in |
-| `AUTO_CLASSIFIER_MODEL` | No | `llama-3.1-8b-instant` | Cheap free model used to judge the ambiguous middle band |
+| `AUTO_CLASSIFIER_MODEL` | No | _(empty)_ | Non-reasoning free model to judge the ambiguous middle band. Empty = skip the extra call, take the medium tier. Left empty because no cheap non-reasoning model is currently available (Groq llama/gemma removed; gpt-oss/qwen are reasoning models; OpenRouter free is daily-rate-limited) |
 | `AUTO_TIERS` | No | built-in | JSON `{tier: [model,…]}` overriding the easy/medium/hard/code entry lists |
 | `AUTO_EASY_MAX` / `AUTO_HARD_MIN` | No | `3` / `8` | Heuristic score thresholds: `≤EASY_MAX`→easy, `≥HARD_MIN`→hard, between→classifier |
 | `PRIVACY_MODE` | No | `private` | `anonymous`, `private`, `maximum`, `zero`, `tee`, `e2ee` |
@@ -179,6 +179,8 @@ curl -X POST $PROXY_URL/config \
 | `DEFAULT_TEMPERATURE` | No | — | Override temperature for all requests |
 | `DEFAULT_TOP_P` | No | — | Override top_p for all requests |
 | `PORT` | No | `7080` | Listen port |
+| `UPSTREAM_PROXY` | No | — | When set (e.g. `http://127.0.0.1:8888` → gluetun/Mullvad), all provider egress routes through it so traffic leaves on the VPN exit, not the home IP. Empty = direct |
+| `DIRECT_EGRESS_PROVIDERS` | No | `groq` | Comma-separated providers that bypass `UPSTREAM_PROXY` and egress direct (home IP). Groq's Cloudflare returns `403 Access denied` for the Mullvad exit, so Groq goes direct; add `xai` if xAI blocks the exit too. Content is still PII-scrubbed |
 
 ### Free-first cascade
 
@@ -191,7 +193,7 @@ next candidate. Providers with no configured key are skipped — so the **Groq t
 Default `FREE_CASCADE` (Groq free tier ordered by daily budget, then OpenRouter `:free`):
 
 ```
-llama-3.1-8b-instant,openai/gpt-oss-120b,openai/gpt-oss-20b,qwen/qwen3.6-27b,llama-3.3-70b,nvidia/nemotron-3.5-lightning:free,inclusionai/ling-3.0-tiny:free,cohere/north-mini-code:free
+openai/gpt-oss-20b,openai/gpt-oss-120b,qwen/qwen3.6-27b,nvidia/nemotron-3.5-lightning:free,cohere/north-mini-code:free
 ```
 
 The OpenRouter `:free` lineup rotates — validate ids against `https://openrouter.ai/api/v1/models`
@@ -202,9 +204,10 @@ when editing. Pin a provider with `X-Provider: <name>` to bypass the cascade ent
 Send `model: "auto"` and the proxy inspects the prompt, estimates difficulty, and enters the
 free-first cascade at the cheapest capable tier (**cost-first**). Classification is **hybrid**:
 zero-cost heuristics (prompt size, turns, code/JSON/reasoning signals, requested `max_tokens`)
-settle the obvious cases instantly; only the ambiguous middle band costs one cheap call to
-`AUTO_CLASSIFIER_MODEL` (a free Groq model). Streaming requests skip the classifier to avoid added
-latency.
+settle the obvious cases instantly; the ambiguous middle band optionally costs one cheap call to
+`AUTO_CLASSIFIER_MODEL` (a non-reasoning free model). Streaming requests skip the classifier to
+avoid added latency; when `AUTO_CLASSIFIER_MODEL` is empty (the current default — see the env
+table) the middle band takes the medium tier directly with no extra call.
 
 Each tier (`easy` / `medium` / `hard`, plus a `code` override when code signals dominate) lists the
 cheapest capable free models first, then falls through the shared `FREE_CASCADE` tail and finally the

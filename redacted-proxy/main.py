@@ -122,6 +122,20 @@ HEARTBEAT_TTL       = 600   # 10 min — proxy announces every 3 min so key stay
 # home IP. socks5h/rdns keeps DNS inside the tunnel (no leak). Empty = direct.
 UPSTREAM_PROXY      = os.getenv("UPSTREAM_PROXY", "").strip()
 
+# Providers that must egress DIRECT (bypassing UPSTREAM_PROXY / the Mullvad exit),
+# because their edge (Cloudflare) blocks VPN/datacenter IPs. Groq returns
+# 403 {"message":"Access denied. Please check your network settings."} for the
+# Mullvad exit while the home IP reaches it fine, so Groq egresses direct. Content
+# is still PII-scrubbed before forwarding. Comma-separated provider names; add
+# "xai" here if xAI proves blocked too. Only matters when UPSTREAM_PROXY is set.
+DIRECT_EGRESS_PROVIDERS = {p.strip() for p in
+                           os.getenv("DIRECT_EGRESS_PROVIDERS", "groq").split(",") if p.strip()}
+
+# Reasoning effort cap for Groq gpt-oss models — they otherwise burn the whole token
+# budget on hidden reasoning and return empty content at the swarm's modest max_tokens.
+# "low" leaves room for the answer. Empty string disables the injection.
+GROQ_REASONING_EFFORT = os.getenv("GROQ_REASONING_EFFORT", "low").strip()
+
 # Modes that always enforce maximum privacy (no disk, forced scrub)
 _MAX_PRIVACY_MODES = {"maximum", "zero", "tee", "e2ee"}
 
@@ -392,10 +406,12 @@ _MODEL_EQUIVALENTS: dict[str, list[str]] = {
 # is the volume workhorse at 500K tok/day). OpenRouter ":free" ids follow. The list is
 # env-overridable because the OpenRouter free lineup rotates — validate ids against
 # https://openrouter.ai/api/v1/models when updating.
+# NOTE: this key's Groq lineup no longer includes the llama-3.x / gemma small models
+# (they 404 as model_not_found); the live Groq chat models are gpt-oss-{20b,120b} and
+# qwen3.6-27b. Keep only live ids here so the cascade doesn't burn round-trips on 404s.
 _FREE_CASCADE: list[str] = [m.strip() for m in os.getenv("FREE_CASCADE",
-    "llama-3.1-8b-instant,openai/gpt-oss-120b,openai/gpt-oss-20b,qwen/qwen3.6-27b,"
-    "llama-3.3-70b,"
-    "nvidia/nemotron-3.5-lightning:free,inclusionai/ling-3.0-tiny:free,"
+    "openai/gpt-oss-20b,openai/gpt-oss-120b,qwen/qwen3.6-27b,"
+    "nvidia/nemotron-3.5-lightning:free,"
     "cohere/north-mini-code:free"
 ).split(",") if m.strip()]
 
@@ -411,7 +427,13 @@ _CASCADE_MODELS: set[str] = {m.strip() for m in os.getenv("CASCADE_MODELS",
 # and enters the free-first cascade at the cheapest capable tier (cost-first). Opt-in and
 # non-breaking: bots send model:"auto"; every other model id behaves exactly as before.
 _AUTO_MODELS: set[str] = {m.strip() for m in os.getenv("AUTO_MODELS", "auto").split(",") if m.strip()}
-_AUTO_CLASSIFIER_MODEL = os.getenv("AUTO_CLASSIFIER_MODEL", "llama-3.1-8b-instant")
+# Empty by default: no cheap non-reasoning model is currently available to act as a
+# 1-token difficulty classifier (Groq's llama/gemma small models were removed from the
+# key's lineup; the remaining Groq gpt-oss/qwen models are reasoning models that emit
+# empty content at tiny budgets; OpenRouter free is daily-rate-limited). With no model
+# set, the ambiguous middle band takes the medium tier directly. Set to a non-reasoning
+# model id to re-enable classification.
+_AUTO_CLASSIFIER_MODEL = os.getenv("AUTO_CLASSIFIER_MODEL", "")
 # Score bands: <= EASY_MAX → easy; >= HARD_MIN → hard; in between → classifier decides.
 _AUTO_EASY_MAX = int(os.getenv("AUTO_EASY_MAX", "3"))
 _AUTO_HARD_MIN = int(os.getenv("AUTO_HARD_MIN", "8"))
@@ -426,10 +448,10 @@ def _auto_tiers() -> dict[str, list[str]]:
     # Cost-first: cheapest capable free model first in each tier. All tiers share the
     # free-cascade tail + paid last resort (appended in _build_auto_chain).
     return {
-        "easy":   ["llama-3.1-8b-instant", "inclusionai/ling-3.0-tiny:free", "openai/gpt-oss-20b"],
-        "medium": ["openai/gpt-oss-120b", "openai/gpt-oss-20b", "qwen/qwen3.6-27b", "llama-3.3-70b"],
-        "hard":   ["llama-3.3-70b", "openai/gpt-oss-120b", "nvidia/nemotron-3.5-lightning:free"],
-        "code":   ["cohere/north-mini-code:free", "openai/gpt-oss-120b", "llama-3.3-70b"],
+        "easy":   ["openai/gpt-oss-20b", "qwen/qwen3.6-27b"],
+        "medium": ["openai/gpt-oss-120b", "openai/gpt-oss-20b", "qwen/qwen3.6-27b"],
+        "hard":   ["openai/gpt-oss-120b", "nvidia/nemotron-3.5-lightning:free"],
+        "code":   ["cohere/north-mini-code:free", "openai/gpt-oss-120b"],
     }
 _AUTO_TIERS = _auto_tiers()
 
@@ -460,7 +482,6 @@ _PROVIDER_COSTS: dict[str, dict[str, float]] = {
     "openrouter": {
         # ":free" ids are billed at $0 by OpenRouter.
         "nvidia/nemotron-3.5-lightning:free": {"input": 0.0, "output": 0.0},
-        "inclusionai/ling-3.0-tiny:free": {"input": 0.0, "output": 0.0},
         "cohere/north-mini-code:free": {"input": 0.0, "output": 0.0},
     },
     "anthropic": {
@@ -832,12 +853,14 @@ async def _ring_purge_loop() -> None:
 
 # ── Core proxy ────────────────────────────────────────────────────────────────
 
-def _new_session() -> aiohttp.ClientSession:
+def _new_session(direct: bool = False) -> aiohttp.ClientSession:
     """Create a ClientSession for upstream provider calls. When UPSTREAM_PROXY is
     set, route through it (socks5h://… keeps DNS in-tunnel) so provider traffic
     egresses via the Mullvad exit rather than the host's home IP. Unset → direct,
-    identical to the previous behavior."""
-    if UPSTREAM_PROXY:
+    identical to the previous behavior. Pass direct=True to force a plain session
+    that bypasses the proxy (used for providers in DIRECT_EGRESS_PROVIDERS whose
+    edge blocks the Mullvad exit — see the Groq case)."""
+    if UPSTREAM_PROXY and not direct:
         if ProxyConnector is None:
             raise RuntimeError(
                 "UPSTREAM_PROXY is set but aiohttp_socks is not installed — "
@@ -882,6 +905,14 @@ async def _forward(provider: str, upstream_model: str, payload: dict,
                 # `content` (qwen) or emit a separate reasoning field — hide it so callers get
                 # clean content. Only these models accept the param (llama/gemma reject it).
                 body.setdefault("reasoning_format", "hidden")
+            if provider == "groq" and "gpt-oss" in _um_l:
+                # gpt-oss spends its token budget on hidden reasoning first, so at the modest
+                # max_tokens the swarm requests `content` comes back empty (→ counted as a
+                # failure → needless escalation to the paid tier). Capping reasoning effort at
+                # "low" leaves room for the actual answer. Validated: low → full content,
+                # default/medium → empty. Env-overridable (set GROQ_REASONING_EFFORT="" to skip).
+                if GROQ_REASONING_EFFORT:
+                    body.setdefault("reasoning_effort", GROQ_REASONING_EFFORT)
         async with session.post(url, json=body, headers=headers, timeout=aiohttp.ClientTimeout(total=90)) as resp:
             result = await resp.json(content_type=None)
             if "choices" not in result:
@@ -1096,6 +1127,12 @@ async def _classify_difficulty(messages: list, payload: dict) -> tuple[str, bool
     # Ambiguous middle. Don't add latency before a stream — use the medium tier.
     if payload.get("stream"):
         return "medium", code_dominant, False
+    # No classifier configured (AUTO_CLASSIFIER_MODEL="") — skip the extra call and
+    # take the medium tier. Reasoning models (Groq gpt-oss/qwen) can't act as a
+    # 1-token classifier (hidden reasoning eats the budget → empty content), so
+    # there is currently no cheap non-reasoning model to route this to.
+    if not _AUTO_CLASSIFIER_MODEL:
+        return "medium", code_dominant, False
     last_user = ""
     for m in reversed(messages):
         if isinstance(m, dict) and m.get("role") == "user":
@@ -1111,7 +1148,7 @@ async def _classify_difficulty(messages: list, payload: dict) -> tuple[str, bool
     body = {"model": _AUTO_CLASSIFIER_MODEL, "messages": preview, "max_tokens": 1, "temperature": 0}
     try:
         prov, um = _resolve_provider(_AUTO_CLASSIFIER_MODEL, "")
-        async with _new_session() as s:
+        async with _new_session(direct=prov in DIRECT_EGRESS_PROVIDERS) as s:
             res = await asyncio.wait_for(_forward(prov, um, body, s), timeout=6)
         letter = (res.get("choices", [{}])[0].get("message", {}).get("content", "") or "").strip().upper()[:1]
         return ("hard" if letter == "H" else "easy"), code_dominant, True
@@ -1214,10 +1251,19 @@ async def handle_chat_completions(request: web.Request) -> web.Response:
     response_text = ""
     try:
         result = None
-        async with _new_session() as session:
+        # Two lazily-created sessions: proxied (via UPSTREAM_PROXY / Mullvad) and direct
+        # (home IP). Providers in DIRECT_EGRESS_PROVIDERS use the direct one because their
+        # edge blocks the Mullvad exit (see Groq). Keyed by the `direct` bool.
+        _sessions: dict[bool, aiohttp.ClientSession] = {}
+        def _session_for(prov: str) -> aiohttp.ClientSession:
+            direct = prov in DIRECT_EGRESS_PROVIDERS
+            if direct not in _sessions:
+                _sessions[direct] = _new_session(direct=direct)
+            return _sessions[direct]
+        try:
             for _i, (_prov, _um) in enumerate(candidates):
                 try:
-                    result = await _forward(_prov, _um, payload, session)
+                    result = await _forward(_prov, _um, payload, _session_for(_prov))
                     # Some models (esp. reasoning/agentic ":free" ones) return HTTP 200 with
                     # null/empty content — useless as a chat reply. Treat that as a failure so
                     # the cascade escalates, unless the reply carries tool_calls.
@@ -1233,6 +1279,9 @@ async def handle_chat_completions(request: web.Request) -> web.Response:
                     error_text = str(_fe)
                     logger.warning("[proxy] %s/%s failed: %s", _prov, _um, error_text)
                     continue
+        finally:
+            for _s in _sessions.values():
+                await _s.close()
         if result is None:
             raise RuntimeError(error_text or "all providers failed")
         response_text = (result.get("choices", [{}])[0].get("message", {}).get("content") or "")
