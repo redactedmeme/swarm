@@ -15,6 +15,8 @@ OpenAI-compatible LLM privacy proxy for the REDACTED swarm. Sits between swarm b
 | `GET` | `/health` | None | Liveness + provider key status |
 | `GET` | `/privacy` | None | Current privacy mode, guarantees, storage policy |
 | `GET` | `/logs?n=100` | Bearer token | Recent proxy log (in-memory ring) |
+| `GET` | `/usage` | Bearer token | Per-project usage (requests/tokens/cost/errors). `?client=<name>`, `?days=<N>` |
+| `POST` | `/usage/reset` | Admin token | Reset usage counters. `?client=<name>`, requires `?confirm=true` |
 | `GET` | `/config` | Bearer token | Current runtime config |
 | `POST` | `/config` | Bearer token | Hot-update config (no redeploy needed) |
 
@@ -154,7 +156,13 @@ curl -X POST $PROXY_URL/config \
 
 | Variable | Required | Default | Description |
 |---|---|---|---|
-| `PROXY_TOKEN` | Yes | — | Bearer token all clients must present |
+| `PROXY_TOKEN` | Yes | — | Shared bearer token all clients may present (legacy/fallback) |
+| `PROXY_TOKEN_MAP` | No | — | JSON `{"<token>":"<project>"}` — per-project tokens that both authenticate and attribute usage. Shared `PROXY_TOKEN` still works |
+| `PROXY_TOKEN_NAME` | No | `shared` | Usage bucket for requests using the shared `PROXY_TOKEN` with no `X-Client` header |
+| `ADMIN_TOKEN` | No | =`PROXY_TOKEN` | Token required for `/usage/reset` |
+| `USAGE_ENABLED` | No | `true` | Per-project usage accounting in Redis (metadata only) |
+| `USAGE_PREFIX` | No | `proxy:usage:` | Redis key prefix for usage counters |
+| `USAGE_DAILY_TTL_DAYS` | No | `90` | Retention for per-day usage buckets |
 | `XAI_API_KEY` | For xAI | — | xAI upstream key |
 | `GROQ_API_KEY` | For Groq | — | Groq upstream key |
 | `ANTHROPIC_API_KEY` | For Anthropic | — | Anthropic upstream key |
@@ -242,9 +250,42 @@ Then point the OpenAI client base URL at `$PROXY_URL/v1`. The proxy handles auth
 | `X-Top-P: 0.9` | Override top_p for this request |
 | `X-Ephemeral: true` | Skip logging for this request |
 | `X-Transient: true` | Alias for X-Ephemeral (Venice-style naming) |
+| `X-Client: <name>` | Attribute this request to a project in `/usage` (fallback when not using a per-project token) |
 
 ## Response headers (proxy → client)
 
 | Header | Value |
 |---|---|
 | `X-Privacy-Mode` | Current privacy mode (`anonymous`, `private`, `maximum`, etc.) |
+| `X-Auto-Tier` | Difficulty tier chosen when `model:"auto"` (`easy`/`medium`/`hard`/`code`) |
+
+---
+
+## Per-project usage metrics
+
+The proxy attributes every request to a **project** and tallies requests, prompt/completion
+tokens (estimated), cost, and errors per project in Redis (metadata only — no prompt or
+response content, so it works in every privacy mode). Attribution is **hybrid**:
+
+1. **Per-project token** (best) — give each project its own bearer token via `PROXY_TOKEN_MAP`
+   (`{"tok_smolting":"smolting","tok_webchat":"webchat"}`). The token both authenticates and
+   labels usage; it can't be spoofed and lets you revoke one project without touching others.
+2. **`X-Client` header** — a project on the shared `PROXY_TOKEN` can still self-label by sending
+   `X-Client: <name>`.
+3. Otherwise requests fall into the shared bucket (`PROXY_TOKEN_NAME`, default `shared`), or
+   `unknown`.
+
+Read the breakdown:
+
+```bash
+# all projects, lifetime totals
+curl -s -H "Authorization: Bearer $PROXY_TOKEN" $PROXY_URL/usage | jq
+# one project, with the last 7 daily buckets
+curl -s -H "Authorization: Bearer $PROXY_TOKEN" "$PROXY_URL/usage?client=smolting&days=7" | jq
+# reset one project's counters (admin token)
+curl -s -X POST -H "Authorization: Bearer $ADMIN_TOKEN" "$PROXY_URL/usage/reset?client=smolting&confirm=true"
+```
+
+`/usage` returns `{clients:{<name>:{requests,prompt_tokens,completion_tokens,cost_usd,errors,models{…}}}, totals, generated_at}`.
+Counters persist in Redis (`USAGE_PREFIX`, default `proxy:usage:`) across restarts; daily
+buckets expire after `USAGE_DAILY_TTL_DAYS` (90d). Set `USAGE_ENABLED=false` to disable.

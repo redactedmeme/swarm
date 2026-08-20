@@ -108,6 +108,30 @@ logger = logging.getLogger(__name__)
 # ── Config ────────────────────────────────────────────────────────────────────
 
 PROXY_TOKEN         = os.getenv("PROXY_TOKEN", "")
+# Name attributed to requests that authenticate with the legacy shared PROXY_TOKEN and
+# send no X-Client header. As projects migrate to their own tokens (PROXY_TOKEN_MAP) or
+# start sending X-Client, their traffic splits out of this bucket.
+PROXY_TOKEN_NAME    = os.getenv("PROXY_TOKEN_NAME", "shared").strip() or "shared"
+# Per-project bearer tokens: JSON {"<token>": "<project_name>"}. Each mapped token both
+# authenticates AND attributes usage to its project. The shared PROXY_TOKEN still works.
+def _load_token_map() -> dict[str, str]:
+    raw = os.getenv("PROXY_TOKEN_MAP", "").strip()
+    if not raw:
+        return {}
+    try:
+        m = json.loads(raw)
+        return {str(k): str(v) for k, v in m.items() if k and v}
+    except Exception:
+        logger.warning("[proxy] PROXY_TOKEN_MAP invalid JSON — ignoring")
+        return {}
+_TOKEN_MAP = _load_token_map()
+# Admin token for /usage mutations (reset). Defaults to the shared PROXY_TOKEN.
+ADMIN_TOKEN         = os.getenv("ADMIN_TOKEN", "").strip() or PROXY_TOKEN
+# Per-project usage accounting (requests/tokens/cost) in Redis. Metadata only — no
+# prompt/response content — so it is compatible with every privacy mode.
+USAGE_ENABLED       = os.getenv("USAGE_ENABLED", "true").lower() not in ("false", "0", "no")
+USAGE_PREFIX        = os.getenv("USAGE_PREFIX", "proxy:usage:")
+USAGE_DAILY_TTL_DAYS = int(os.getenv("USAGE_DAILY_TTL_DAYS", "90"))
 DEFAULT_TEMPERATURE = os.getenv("DEFAULT_TEMPERATURE", "")
 DEFAULT_TOP_P       = os.getenv("DEFAULT_TOP_P", "")
 RATE_LIMIT_RPM      = int(os.getenv("RATE_LIMIT_RPM", "60"))
@@ -920,21 +944,86 @@ async def _forward(provider: str, upstream_model: str, payload: dict,
             return _clean_choices(result)
 
 
+# ── Client attribution + usage accounting ─────────────────────────────────────
+
+_CLIENT_SANITIZE = re.compile(r"[^a-z0-9_.-]+")
+
+def _sanitize_client(name: str) -> str:
+    """Normalize a client/project label into a safe, bounded Redis-key segment."""
+    s = _CLIENT_SANITIZE.sub("-", name.strip().lower())[:64].strip("-")
+    return s or "unknown"
+
+def _known_token(token: str) -> bool:
+    return bool(token) and (token in _TOKEN_MAP or (PROXY_TOKEN and token == PROXY_TOKEN))
+
+def _resolve_client(token: str, request: web.Request) -> str:
+    """Hybrid attribution: a per-project token wins (un-spoofable); otherwise fall back
+    to a self-reported X-Client header; otherwise the shared-token bucket, else 'unknown'."""
+    if token in _TOKEN_MAP:
+        return _sanitize_client(_TOKEN_MAP[token])
+    hdr = request.headers.get("X-Client", "").strip()
+    if hdr:
+        return _sanitize_client(hdr)
+    if PROXY_TOKEN and token == PROXY_TOKEN:
+        return _sanitize_client(PROXY_TOKEN_NAME)
+    return "unknown"
+
+_usage_redis = None  # lazily-created shared async client
+
+async def _usage_redis_client():
+    global _usage_redis
+    if _usage_redis is None:
+        import redis.asyncio as aioredis
+        _usage_redis = aioredis.from_url(REDIS_URL, decode_responses=True)
+    return _usage_redis
+
+async def _record_usage(client: str, provider: str, model: str,
+                        prompt_tokens: int, completion_tokens: int,
+                        cost_usd: float, error: bool = False) -> None:
+    """Best-effort per-project usage accounting in Redis (metadata only). Never raises."""
+    if not USAGE_ENABLED:
+        return
+    try:
+        r = await _usage_redis_client()
+        base = f"{USAGE_PREFIX}client:{client}"
+        pipe = r.pipeline()
+        pipe.sadd(f"{USAGE_PREFIX}clients", client)
+        if error:
+            pipe.hincrby(base, "errors", 1)
+        else:
+            pipe.hincrby(base, "requests", 1)
+            pipe.hincrby(base, "prompt_tokens", prompt_tokens)
+            pipe.hincrby(base, "completion_tokens", completion_tokens)
+            pipe.hincrbyfloat(base, "cost_usd", cost_usd)
+            pipe.hincrby(f"{base}:models", f"{provider}/{model}", 1)
+            day = time.strftime("%Y-%m-%d", time.gmtime())
+            dkey = f"{base}:daily:{day}"
+            pipe.hincrby(dkey, "requests", 1)
+            pipe.hincrbyfloat(dkey, "cost_usd", cost_usd)
+            pipe.expire(dkey, USAGE_DAILY_TTL_DAYS * 86400)
+        await pipe.execute()
+    except Exception as e:
+        logger.debug("[usage] record failed: %s", e)
+
+
 # ── Auth middleware ───────────────────────────────────────────────────────────
 
 async def _auth_middleware(app, handler):
     async def middleware(request: web.Request):
         if request.path in ("/health", "/v1/models", "/privacy", "/debug/egress"):
             return await handler(request)
-        if PROXY_TOKEN:
+        if PROXY_TOKEN or _TOKEN_MAP:
             auth = request.headers.get("Authorization", "")
             token = auth.removeprefix("Bearer ").strip()
-            if token != PROXY_TOKEN:
+            if not _known_token(token):
                 return web.json_response(
                     {"error": {"message": "Unauthorized", "type": "auth_error"}}, status=401)
             if not _check_rate_limit(token):
                 return web.json_response(
                     {"error": {"message": "Rate limit exceeded", "type": "rate_limit_error"}}, status=429)
+            # Attribute this request to a project for usage accounting.
+            request["client"] = _resolve_client(token, request)
+            request["is_admin"] = bool(ADMIN_TOKEN) and token == ADMIN_TOKEN
         return await handler(request)
     return middleware
 
@@ -1295,6 +1384,8 @@ async def handle_chat_completions(request: web.Request) -> web.Response:
                     " [ephemeral]" if (ephemeral or EPHEMERAL_MODE()) else "")
         _log_entry(provider, upstream_model, original_messages, response_text,
                    latency_ms, ephemeral=ephemeral, cost_usd=cost_usd)
+        await _record_usage(request.get("client", "unknown"), provider, upstream_model,
+                            input_tokens, output_tokens, cost_usd)
         resp = web.json_response(result)
         resp.headers["X-Privacy-Mode"] = PRIVACY_MODE()
         if auto_tier:
@@ -1307,6 +1398,8 @@ async def handle_chat_completions(request: web.Request) -> web.Response:
         logger.warning("[proxy] %s/%s failed: %s", provider, upstream_model, error_text)
         _log_entry(provider, upstream_model, original_messages, "",
                    latency_ms, error=error_text, ephemeral=ephemeral)
+        await _record_usage(request.get("client", "unknown"), provider, upstream_model,
+                            0, 0, 0.0, error=True)
         return web.json_response(
             {"error": {"message": error_text, "provider": provider}}, status=502)
 
@@ -1337,6 +1430,86 @@ async def handle_logs(request: web.Request) -> web.Response:
         "data_sensitivity": sensitivity,
         "note": "Entries contain metadata only — no prompt/response content." if mode != "anonymous" else "Entries may contain message previews.",
     })
+
+
+# ── Usage metrics ──────────────────────────────────────────────────────────────
+
+async def handle_usage(request: web.Request) -> web.Response:
+    """Per-project usage breakdown (requests/tokens/cost/errors), read from Redis.
+    Query params: ?client=<name> to filter one project; ?days=<N> to include the last
+    N daily buckets per project. Metadata only — no prompt/response content is stored."""
+    if not USAGE_ENABLED:
+        return web.json_response({"error": "usage accounting disabled"}, status=404)
+    try:
+        r = await _usage_redis_client()
+        want = request.query.get("client", "").strip()
+        clients = [_sanitize_client(want)] if want else sorted(await r.smembers(f"{USAGE_PREFIX}clients"))
+        try:
+            days = max(0, min(int(request.query.get("days", "0")), 90))
+        except ValueError:
+            days = 0
+        day_keys = [time.strftime("%Y-%m-%d", time.gmtime(time.time() - i * 86400)) for i in range(days)]
+
+        out: dict[str, Any] = {}
+        totals = {"requests": 0, "prompt_tokens": 0, "completion_tokens": 0, "cost_usd": 0.0, "errors": 0}
+        for c in clients:
+            base = f"{USAGE_PREFIX}client:{c}"
+            h = await r.hgetall(base)
+            if not h:
+                continue
+            models = await r.hgetall(f"{base}:models")
+            rec: dict[str, Any] = {
+                "requests":          int(h.get("requests", 0)),
+                "prompt_tokens":     int(h.get("prompt_tokens", 0)),
+                "completion_tokens": int(h.get("completion_tokens", 0)),
+                "cost_usd":          round(float(h.get("cost_usd", 0) or 0), 6),
+                "errors":            int(h.get("errors", 0)),
+                "models":            {k: int(v) for k, v in models.items()},
+            }
+            if days:
+                daily = {}
+                for dk in day_keys:
+                    dh = await r.hgetall(f"{base}:daily:{dk}")
+                    if dh:
+                        daily[dk] = {"requests": int(dh.get("requests", 0)),
+                                     "cost_usd": round(float(dh.get("cost_usd", 0) or 0), 6)}
+                rec["daily"] = daily
+            out[c] = rec
+            for k in totals:
+                totals[k] += rec.get(k, 0)
+        totals["cost_usd"] = round(totals["cost_usd"], 6)
+        return web.json_response({
+            "clients":      out,
+            "totals":       totals,
+            "generated_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+        })
+    except Exception as e:
+        return web.json_response({"error": str(e)}, status=500)
+
+
+async def handle_usage_reset(request: web.Request) -> web.Response:
+    """Reset usage counters. Admin-token only. ?client=<name> resets one project;
+    otherwise all projects are cleared. Requires ?confirm=true."""
+    if not request.get("is_admin"):
+        return web.json_response({"error": "admin token required"}, status=403)
+    if request.query.get("confirm") != "true":
+        return web.json_response({"error": "add ?confirm=true to reset"}, status=400)
+    try:
+        r = await _usage_redis_client()
+        want = request.query.get("client", "").strip()
+        targets = [_sanitize_client(want)] if want else list(await r.smembers(f"{USAGE_PREFIX}clients"))
+        deleted = 0
+        for c in targets:
+            base = f"{USAGE_PREFIX}client:{c}"
+            keys = [base, f"{base}:models"]
+            async for dk in r.scan_iter(match=f"{base}:daily:*"):
+                keys.append(dk)
+            if keys:
+                deleted += await r.delete(*keys)
+            await r.srem(f"{USAGE_PREFIX}clients", c)
+        return web.json_response({"reset": targets, "keys_deleted": deleted})
+    except Exception as e:
+        return web.json_response({"error": str(e)}, status=500)
 
 
 # ── Redis heartbeat ────────────────────────────────────────────────────────────
@@ -1376,6 +1549,8 @@ async def make_app() -> web.Application:
     app.router.add_get("/v1/models",            handle_models)
     app.router.add_post("/v1/chat/completions", handle_chat_completions)
     app.router.add_get("/logs",                 handle_logs)
+    app.router.add_get("/usage",                handle_usage)
+    app.router.add_post("/usage/reset",         handle_usage_reset)
     app.router.add_get("/config",               handle_config_get)
     app.router.add_post("/config",              handle_config_post)
 
