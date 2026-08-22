@@ -1,7 +1,13 @@
+# Never upload credentials or local state into a build context.
+secrets/
+.env
+*.env
+!*.env.example
+
 fs/
 *.lock
 *.log
 __pycache__/
 *.pyc
-.env
 node_modules/
+.git/
