@@ -39,6 +39,11 @@ TEXT_TYPES = {
     '.md': 'text/markdown; charset=utf-8',
     '.txt': 'text/plain; charset=utf-8',
 }
+
+# Published for machines as much as for people: everything an agent might fetch is
+# readable cross-origin, including from a browser-based one.
+PUBLIC_EXT = ('.md', '.txt', '.json')
+
 CSP = (
     "default-src 'self'; "
     "script-src 'self' 'unsafe-inline'; "
@@ -102,6 +107,7 @@ def api_swarm():
             _cache['payload'] = payload
     resp = jsonify(payload)
     resp.headers['Cache-Control'] = 'public, max-age=30'
+    resp.headers['Access-Control-Allow-Origin'] = '*'
     return resp
 
 
@@ -161,12 +167,13 @@ def add_headers(resp):
     # send_from_directory sets 'no-cache' by default, so static responses are
     # overridden rather than defaulted.
     if request.endpoint in ('index', 'static_files'):
+        path = request.path.lower()
         for ext, ctype in TEXT_TYPES.items():
-            if request.path.lower().endswith(ext):
+            if path.endswith(ext):
                 resp.headers['Content-Type'] = ctype
-                # Published for machines as much as people.
-                resp.headers['Access-Control-Allow-Origin'] = '*'
                 break
+        if path.endswith(PUBLIC_EXT):
+            resp.headers['Access-Control-Allow-Origin'] = '*'
         if request.path.lower().endswith(IMMUTABLE_EXT):
             resp.headers['Cache-Control'] = 'public, max-age=31536000, immutable'
         elif resp.headers.get('Content-Type', '').startswith('text/html'):
