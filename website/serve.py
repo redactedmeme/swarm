@@ -32,6 +32,13 @@ SWARM_CACHE_TTL = float(os.environ.get('SWARM_CACHE_TTL', '30'))
 SITE_ORIGIN = 'https://redacted.meme'
 
 IMMUTABLE_EXT = ('.woff2', '.woff', '.ttf', '.png', '.jpg', '.svg', '.ico')
+
+# Flask guesses application/octet-stream for .md, which makes browsers download it
+# and tells an agent nothing. These are published documents - label them as such.
+TEXT_TYPES = {
+    '.md': 'text/markdown; charset=utf-8',
+    '.txt': 'text/plain; charset=utf-8',
+}
 CSP = (
     "default-src 'self'; "
     "script-src 'self' 'unsafe-inline'; "
@@ -107,7 +114,14 @@ def healthz():
 
 @app.route('/robots.txt')
 def robots():
-    body = f"User-agent: *\nAllow: /\n\nSitemap: {SITE_ORIGIN}/sitemap.xml\n"
+    body = (
+        "User-agent: *\n"
+        "Allow: /\n"
+        "\n"
+        "# Agents: /llms.txt indexes every published artifact; /llms-full.txt returns\n"
+        "# the same index with the system prompt and skill inlined, in one request.\n"
+        f"Sitemap: {SITE_ORIGIN}/sitemap.xml\n"
+    )
     return Response(body, mimetype='text/plain')
 
 
@@ -117,8 +131,10 @@ def sitemap():
         '<?xml version="1.0" encoding="UTF-8"?>\n'
         '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n'
         f'  <url><loc>{SITE_ORIGIN}/</loc><changefreq>weekly</changefreq><priority>1.0</priority></url>\n'
-        f'  <url><loc>{SITE_ORIGIN}/llms.txt</loc><changefreq>weekly</changefreq><priority>0.5</priority></url>\n'
-        f'  <url><loc>{SITE_ORIGIN}/skill.md</loc><changefreq>weekly</changefreq><priority>0.5</priority></url>\n'
+        f'  <url><loc>{SITE_ORIGIN}/llms.txt</loc><changefreq>weekly</changefreq><priority>0.8</priority></url>\n'
+        f'  <url><loc>{SITE_ORIGIN}/llms-full.txt</loc><changefreq>weekly</changefreq><priority>0.5</priority></url>\n'
+        f'  <url><loc>{SITE_ORIGIN}/system.prompt.md</loc><changefreq>weekly</changefreq><priority>0.8</priority></url>\n'
+        f'  <url><loc>{SITE_ORIGIN}/skill.md</loc><changefreq>weekly</changefreq><priority>0.8</priority></url>\n'
         '</urlset>\n'
     )
     return Response(body, mimetype='application/xml')
@@ -145,6 +161,12 @@ def add_headers(resp):
     # send_from_directory sets 'no-cache' by default, so static responses are
     # overridden rather than defaulted.
     if request.endpoint in ('index', 'static_files'):
+        for ext, ctype in TEXT_TYPES.items():
+            if request.path.lower().endswith(ext):
+                resp.headers['Content-Type'] = ctype
+                # Published for machines as much as people.
+                resp.headers['Access-Control-Allow-Origin'] = '*'
+                break
         if request.path.lower().endswith(IMMUTABLE_EXT):
             resp.headers['Cache-Control'] = 'public, max-age=31536000, immutable'
         elif resp.headers.get('Content-Type', '').startswith('text/html'):
