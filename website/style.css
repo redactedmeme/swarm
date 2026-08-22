@@ -703,6 +703,66 @@ blockquote {
 }
 .prompt-text strong { color: var(--text); font-weight: 700; }
 
+/* ── PUBLISHED ARTIFACTS ── */
+/* The prompt is no longer inlined on the page; these cards point at the raw files. */
+.artifact-intro {
+  color: var(--muted);
+  font-size: 0.92rem;
+  margin-bottom: 2rem;
+}
+
+.artifact {
+  border: 1px solid var(--border2);
+  background: var(--bg2);
+  margin-bottom: 1rem;
+}
+
+.artifact-head {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 0.5rem 1rem;
+  padding: 0.6rem 1rem;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg3);
+  font-family: var(--mono);
+}
+.artifact-name {
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--blue);
+}
+.artifact-meta {
+  font-size: 0.6rem;
+  letter-spacing: 0.18em;
+  color: var(--dim);
+  text-transform: uppercase;
+}
+
+.artifact-desc {
+  padding: 1rem 1rem 0;
+  font-size: 0.88rem;
+  color: var(--muted);
+}
+.artifact-desc code {
+  font-family: var(--mono);
+  font-size: 0.85em;
+  color: var(--text);
+}
+
+.artifact-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+  padding: 1rem;
+}
+.artifact-actions .btn {
+  font-size: 0.65rem;
+  padding: 0.45rem 0.9rem;
+  cursor: pointer;
+}
+
 /* ── SKILL ── */
 #skill { background: var(--bg2); padding: 6rem 0; border-top: 1px solid var(--border); }
 .skill-intro { margin-bottom: 3rem; }

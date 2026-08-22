@@ -38,6 +38,23 @@ function legacyCopy(text, done) {
   done();
 }
 
+// Copy-to-clipboard for anything carrying data-copy (the artifact cards).
+document.querySelectorAll('[data-copy]').forEach((btn) => {
+  btn.addEventListener('click', () => {
+    const text = btn.dataset.copy;
+    const flash = () => {
+      const original = btn.textContent;
+      btn.textContent = 'COPIED';
+      setTimeout(() => (btn.textContent = original), 2000);
+    };
+    if (navigator.clipboard) {
+      navigator.clipboard.writeText(text).then(flash).catch(() => legacyCopy(text, flash));
+    } else {
+      legacyCopy(text, flash);
+    }
+  });
+});
+
 // ── Navigation ────────────────────────────────────────────────────────────────
 
 const toggle = $('nav-toggle');
