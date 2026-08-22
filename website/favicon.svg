@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="[REDACTED]">
+  <rect width="64" height="64" fill="#080809"/>
+  <rect x="10" y="26" width="44" height="13" fill="#FFFCFC"/>
+  <g fill="#ff2200" font-family="Archivo, Arial Black, sans-serif" font-weight="900" font-size="40">
+    <text x="6" y="46" textLength="12">[</text>
+    <text x="46" y="46" textLength="12">]</text>
+  </g>
+</svg>

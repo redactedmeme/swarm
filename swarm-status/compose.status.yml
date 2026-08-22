@@ -1,0 +1,29 @@
+# swarm-status — public read-only heartbeat feed.
+#
+# Deploy alongside the rest of the swarm stack on the umbrel node:
+#   docker compose -f compose.status.yml up -d --build
+#
+# Then publish it with Tailscale Funnel (no DNS change, no domain move):
+#   tailscale funnel --bg --https=8443 http://127.0.0.1:8098
+#   tailscale funnel status          # confirm https://<node>.ts.net:8443 is serving
+#
+# Finally point the website at it — on Railway, service redacted-website:
+#   SWARM_STATUS_URL=https://<node>.taila13a94.ts.net:8443/status
+services:
+  swarm-status:
+    build: .
+    container_name: swarm-status
+    restart: unless-stopped
+    environment:
+      REDIS_URL: redis://swarm-redis:6379/0
+      PORT: "8098"
+      ALLOW_ORIGIN: https://redacted.meme
+    ports:
+      - "127.0.0.1:8098:8098"
+    networks:
+      - swarm
+
+networks:
+  swarm:
+    external: true
+    name: swarm-infra_swarm

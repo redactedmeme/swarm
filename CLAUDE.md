@@ -11,7 +11,7 @@ Autonomous AI agent swarm: elizaOS-compatible `.character.json` agents, a NERV-i
 | **hermes** | Operational agent — web browsing, code execution, infra control | Python · Groq · SwarmInbox |
 | **webchat** | Private web chat UI for redacted-chan | FastAPI · aiohttp |
 | **proxy** | OpenAI-compatible LLM privacy proxy | aiohttp |
-| **website** | Static landing page | Flask |
+| **website** | Static landing page (redacted.meme) | Flask |
 | **dashboard** | Solana token volume dashboard | Python |
 
 All services communicate over Redis via **SwarmInbox** — see [`README.md#swarminbox-agent-mesh`](README.md#swarminbox-agent-mesh).
@@ -24,6 +24,8 @@ All services communicate over Redis via **SwarmInbox** — see [`README.md#swarm
 | `hermes-bot/` | Operational agent (Railway) | [README](hermes-bot/README.md) |
 | `smolting-telegram-bot/` | CT agent | [README](smolting-telegram-bot/README.md), [SOUL.md](smolting-telegram-bot/SOUL.md), [Operator Covenant](smolting-telegram-bot/OPERATOR_COVENANT.md) |
 | `redacted-proxy/` | LLM privacy proxy | [README](redacted-proxy/README.md) |
+| `website/` | Landing page (redacted.meme) | [README](website/README.md) |
+| `swarm-status/` | Public heartbeat feed | [README](swarm-status/README.md) |
 | `redacted-chan-bot/`, `webchat/`, `x402.redacted.ai/` | Web surfaces | per-dir README |
 | `agents/`, `nodes/` | `.character.json` agent/node definitions | — |
 | `spaces/` | Persistent thematic environments | [README](spaces/README.md) |

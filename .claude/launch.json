@@ -4,31 +4,52 @@
     {
       "name": "web-ui",
       "runtimeExecutable": "python",
-      "runtimeArgs": ["web_ui/app.py"],
+      "runtimeArgs": [
+        "web_ui/app.py"
+      ],
       "port": 8888
     },
     {
       "name": "website",
       "runtimeExecutable": "python",
-      "runtimeArgs": ["website/serve.py"],
-      "port": 8080
+      "runtimeArgs": [
+        "-u",
+        "serve.py"
+      ],
+      "port": 8080,
+      "cwd": "website",
+      "env": {
+        "PYTHONIOENCODING": "utf-8"
+      }
     },
     {
       "name": "x402-gateway",
       "runtimeExecutable": "bun",
-      "runtimeArgs": ["run", "x402.redacted.ai/index.js"],
+      "runtimeArgs": [
+        "run",
+        "x402.redacted.ai/index.js"
+      ],
       "port": 3000
     },
     {
       "name": "terminal-preview",
       "runtimeExecutable": "python",
-      "runtimeArgs": ["-m", "http.server", "8765", "--directory", "fs"],
+      "runtimeArgs": [
+        "-m",
+        "http.server",
+        "8765",
+        "--directory",
+        "fs"
+      ],
       "port": 8765
     },
     {
       "name": "dashboard",
       "runtimeExecutable": "python",
-      "runtimeArgs": ["-u", "dashboard/serve.py"],
+      "runtimeArgs": [
+        "-u",
+        "dashboard/serve.py"
+      ],
       "port": 3001,
       "env": {
         "PYTHONIOENCODING": "utf-8"
@@ -37,14 +58,24 @@
     {
       "name": "webchat-frontend",
       "runtimeExecutable": "npm",
-      "runtimeArgs": ["run", "dev", "--", "--port", "5173", "--host"],
+      "runtimeArgs": [
+        "run",
+        "dev",
+        "--",
+        "--port",
+        "5173",
+        "--host"
+      ],
       "port": 5173,
       "cwd": "webchat/frontend"
     },
     {
       "name": "dashboard-next",
       "runtimeExecutable": "npm",
-      "runtimeArgs": ["run", "dev"],
+      "runtimeArgs": [
+        "run",
+        "dev"
+      ],
       "port": 3000,
       "cwd": "dashboard-next"
     }
