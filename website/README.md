@@ -90,6 +90,17 @@ starts, because `requestAnimationFrame` is throttled to a standstill in a backgr
 tab — a loop that only assigns the real number in its last frame leaves a stale one on
 screen. The count-up is decoration over an already-correct value.
 
+### Structured data
+
+`index.html` carries a JSON-LD `@graph` (`WebSite` + `Organization` + `SoftwareApplication`)
+stating what the site is, who publishes it, and which machine-readable artifacts exist —
+facts a crawler or model would otherwise have to infer from prose.
+
+It deliberately carries **no agent counts**. Those live in `data/agents.json`, and
+duplicating them here would drift. If you add or remove a published artifact, update the
+`hasPart` list — every URL in it must resolve, and each `encodingFormat` must match the
+content type `serve.py` actually sends.
+
 ### Colour
 
 The palette is a near-black ramp plus a grey text ramp. Only two chromatic tokens exist
