@@ -49,8 +49,8 @@ services:
 
   swarm-runtime:
     build:
-      context: /home/umbrel/swarm/runtime
-      dockerfile: Dockerfile
+      context: /home/umbrel/swarm
+      dockerfile: apps/runtime/Dockerfile
     container_name: swarm-runtime
     environment:
       REDIS_URL: redis://127.0.0.1:6379
@@ -69,8 +69,8 @@ services:
 
   hermes-bot:
     build:
-      context: /home/umbrel/swarm/hermes-bot
-      dockerfile: Dockerfile
+      context: /home/umbrel/swarm
+      dockerfile: apps/hermes/Dockerfile
     container_name: swarm-hermes-bot
     volumes:
       - hermesdata:/data
@@ -120,8 +120,8 @@ services:
 
   smolting:
     build:
-      context: /home/umbrel/swarm/smolting-telegram-bot
-      dockerfile: Dockerfile
+      context: /home/umbrel/swarm
+      dockerfile: apps/smolting/Dockerfile
     container_name: swarm-smolting
     env_file:
       - .env.smolting
@@ -135,8 +135,8 @@ services:
 
   refinery:
     build:
-      context: /home/umbrel/swarm/refinery
-      dockerfile: Dockerfile
+      context: /home/umbrel/swarm
+      dockerfile: apps/refinery/Dockerfile
     container_name: swarm-refinery
     env_file:
       - .env
@@ -178,7 +178,7 @@ services:
 
   builder:
     build:
-      context: /home/umbrel/swarm/redactedbuilder-telegram-bot
+      context: /home/umbrel/swarm/apps/builder
       dockerfile: Dockerfile
     container_name: swarm-builder
     env_file:
@@ -193,7 +193,7 @@ services:
 
   redacted-proxy:
     build:
-      context: /home/umbrel/swarm/redacted-proxy
+      context: /home/umbrel/swarm/apps/proxy
       dockerfile: Dockerfile
     container_name: swarm-redacted-proxy
     env_file:

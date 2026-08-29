@@ -1,0 +1,24 @@
+# Root-context builds (services that install packages/) upload the whole repo.
+# Keep the context small and never ship credentials or local state.
+.git/
+secrets/
+*.env
+!*.env.example
+__pycache__/
+*.pyc
+*.egg-info/
+node_modules/
+.next/
+*.log
+*.bak*
+
+# Other services' source — each image only needs packages/ and its own app dir.
+apps/*/node_modules/
+apps/*/frontend/node_modules/
+
+# Repo material no image needs
+docs/
+infra/
+handoff.md
+.claude/
+.github/

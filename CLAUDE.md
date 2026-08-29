@@ -20,13 +20,13 @@ All services communicate over Redis via **SwarmInbox** — see [`README.md#swarm
 
 | Path | What | Detail |
 |---|---|---|
-| `redacted-chan-bot/` | Companion agent | [README](redacted-chan-bot/README.md), [SOUL.md](redacted-chan-bot/SOUL.md) |
-| `hermes-bot/` | Operational agent (Railway) | [README](hermes-bot/README.md) |
-| `smolting-telegram-bot/` | CT agent | [README](smolting-telegram-bot/README.md), [SOUL.md](smolting-telegram-bot/SOUL.md), [Operator Covenant](smolting-telegram-bot/OPERATOR_COVENANT.md) |
-| `redacted-proxy/` | LLM privacy proxy | [README](redacted-proxy/README.md) |
-| `website/` | Landing page (redacted.meme) | [README](website/README.md) |
+| `apps/chan/` | Companion agent | [README](redacted-chan-bot/README.md), [SOUL.md](redacted-chan-bot/SOUL.md) |
+| `apps/hermes/` | Operational agent (Railway) | [README](hermes-bot/README.md) |
+| `apps/smolting/` | CT agent | [README](smolting-telegram-bot/README.md), [SOUL.md](smolting-telegram-bot/SOUL.md), [Operator Covenant](smolting-telegram-bot/OPERATOR_COVENANT.md) |
+| `apps/proxy/` | LLM privacy proxy | [README](redacted-proxy/README.md) |
+| `apps/website/` | Landing page (redacted.meme) | [README](website/README.md) |
 |  `apps/status/` | Public heartbeat feed | [README](apps/status/README.md) |
-| `redacted-chan-bot/`, `webchat/`, `x402.redacted.ai/` | Web surfaces | per-dir README |
+| `apps/chan/`, `webchat/`, `x402.redacted.ai/` | Web surfaces | per-dir README |
 | `agents/`, `nodes/` | `.character.json` agent/node definitions | — |
 | `spaces/` | Persistent thematic environments | [README](spaces/README.md) |
 | `skills/` | Claude Code skill modules (SKILL.md) | [README](skills/README.md) |

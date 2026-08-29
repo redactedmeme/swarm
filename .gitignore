@@ -1,5 +1,5 @@
 # ── Private conversation data (never commit) ──────────────────────────────────
-redacted-chan-bot/reconstruction_data/
+apps/chan/reconstruction_data/
 
 # ── Secrets & credentials ─────────────────────────────────────────────────────
 .env
@@ -46,12 +46,12 @@ fs/pattern_blue_state.json
 fs/kernel_state.json
 
 # Same runtime layout when smolting uses ./fs (Railway rootDirectory = smolting-telegram-bot/)
-smolting-telegram-bot/fs/swarm_messages/
-smolting-telegram-bot/fs/clawtask_dispatch_results.json
-smolting-telegram-bot/fs/pattern_blue_state.json
-smolting-telegram-bot/fs/kernel_state.json
-smolting-telegram-bot/fs/*.db
-smolting-telegram-bot/fs/*.jsonl
+apps/smolting/fs/swarm_messages/
+apps/smolting/fs/clawtask_dispatch_results.json
+apps/smolting/fs/pattern_blue_state.json
+apps/smolting/fs/kernel_state.json
+apps/smolting/fs/*.db
+apps/smolting/fs/*.jsonl
 
 # Runtime logs (contain internal hostnames / operational data — not for public repo)
 fs/logs/
@@ -80,11 +80,11 @@ desktop.ini
 .claude/settings.local.json
 
 # ── Bot runtime data (generated, may contain user conversations/IDs) ──────────
-smolting-telegram-bot/memory.md
-smolting-telegram-bot/learned_facts.json
-smolting-telegram-bot/moltbook_engaged.json
-smolting-telegram-bot/bot_audit.log
-smolting-telegram-bot/bot_audit.log.bak
+apps/smolting/memory.md
+apps/smolting/learned_facts.json
+apps/smolting/moltbook_engaged.json
+apps/smolting/bot_audit.log
+apps/smolting/bot_audit.log.bak
 
 # ── Misc ──────────────────────────────────────────────────────────────────────
 *.tmp
