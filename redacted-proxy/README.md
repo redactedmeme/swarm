@@ -17,6 +17,9 @@ OpenAI-compatible LLM privacy proxy for the REDACTED swarm. Sits between swarm b
 | `GET` | `/logs?n=100` | Bearer token | Recent proxy log (in-memory ring) |
 | `GET` | `/config` | Bearer token | Current runtime config |
 | `POST` | `/config` | Bearer token | Hot-update config (no redeploy needed) |
+| `GET` | `/usage` | Bearer token | Per-project API usage totals (metadata only) |
+| `POST` | `/usage/reset` | Admin token | Reset usage counters |
+| `GET` | `/debug/egress` | None | Current upstream egress IP (VPN routing check) |
 
 ---
 
@@ -164,7 +167,7 @@ curl -X POST $PROXY_URL/config \
 | `CASCADE_MODELS` | No | `deepseek/deepseek-v4-flash` | Comma-separated model ids served **free-first**: the free cascade is tried before the requested (paid) model |
 | `FREE_CASCADE` | No | see below | Comma-separated ordered free models tried ahead of a `CASCADE_MODELS` request (Groq free tier + OpenRouter `:free`). Update as OpenRouter's free lineup rotates |
 | `AUTO_MODELS` | No | `auto` | Model ids that trigger the auto-router (prompt-difficulty routing). Bots send `model:"auto"` to opt in |
-| `AUTO_CLASSIFIER_MODEL` | No | `llama-3.1-8b-instant` | Cheap free model used to judge the ambiguous middle band |
+| `AUTO_CLASSIFIER_MODEL` | No | *(empty — disabled)* | Cheap free model used to judge the ambiguous middle band. Empty means the ambiguous band settles to `medium` with no extra LLM hop |
 | `AUTO_TIERS` | No | built-in | JSON `{tier: [model,…]}` overriding the easy/medium/hard/code entry lists |
 | `AUTO_EASY_MAX` / `AUTO_HARD_MIN` | No | `3` / `8` | Heuristic score thresholds: `≤EASY_MAX`→easy, `≥HARD_MIN`→hard, between→classifier |
 | `PRIVACY_MODE` | No | `private` | `anonymous`, `private`, `maximum`, `zero`, `tee`, `e2ee` |
@@ -176,6 +179,15 @@ curl -X POST $PROXY_URL/config \
 | `LOG_LEVEL` | No | mode default | `none`, `minimal`, or `full` |
 | `LOG_CONTENT` | No | — | Legacy: `"false"` forces `LOG_LEVEL=minimal` |
 | `RATE_LIMIT_RPM` | No | `60` | Max requests/min per token (0 = off) |
+| `PROXY_TOKEN_MAP` | No | — | JSON `{"<token>": "<project>"}` — per-project bearer tokens that both authenticate and attribute usage |
+| `PROXY_TOKEN_NAME` | No | `shared` | Bucket name for traffic using the legacy shared `PROXY_TOKEN` with no `X-Client` header |
+| `ADMIN_TOKEN` | No | `PROXY_TOKEN` | Token required for `/usage/reset` |
+| `USAGE_ENABLED` | No | `true` | Per-project usage accounting in Redis (metadata only) |
+| `USAGE_PREFIX` | No | `proxy:usage:` | Redis key prefix for usage counters |
+| `USAGE_DAILY_TTL_DAYS` | No | `90` | Retention for the per-day usage rollups |
+| `DIRECT_EGRESS_PROVIDERS` | No | `groq` | Providers that bypass `UPSTREAM_PROXY` and egress direct — Groq's edge blocks VPN/datacenter IPs |
+| `GROQ_REASONING_EFFORT` | No | `low` | Caps reasoning effort on Groq `gpt-oss` models so they leave room for an actual answer. Empty disables the injection |
+| `UPSTREAM_PROXY` | No | — | Upstream egress proxy (e.g. Mullvad via gluetun). Empty = direct |
 | `DEFAULT_TEMPERATURE` | No | — | Override temperature for all requests |
 | `DEFAULT_TOP_P` | No | — | Override top_p for all requests |
 | `PORT` | No | `7080` | Listen port |
@@ -188,11 +200,15 @@ then the originally-requested (paid) model as a last resort. Any 429/failure fal
 next candidate. Providers with no configured key are skipped — so the **Groq tier only activates if
 `GROQ_API_KEY` is set**, and the OpenRouter `:free` tier needs `OPENROUTER_API_KEY`.
 
-Default `FREE_CASCADE` (Groq free tier ordered by daily budget, then OpenRouter `:free`):
+Default `FREE_CASCADE` (Groq free tier first, then OpenRouter `:free`):
 
 ```
-llama-3.1-8b-instant,openai/gpt-oss-120b,openai/gpt-oss-20b,qwen/qwen3.6-27b,llama-3.3-70b,nvidia/nemotron-3.5-lightning:free,inclusionai/ling-3.0-tiny:free,cohere/north-mini-code:free
+openai/gpt-oss-20b,openai/gpt-oss-120b,qwen/qwen3.6-27b,cohere/north-mini-code:free
 ```
+
+Keep only **live** ids here — a dead model costs a wasted round-trip on every request that
+reaches it. Validate with an actual completion, not `GET /v1/models` (Groq returns 403 for
+keys without the `models:read` scope).
 
 The OpenRouter `:free` lineup rotates — validate ids against `https://openrouter.ai/api/v1/models`
 when editing. Pin a provider with `X-Provider: <name>` to bypass the cascade entirely.
@@ -211,6 +227,46 @@ cheapest capable free models first, then falls through the shared `FREE_CASCADE`
 paid `CASCADE_MODELS` — so a tier can escalate on failure and paid is always last resort. Empty/null
 responses (common from reasoning `:free` models) count as failures and trigger failover. The chosen
 tier is returned in the `X-Auto-Tier` response header. An `X-Provider` pin bypasses auto entirely.
+
+---
+
+## API usage tracking
+
+Every request is accounted per project in Redis — **metadata only** (counts, tokens, cost,
+model mix). No prompt or response content is ever written, so this works in every privacy
+mode including `maximum`. Disable with `USAGE_ENABLED=false`.
+
+Attribution comes from the bearer token via `PROXY_TOKEN_MAP`, or from an explicit
+`X-Client: <project>` header. Traffic on the legacy shared `PROXY_TOKEN` with no header
+lands in the `PROXY_TOKEN_NAME` bucket (default `shared`).
+
+```bash
+curl -s $PROXY_URL/usage -H "Authorization: Bearer $PROXY_TOKEN"
+```
+
+Keys written, per client:
+
+| Key | Fields |
+|---|---|
+| `proxy:usage:clients` | set of known client names |
+| `proxy:usage:client:<name>` | `requests`, `errors`, `prompt_tokens`, `completion_tokens`, `cost_usd`, `estimated_requests` |
+| `proxy:usage:client:<name>:models` | request count per `provider/model` |
+| `proxy:usage:client:<name>:daily:<YYYY-MM-DD>` | `requests`, `prompt_tokens`, `completion_tokens`, `cost_usd` (expires after `USAGE_DAILY_TTL_DAYS`) |
+
+### Token accuracy
+
+Token counts come from the **exact `usage` block the upstream provider returns**, handling
+both the OpenAI (`prompt_tokens`/`completion_tokens`) and Anthropic
+(`input_tokens`/`output_tokens`) spellings. `cost_usd` is derived from those counts.
+
+Only when a provider omits `usage` does the proxy fall back to a `chars / 4` estimate, and
+every such request increments `estimated_requests` — so the totals can be read as *exact
+unless that field is non-zero*. The estimate is a poor substitute (it ignores system
+prompts, roles and template overhead — a 28-char probe measures 7 estimated vs 78 actual
+prompt tokens), which is why it is the fallback rather than the default.
+
+`errors` counts requests where **every** candidate in the failover chain failed; a request
+that recovers on a later candidate counts as a normal request.
 
 ---
 
