@@ -4,6 +4,8 @@
   dockerfilePath = "apps/terminal/Dockerfile"
 
 [deploy]
-  startCommand = "gunicorn --worker-class geventwebsocket.gunicorn.workers.GeventWebSocketWorker --workers 1 --bind 0.0.0.0:$PORT app:app"
+  # No startCommand: the Dockerfile CMD wraps gunicorn in `sh -c` so that $PORT
+  # expands. A startCommand here is exec'd directly with no shell, which turns
+  # `--bind 0.0.0.0:$PORT` into a literal and the container fails to bind.
   restartPolicyType = "ON_FAILURE"
   restartPolicyMaxRetries = 3
