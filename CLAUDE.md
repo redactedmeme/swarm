@@ -25,7 +25,7 @@ All services communicate over Redis via **SwarmInbox** — see [`README.md#swarm
 | `smolting-telegram-bot/` | CT agent | [README](smolting-telegram-bot/README.md), [SOUL.md](smolting-telegram-bot/SOUL.md), [Operator Covenant](smolting-telegram-bot/OPERATOR_COVENANT.md) |
 | `redacted-proxy/` | LLM privacy proxy | [README](redacted-proxy/README.md) |
 | `website/` | Landing page (redacted.meme) | [README](website/README.md) |
-| `swarm-status/` | Public heartbeat feed | [README](swarm-status/README.md) |
+|  `apps/status/` | Public heartbeat feed | [README](apps/status/README.md) |
 | `redacted-chan-bot/`, `webchat/`, `x402.redacted.ai/` | Web surfaces | per-dir README |
 | `agents/`, `nodes/` | `.character.json` agent/node definitions | — |
 | `spaces/` | Persistent thematic environments | [README](spaces/README.md) |
