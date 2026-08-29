@@ -21,6 +21,11 @@ from pathlib import Path
 from datetime import datetime
 from collections import defaultdict, deque
 from functools import wraps
+from swarm_core.paths import (
+    repo_root as _repo_root,
+    data_dir as _data_dir,
+    mem0_dir as _mem0_dir,
+)
 
 # ── Path setup ────────────────────────────────────────────────────────────────
 
@@ -52,7 +57,7 @@ PHANTOM_ALLOWED_ORIGINS = os.getenv('PHANTOM_ALLOWED_ORIGINS', 'http://localhost
 
 # ── Audit logging ─────────────────────────────────────────────────────────────
 
-LOG_DIR    = Path(__file__).parent.parent / 'data' / 'audit'
+LOG_DIR    = _data_dir() / 'audit'
 LOG_DIR.mkdir(parents=True, exist_ok=True)
 AUDIT_LOG  = LOG_DIR / 'web_terminal.log'
 
@@ -146,7 +151,7 @@ runtime_bridge = RuntimeBridge(RUNTIME_API_URL)
 
 # ── System prompt ─────────────────────────────────────────────────────────────
 
-SYSTEM_PROMPT_PATH = Path(__file__).parent.parent / 'terminal' / 'system.prompt.md'
+SYSTEM_PROMPT_PATH = _repo_root() / 'terminal' / 'system.prompt.md'
 TERMINAL_SYSTEM_PROMPT = (
     SYSTEM_PROMPT_PATH.read_text(encoding='utf-8')
     if SYSTEM_PROMPT_PATH.exists()

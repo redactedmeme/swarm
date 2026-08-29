@@ -1,0 +1,9 @@
+[build]
+  builder = "DOCKERFILE"
+  # Context is the repo root so the image can install packages/swarm-core.
+  dockerfilePath = "apps/terminal/Dockerfile"
+
+[deploy]
+  startCommand = "gunicorn --worker-class geventwebsocket.gunicorn.workers.GeventWebSocketWorker --workers 1 --bind 0.0.0.0:$PORT app:app"
+  restartPolicyType = "ON_FAILURE"
+  restartPolicyMaxRetries = 3
