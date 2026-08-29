@@ -3,11 +3,56 @@ import os
 import asyncio
 import aiohttp
 import json
+import re as _re
 from typing import Optional, Dict, Any
 
 # Model used exclusively for /alpha — fast grok-4-1 inference via Venice API
 ALPHA_MODEL = os.getenv("ALPHA_XAI_MODEL", "grok-4-1-fast")
 ALPHA_BASE  = os.getenv("ALPHA_API_BASE", "https://api.venice.ai/api/v1")
+
+
+# ── LLM reasoning-leak scrubbing ──────────────────────────────────────────────
+# Reasoning models (deepseek-v4-flash via the proxy auto-router) sometimes narrate
+# their planning into `content` ("Here's a thinking process:\n1. Analyze user
+# input...") instead of just answering. We disable reasoning at the source; this is
+# the conservative backstop. Kept phrase-based (NOT structural) so it never mangles
+# a legit smolting reply that happens to use a numbered list or bullets.
+_THINK_RE = _re.compile(r"<(think|thinking|reasoning)>.*?</\1>", _re.DOTALL | _re.IGNORECASE)
+_REASONING_SIGNALS = (
+    "here's a thinking process", "here is a thinking process", "here's my thinking process",
+    "let me think through", "let me work through", "let me analyze",
+    "the user wants me to", "the user is asking", "the user's request", "user's message",
+    "analyze user input", "analyze the user", "analyze the request", "analyze user request",
+)
+
+
+def looks_like_reasoning(text: str) -> bool:
+    """True if `text` reads as leaked chain-of-thought rather than a real message.
+    Phrase-based only — deliberately conservative to avoid false positives."""
+    if not text:
+        return False
+    low = text.lower()
+    return any(sig in low for sig in _REASONING_SIGNALS)
+
+
+def strip_reasoning(text: str) -> str:
+    """Scrub leaked chain-of-thought. Drops <think>/<reasoning> blocks, then — if
+    the remainder still reads as reasoning — salvages a trailing genuine message by
+    dropping leading reasoning paragraphs. Returns "" if nothing clean survives so
+    the fallback chain retries rather than posting CoT. Never raises."""
+    if not text:
+        return text
+    try:
+        cleaned = _THINK_RE.sub("", text).strip()
+        if not looks_like_reasoning(cleaned):
+            return cleaned
+        parts = _re.split(r"\n\s*\n", cleaned)
+        while parts and looks_like_reasoning(parts[0]):
+            parts = parts[1:]
+        tail = "\n\n".join(parts).strip()
+        return tail if (tail and not looks_like_reasoning(tail)) else ""
+    except Exception:
+        return text
 
 
 class CloudLLMClient:
@@ -87,13 +132,17 @@ class CloudLLMClient:
             "Authorization": f"Bearer {self.api_key}",
             "Content-Type": "application/json"
         }
-        if self.provider == "openrouter":
+        if self.provider == "openrouter" or os.getenv("PROXY_URL"):
             # deepseek-v4-flash is a reasoning model — disable reasoning so `content`
-            # is populated at small token budgets; add OpenRouter attribution headers.
+            # holds the answer instead of chain-of-thought. Sent for the proxy path
+            # too: the proxy strips it for providers that reject it (Groq/xAI/OpenAI/
+            # Venice), so relying on the proxy's conditional central injection was
+            # leaking CoT. strip_reasoning() is the backstop.
             payload["reasoning"] = {"enabled": False}
+        if self.provider == "openrouter":
             headers["HTTP-Referer"] = "https://redacted.ai"
             headers["X-Title"] = "REDACTED Swarm"
-        
+
         async with aiohttp.ClientSession() as session:
             async with session.post(
                 f"{self.base_url}/chat/completions",
@@ -103,7 +152,7 @@ class CloudLLMClient:
                 result = await response.json()
                 if "choices" not in result:
                     raise ValueError(f"API error from {self.provider}: {result.get('error', result)}")
-                return result["choices"][0]["message"]["content"]
+                return strip_reasoning(result["choices"][0]["message"]["content"])
 
     async def _anthropic_completion(self, messages: list, model: str = None, max_tokens: int = None) -> str:
         """Anthropic Claude completion"""
@@ -143,7 +192,7 @@ class CloudLLMClient:
                 result = await response.json()
                 if "content" not in result:
                     raise ValueError(f"Anthropic API error: {result.get('error', result)}")
-                return result["content"][0]["text"]
+                return strip_reasoning(result["content"][0]["text"])
     
     async def chat_completion_with_fallback(self, messages: list, max_tokens: int = None) -> str:
         """

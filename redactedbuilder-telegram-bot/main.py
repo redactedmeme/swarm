@@ -132,6 +132,10 @@ async def _proxy_complete(messages: list, model: str, max_tokens: int) -> str:
     system = _build_system_prompt()
     full = [{"role": "system", "content": system}] + [m for m in messages if m["role"] != "system"]
     payload = {"model": model, "messages": full, "max_tokens": max_tokens, "temperature": 0.75}
+    # Disable reasoning so reasoning models (deepseek-v4-flash) populate `content`
+    # instead of leaking chain-of-thought. The proxy strips this param for providers
+    # that reject it (Groq/xAI/OpenAI/Venice), so it's always safe to send.
+    payload["reasoning"] = {"enabled": False}
     headers = {
         "Authorization": f"Bearer {PROXY_TOKEN}",
         "Content-Type": "application/json",
@@ -145,7 +149,7 @@ async def _proxy_complete(messages: list, model: str, max_tokens: int) -> str:
             data = await resp.json()
             if resp.status != 200:
                 raise RuntimeError(f"proxy {resp.status}: {data}")
-            return data["choices"][0]["message"]["content"].strip()
+            return _strip_reasoning(data["choices"][0]["message"]["content"]).strip()
 
 
 async def _llm_complete(messages: list, max_tokens: int = 600) -> str:
@@ -218,7 +222,7 @@ async def _anthropic_complete(messages: list, model: str, api_key: str, max_toke
             data = await resp.json()
             if resp.status != 200:
                 raise RuntimeError(f"Anthropic {resp.status}: {data}")
-            return data["content"][0]["text"].strip()
+            return _strip_reasoning(data["content"][0]["text"]).strip()
 
 
 async def _openai_compat_complete(
@@ -243,7 +247,7 @@ async def _openai_compat_complete(
             data = await resp.json()
             if resp.status != 200:
                 raise RuntimeError(f"{provider or base_url} {resp.status}: {data}")
-            return data["choices"][0]["message"]["content"].strip()
+            return _strip_reasoning(data["choices"][0]["message"]["content"]).strip()
 
 
 def _history(user_id: int) -> list:
@@ -1207,6 +1211,58 @@ def _opener_bucket(text: str) -> str | None:
     return m.group(0) if m else None
 
 
+# ── LLM output sanitization (strip leaked chain-of-thought / meta-reasoning) ──
+_THINK_RE = _re.compile(r"<(think|thinking|reasoning)>.*?</\1>", _re.DOTALL | _re.IGNORECASE)
+_META_PREAMBLE_RE = _re.compile(
+    r"^\s*(the user (is asking|wants|said)|let me (analyze|think|break)|"
+    r"i (need|should|will|have) to|i'?m going to|looking at|okay,? (so|let)|"
+    r"constraints?:|recent (group chatter|posts|activity)|voice:)",
+    _re.IGNORECASE,
+)
+# Signals that the whole candidate is leaked reasoning rather than a real post.
+_LEAK_SIGNALS = (
+    "the user wants", "the user is asking", "let me analyze", "let me think",
+    "constraints:", "1-2 sentences", "1–2 sentences", "no emojis", "no hashtags",
+    "no structured formats", "recent group chatter", "recent posts",
+    "voice: you're a dev", "voice: you are a dev", "i need to pick", "must not repeat",
+)
+
+
+def _strip_reasoning(text: str) -> str:
+    """Remove leaked chain-of-thought from an LLM response.
+
+    Drops <think>/<reasoning> blocks, then peels off leading meta-narration
+    paragraphs (prompt echoes) as long as a non-empty remainder survives.
+    Never raises — worst case it returns the input minus tag blocks.
+    """
+    if not text:
+        return text
+    try:
+        cleaned = _THINK_RE.sub("", text).strip()
+        # Peel leading meta paragraphs (blank-line separated), keeping the tail.
+        parts = _re.split(r"\n\s*\n", cleaned)
+        while len(parts) > 1 and _META_PREAMBLE_RE.match(parts[0]):
+            parts = parts[1:]
+        result = "\n\n".join(parts).strip()
+        return result or cleaned
+    except Exception:
+        return text
+
+
+def _looks_like_reasoning(text: str) -> bool:
+    """True if the candidate still reads as leaked meta-reasoning after stripping.
+
+    Used as a fail-closed gate before posting — a false positive just skips one
+    cycle, a false negative posts chain-of-thought to the channel.
+    """
+    if not text:
+        return False
+    low = text.lower()
+    if _META_PREAMBLE_RE.match(text.strip()):
+        return True
+    return any(sig in low for sig in _LEAK_SIGNALS)
+
+
 def _load_builder_post_history() -> list[str]:
     try:
         if _BUILDER_POST_HISTORY_PATH.exists():
@@ -1522,6 +1578,10 @@ async def _autonomous_group_post(context: ContextTypes.DEFAULT_TYPE) -> None:
         recent_openers = [o for o in recent_openers if o]
 
         async def _should_reject(t: str) -> bool:
+            # Fail closed on leaked chain-of-thought / prompt echo — never post it.
+            if _looks_like_reasoning(t):
+                logger.warning("[group_post] reasoning/meta leak detected — skipping: %s", t[:80])
+                return True
             if _is_duplicate_post(t):
                 return True
             ob = _opener_bucket(t)

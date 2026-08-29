@@ -1,6 +1,7 @@
 """Layer-2 read API for refined signals.
 
     GET  /healthz                     -> liveness + counts
+    GET  /liveness                    -> swarm agent heartbeats + queue depth
     GET  /signals?kind=&limit=&include_private=  -> recent signals
     GET  /stats                       -> ingest cursors + row counts
     POST /query  {"text":..,"kind":..,"limit":..,"include_private":false}
@@ -16,6 +17,7 @@ import logging
 from aiohttp import web
 
 import common as C
+import liveness
 
 logger = logging.getLogger("refinery.api")
 
@@ -25,6 +27,10 @@ async def healthz(request):
         cur.execute("SELECT count(*) FROM signals")
         n = cur.fetchone()[0]
     return web.json_response({"ok": True, "signals": n})
+
+
+async def liveness_handler(request):
+    return web.json_response(liveness.collect_liveness())
 
 
 async def stats(request):
@@ -92,6 +98,7 @@ def make_app() -> web.Application:
     app = web.Application()
     app.add_routes([
         web.get("/healthz", healthz),
+        web.get("/liveness", liveness_handler),
         web.get("/stats", stats),
         web.get("/signals", signals),
         web.post("/query", query),

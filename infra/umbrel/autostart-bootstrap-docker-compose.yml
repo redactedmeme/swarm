@@ -1,0 +1,11 @@
+services:
+  autostart:
+    image: docker:27-cli
+    container_name: autostart-bootstrap
+    restart: always
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - /home/umbrel:/home/umbrel
+    working_dir: /home/umbrel
+    entrypoint: ["sh", "-c", "sh /home/umbrel/autostart-stacks.sh; echo autostart-complete; sleep infinity"]
+=== arb processes ===

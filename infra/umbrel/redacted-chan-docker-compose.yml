@@ -1,0 +1,78 @@
+services:
+  redacted-chan:
+    build: .
+    container_name: redacted-chan
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    ports:
+      - "127.0.0.1:8095:8080"
+    restart: always
+    volumes:
+      - ./data:/data
+    env_file:
+      - .env
+    networks:
+      - default
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  webchat:
+    build: ./webchat
+    container_name: redacted-chan-webchat
+    restart: always
+    ports:
+      - "127.0.0.1:8090:8080"
+    environment:
+      - WEB_PASSWORD=${WEB_PASSWORD:-}
+      - WEB_SECRET=${WEB_SECRET:-changeme-webchat}
+      - REDACTED_CHAN_INTERNAL_URL=http://redacted-chan:8080
+      - DATA_PROXY_TOKEN=${DATA_PROXY_TOKEN:-}
+      - PROXY_INTERNAL_URL=
+      - PROXY_TOKEN=
+      - REDIS_URL=redis://172.17.0.1:6379
+      - CONFIG_API_URL=http://redacted-chan-config:8100
+    depends_on:
+      - redacted-chan
+      - config-api
+      - redis
+    networks:
+      - default
+    logging:
+      driver: json-file
+      options:
+        max-size: "5m"
+        max-file: "2"
+
+  config-api:
+    build: ./config-api
+    container_name: redacted-chan-config
+    restart: always
+    volumes:
+      - ./.env:/config/.env
+      - /var/run/docker.sock:/var/run/docker.sock
+    environment:
+      - ENV_FILE_PATH=/config/.env
+      - CONFIG_API_TOKEN=${CONFIG_API_TOKEN:-}
+    networks:
+      - default
+    logging:
+      driver: json-file
+      options:
+        max-size: "5m"
+        max-file: "2"
+
+  redis:
+    image: redis:7-alpine
+    container_name: redacted-chan-redis
+    restart: always
+    volumes:
+      - redis-data:/data
+    command: redis-server --appendonly yes
+    networks:
+      - default
+
+volumes:
+  redis-data:

@@ -26,6 +26,7 @@ _SCHEMA = os.path.join(os.path.dirname(__file__), "schema.sql")
 INGEST_INTERVAL_MIN = int(os.getenv("INGEST_INTERVAL_MIN", "30"))
 REFINE_INTERVAL_MIN = int(os.getenv("REFINE_INTERVAL_MIN", "60"))
 REFINERY_PORT = int(os.getenv("REFINERY_PORT", "8090"))
+ALERT_INTERVAL_SEC = int(os.getenv("ALERT_INTERVAL_SEC", "120"))
 
 _INGESTERS = [
     ("redis_msgs", redis_msgs.run),
@@ -85,8 +86,12 @@ def main():
                   max_instances=1, coalesce=True)
     sched.add_job(run_refine, "interval", minutes=REFINE_INTERVAL_MIN, id="refine",
                   max_instances=1, coalesce=True)
+    import alerting
+    sched.add_job(alerting.alert_sweep, "interval", seconds=ALERT_INTERVAL_SEC,
+                  id="alert_sweep", max_instances=1, coalesce=True)
     sched.start()
-    logger.info("scheduler started: ingest/%dm refine/%dm", INGEST_INTERVAL_MIN, REFINE_INTERVAL_MIN)
+    logger.info("scheduler started: ingest/%dm refine/%dm alert/%ds",
+                INGEST_INTERVAL_MIN, REFINE_INTERVAL_MIN, ALERT_INTERVAL_SEC)
 
     from aiohttp import web
     import api
