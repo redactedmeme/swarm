@@ -1,7 +1,0 @@
-[build]
-builder = "dockerfile"
-
-[env]
-PYTHONUNBUFFERED = "1"
-LOG_LEVEL = "INFO"
-SWARM_MODE = "delegation"
