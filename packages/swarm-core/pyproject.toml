@@ -1,0 +1,37 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "swarm-core"
+version = "0.1.0"
+description = "Shared library for the REDACTED AI swarm: committee deliberation, BEAM-SCoT, hyperbolic kernel, lore vault, agent registry."
+requires-python = ">=3.11"
+# Consolidated from the three dependency systems this package replaces:
+# the repo-root requirements.txt, requirements/{base,bot,core_llm,dev,opt}.txt,
+# and python/requirements.txt. Only what swarm_core itself imports lives here;
+# per-service extras stay with the service.
+dependencies = [
+    "requests>=2.31",
+    "aiohttp>=3.9",
+    "openai>=1.40",
+    "python-dotenv>=1.0",
+    "pydantic>=2.0",
+    "pyyaml>=6.0",
+    "redis>=5.0",
+]
+
+[project.optional-dependencies]
+# swarm_core.llm providers
+llm = ["groq>=0.10", "anthropic>=0.28", "ollama>=0.3"]
+# swarm_core.mandala_client and the settlement path
+solana = ["solana>=0.34", "solders>=0.21", "anchorpy>=0.19"]
+# mem0-memory plugin integration (lore_vault, gnosis_*, log_ingest, docs_ingest)
+memory = ["mem0ai>=0.0.1"]
+dev = ["pytest>=8.3", "pytest-asyncio>=0.21", "ruff>=0.6"]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+swarm_core = ["**/*.json", "**/*.md"]

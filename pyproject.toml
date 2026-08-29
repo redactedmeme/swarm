@@ -1,0 +1,25 @@
+# Workspace root for the REDACTED AI swarm monorepo.
+#
+# Layout follows the elizaOS/eliza shape: `packages/` holds installable shared
+# libraries, and each deployable service depends on them as normal packages
+# rather than reaching across the tree with sys.path inserts.
+#
+# The packages are plain PEP 621 / setuptools distributions, so `pip install -e`
+# works everywhere — including the service containers, which have pip and not uv.
+# The uv workspace table below is a convenience for local development only.
+
+[tool.uv.workspace]
+members = ["packages/*"]
+
+[tool.uv.sources]
+swarm-core = { workspace = true }
+swarm-tg = { workspace = true }
+
+[tool.ruff]
+line-length = 110
+target-version = "py311"
+extend-exclude = ["fs", "vault", "docs", "secrets"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I"]
+ignore = ["E501"]

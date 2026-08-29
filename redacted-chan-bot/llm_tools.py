@@ -307,7 +307,7 @@ async def exec_fetch_vault_memories(query: str = "", category: str = None) -> di
 async def exec_fetch_lore(topic: str) -> dict:
     """Search LoreVault for lore snippets."""
     try:
-        from lore_vault import fts_search
+        from swarm_core.lore_vault import fts_search
         hits = fts_search(topic, limit=3)
         snippets = []
         for h in hits:

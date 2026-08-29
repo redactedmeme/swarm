@@ -31,10 +31,6 @@ try:
 except ImportError:
     pass
 
-_PYTHON_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'python'))
-if _PYTHON_DIR not in sys.path:
-    sys.path.insert(0, _PYTHON_DIR)
-
 _MEM0_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'plugins', 'mem0-memory'))
 if _MEM0_DIR not in sys.path:
     sys.path.insert(0, _MEM0_DIR)
@@ -183,7 +179,7 @@ except Exception as _e:
 # ── Persistent session store ──────────────────────────────────────────────────
 
 try:
-    import session_store as ss
+    import swarm_core.session_store as ss
     SS_AVAILABLE = True
 except Exception as _e:
     logger.warning(f"session_store not available: {_e}")

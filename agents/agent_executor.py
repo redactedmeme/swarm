@@ -9,7 +9,7 @@ from dataclasses import dataclass
 
 # HyperbolicKernel lives in kernel/ (sibling of agents/)
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "kernel"))
-from hyperbolic_kernel import HyperbolicKernel
+from swarm_core.kernel.hyperbolic_kernel import HyperbolicKernel
 
 @dataclass
 class AgentProcess:

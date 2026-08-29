@@ -19,8 +19,7 @@ logger = logging.getLogger(__name__)
 
 # Try to import Ollama client - graceful fallback to mock if unavailable
 try:
-    sys.path.insert(0, str(Path(__file__).parent.parent.parent / 'python'))
-    from ollama_client import OllamaClient
+    from swarm_core.ollama_client import OllamaClient
     OLLAMA_AVAILABLE = True
 except ImportError:
     logger.warning("[SigilPact_Æon] OllamaClient not available. Using mock LLM mode.")
@@ -29,10 +28,7 @@ except ImportError:
 
 # Try to import Kernel↔Contract bridge for sigil tier notification
 try:
-    _python_dir = str(Path(__file__).parent.parent / 'python')
-    if _python_dir not in sys.path:
-        sys.path.insert(0, _python_dir)
-    from kernel_contract_bridge import KernelContractBridge as _BridgeClass
+    from swarm_core.kernel_contract_bridge import KernelContractBridge as _BridgeClass
     _bridge = _BridgeClass()
     _BRIDGE_AVAILABLE = True
     logger.info("[SigilPact_Æon] Kernel↔Contract bridge loaded — sigil tiers will notify contract.")

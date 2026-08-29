@@ -49,12 +49,9 @@ _MEM0_DIR = str(Path(__file__).resolve().parent.parent / "plugins" / "mem0-memor
 if _MEM0_DIR not in sys.path:
     sys.path.insert(0, _MEM0_DIR)
 
-_PYTHON_DIR = str(Path(__file__).resolve().parent.parent / "python")
-if _PYTHON_DIR not in sys.path:
-    sys.path.insert(0, _PYTHON_DIR)
 
 try:
-    import agent_registry as _registry
+    import swarm_core.agent_registry as _registry
     REGISTRY_AVAILABLE = True
 except Exception:
     REGISTRY_AVAILABLE = False
@@ -589,7 +586,7 @@ def dispatch(cmd: str) -> Optional[str]:
             _kernel_dir = str(Path(__file__).resolve().parent.parent / 'kernel')
             if _kernel_dir not in sys.path:
                 sys.path.insert(0, _kernel_dir)
-            from hyperbolic_kernel import HyperbolicKernel
+            from swarm_core.kernel.hyperbolic_kernel import HyperbolicKernel
             kernel = HyperbolicKernel()
             org = kernel.organism
             lines = [
@@ -618,7 +615,7 @@ def dispatch(cmd: str) -> Optional[str]:
                 _kernel_dir = str(Path(__file__).resolve().parent.parent / 'kernel')
                 if _kernel_dir not in sys.path:
                     sys.path.insert(0, _kernel_dir)
-                from hyperbolic_kernel import HyperbolicKernel
+                from swarm_core.kernel.hyperbolic_kernel import HyperbolicKernel
                 import math
                 kernel = HyperbolicKernel()
                 org = kernel.organism
@@ -750,10 +747,7 @@ def dispatch(cmd: str) -> Optional[str]:
         if not committee_path.exists():
             return "[TOOL ERROR] committee: SevenfoldCommittee.json not found"
         try:
-            _engine_dir = str(Path(__file__).resolve().parent.parent / 'python')
-            if _engine_dir not in sys.path:
-                sys.path.insert(0, _engine_dir)
-            from committee_engine import deliberate
+            from swarm_core.committee_engine import deliberate
             return deliberate(proposal)
         except Exception as e:
             return f"[TOOL ERROR] committee: {e}"
@@ -1061,12 +1055,9 @@ def dispatch(cmd: str) -> Optional[str]:
     if verb == '/contract':
         sub = parts[1].lower() if len(parts) > 1 else 'status'
         try:
-            _engine_dir = str(Path(__file__).resolve().parent.parent / 'python')
-            if _engine_dir not in sys.path:
-                sys.path.insert(0, _engine_dir)
             _contracts_dir = str(Path(__file__).resolve().parent.parent / 'contracts')
             _contract_path = str(Path(_contracts_dir) / 'interface_contract_v1-initial.json')
-            from negotiation_engine import NegotiationEngine
+            from swarm_core.negotiation_engine import NegotiationEngine
             engine = NegotiationEngine(_contract_path)
         except Exception as e:
             return f"[TOOL ERROR] contract: could not load NegotiationEngine — {e}"
@@ -1158,10 +1149,7 @@ def dispatch(cmd: str) -> Optional[str]:
     if verb == '/bridge':
         sub = parts[1].lower() if len(parts) > 1 else 'status'
         try:
-            _engine_dir = str(Path(__file__).resolve().parent.parent / 'python')
-            if _engine_dir not in sys.path:
-                sys.path.insert(0, _engine_dir)
-            from kernel_contract_bridge import KernelContractBridge
+            from swarm_core.kernel_contract_bridge import KernelContractBridge
             _bridge = KernelContractBridge()
         except Exception as e:
             return f"[TOOL ERROR] bridge: could not load KernelContractBridge — {e}"
@@ -1289,7 +1277,7 @@ def dispatch(cmd: str) -> Optional[str]:
             _sim_dir = str(Path(__file__).resolve().parent.parent / 'python')
             if _sim_dir not in sys.path:
                 sys.path.insert(0, _sim_dir)
-            import noclip_simulator as _chamber
+            import swarm_core.noclip_simulator as _chamber
         except Exception as e:
             return f"[TOOL ERROR] chamber: could not load noclip_simulator — {e}"
 
@@ -1530,7 +1518,7 @@ def status() -> dict:
         _kernel_dir = str(Path(__file__).resolve().parent.parent / 'kernel')
         if _kernel_dir not in sys.path:
             sys.path.insert(0, _kernel_dir)
-        from hyperbolic_kernel import HyperbolicKernel
+        from swarm_core.kernel.hyperbolic_kernel import HyperbolicKernel
         _k = HyperbolicKernel()
         _org = _k.organism
         _total = len(_k.tiles)

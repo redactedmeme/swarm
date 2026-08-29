@@ -96,3 +96,9 @@ redacted-proxy/data/
 # ── Repo root: ephemeral / one-off (not source) ───────────────────────────────
 .session_state.json
 delegation_dispatch.log
+
+# Python packaging artifacts
+*.egg-info/
+.msys*
+build/
+dist/
