@@ -170,6 +170,9 @@ curl -X POST $PROXY_URL/config \
 | `AUTO_CLASSIFIER_MODEL` | No | *(empty — disabled)* | Cheap free model used to judge the ambiguous middle band. Empty means the ambiguous band settles to `medium` with no extra LLM hop |
 | `AUTO_TIERS` | No | built-in | JSON `{tier: [model,…]}` overriding the easy/medium/hard/code entry lists |
 | `AUTO_EASY_MAX` / `AUTO_HARD_MIN` | No | `3` / `8` | Heuristic score thresholds: `≤EASY_MAX`→easy, `≥HARD_MIN`→hard, between→classifier |
+| `GROQ_TPM_LIMIT` | No | `8000` | Groq's on_demand tokens-per-minute ceiling. A prompt estimated above it skips **all** Groq candidates in pre-flight rather than failing on one. `0` disables the guard — raise it if the Groq tier is upgraded |
+| `PROVIDER_COOLDOWN_S` | No | `900` | After a hard provider failure (exhausted credits, bad key), skip that provider entirely for this many seconds instead of rediscovering it per request |
+| `NO_TOOL_MODELS` | No | `cohere/north-mini-code:free` | Comma-separated models never dialed when a request carries `tools` (north-mini returns `INVALID_TOOL_GENERATION` on every tool call) |
 | `PRIVACY_MODE` | No | `private` | `anonymous`, `private`, `maximum`, `zero`, `tee`, `e2ee` |
 | `PRIVACY_SCRUB` | No | mode default | `true`/`false` — PII regex scrubbing (on by default in private/maximum) |
 | `DISK_LOG` | No | mode default | `true`/`false` — write logs to `/data/proxy_log.jsonl` (off in private/maximum) |
