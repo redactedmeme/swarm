@@ -10,6 +10,7 @@ import hashlib
 import json
 import logging
 import os
+import re
 from datetime import datetime, timezone
 
 logger = logging.getLogger("refinery")
@@ -234,6 +235,41 @@ def _get_llm():
     return _llm, _llm_kind
 
 
+# ── LLM output sanitization (strip leaked chain-of-thought) ──────────────────
+# deepseek-v4-flash is a reasoning model; when reasoning isn't disabled it dumps
+# its chain-of-thought into `content` ("Here's a thinking process: 1. Analyze
+# User Input..."). We disable reasoning at the source AND scrub defensively so a
+# signal is never stored as raw meta-reasoning that poisons downstream consumers
+# (e.g. redactedbuilder grounds its group posts on these signals).
+_THINK_RE = re.compile(r"<(think|thinking|reasoning)>.*?</\1>", re.DOTALL | re.IGNORECASE)
+_LEAK_SIGNALS = (
+    "here's a thinking process", "here is a thinking process",
+    "analyze user input", "deconstruct the input", "let me analyze",
+    "let me think", "the user wants", "the user is asking",
+    "1.  **", "1. **analyze", "**analyze user",
+)
+
+
+def _strip_reasoning(text: str) -> str:
+    """Drop leaked <think>/<reasoning> blocks. Never raises."""
+    if not text:
+        return text
+    try:
+        return _THINK_RE.sub("", text).strip()
+    except Exception:
+        return text
+
+
+def _looks_like_reasoning(text: str) -> bool:
+    """True if the candidate reads as leaked chain-of-thought rather than a real
+    one-line summary. Fail-closed gate: a false positive drops one signal, a
+    false negative stores CoT sludge that poisons every downstream consumer."""
+    if not text:
+        return False
+    low = text.lower()
+    return any(sig in low for sig in _LEAK_SIGNALS)
+
+
 def summarize(prompt: str, system: str = "You are a terse analyst. Reply in one sentence.") -> str | None:
     """Best-effort LLM summary. OpenRouter/deepseek primary (reasoning disabled so
     terse outputs aren't eaten by chain-of-thought), Groq fallback. Returns None
@@ -246,13 +282,20 @@ def summarize(prompt: str, system: str = "You are a terse analyst. Reply in one 
         kwargs = dict(model=model, temperature=0.3, max_tokens=300,
                       messages=[{"role": "system", "content": system},
                                 {"role": "user", "content": prompt[:6000]}])
-        if kind == "openrouter":
-            # Direct OpenRouter: deepseek-v4-flash is a reasoning model; disable
-            # reasoning so `content` is populated at small budgets. (Via the proxy
-            # this injection is handled centrally, so no extra_body needed.)
+        if kind in ("openrouter", "proxy"):
+            # deepseek-v4-flash is a reasoning model; disable reasoning so `content`
+            # holds the answer instead of chain-of-thought. Send it for the proxy
+            # path too — the proxy forwards extra_body and strips it for providers
+            # that reject it, so relying on central injection was leaking CoT here.
             kwargs["extra_body"] = {"reasoning": {"enabled": False}}
         resp = client.chat.completions.create(**kwargs)
-        return (resp.choices[0].message.content or "").strip() or None
+        out = _strip_reasoning((resp.choices[0].message.content or "").strip())
+        # Fail closed: never store a signal that's still leaked meta-reasoning.
+        if not out or _looks_like_reasoning(out):
+            logger.warning("[llm] summarize dropped leaked-reasoning output (%s): %s",
+                           _llm_kind, (out or "")[:80])
+            return None
+        return out
     except Exception as e:
         logger.warning("[llm] summarize failed (%s): %s", _llm_kind, e)
         return None

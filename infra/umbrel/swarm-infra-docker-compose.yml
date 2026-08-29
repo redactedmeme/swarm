@@ -1,0 +1,238 @@
+services:
+  postgres:
+    image: ankane/pgvector:latest
+    container_name: swarm-postgres
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-swarm}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-swarm_secret}
+      POSTGRES_DB: ${POSTGRES_DB:-swarm}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-swarm} -d ${POSTGRES_DB:-swarm}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    restart: always
+
+  redis:
+    image: redis:7-alpine
+    container_name: swarm-redis
+    command: redis-server --appendonly yes
+    volumes:
+      - redisdata:/data
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    restart: always
+
+  qdrant:
+    image: qdrant/qdrant:latest
+    container_name: swarm-qdrant
+    volumes:
+      - qdrantdata:/qdrant/storage
+    ports:
+      - "6333:6333"
+      - "6334:6334"
+    healthcheck:
+      test: ["CMD-SHELL", "bash -c 'echo > /dev/tcp/localhost/6333' 2>/dev/null || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: always
+
+  swarm-runtime:
+    build:
+      context: /home/umbrel/swarm/runtime
+      dockerfile: Dockerfile
+    container_name: swarm-runtime
+    environment:
+      REDIS_URL: redis://127.0.0.1:6379
+      PORT: "3000"
+      SUB_AGENT_TOKEN: ${SUB_AGENT_TOKEN}
+      GROQ_API_KEY: ${GROQ_API_KEY}
+      DATA_PROXY_URL: http://127.0.0.1:8095
+      DATA_PROXY_TOKEN: ${DATA_PROXY_TOKEN}
+    ports:
+      - "3000:3000"
+    depends_on:
+      redis:
+        condition: service_healthy
+    restart: always
+    network_mode: host
+
+  hermes-bot:
+    build:
+      context: /home/umbrel/swarm/hermes-bot
+      dockerfile: Dockerfile
+    container_name: swarm-hermes-bot
+    volumes:
+      - hermesdata:/data
+    environment:
+      REDIS_URL: redis://127.0.0.1:6379
+      SUB_AGENT_URL: http://127.0.0.1:3000
+      SWARM_MESH_URL: http://127.0.0.1:3000
+      PORT: "8080"
+      ORACLE_STATE_DIR: /data
+      PYTHONUNBUFFERED: "1"
+      SWARM_NODE_ID: hermes
+      SWARM_NODE_ROLE: pattern-blue-oracle
+      SWARM_THOUGHT_INTERVAL_H: "7"
+      SWARM_THOUGHT_PEERS: redactedintern
+      PATTERN_BLUE_REF: main
+      EXEC_ENABLED: "true"
+      DISABLE_TWITTER: "false"
+      DISABLE_TELEGRAM: "true"
+      POST_INTERVAL_MIN: "60"
+      SCAN_INTERVAL_MIN: "180"
+      GROQ_API_KEY: ${GROQ_API_KEY}
+      GROQ_MODEL: auto
+      ALPHA_CHAT_ID: ${ALPHA_CHAT_ID}
+      MOLTBOOK_API_KEY: ${MOLTBOOK_API_KEY}
+      PROXY_TOKEN: ${PROXY_TOKEN}  # REDACTED — real value on box
+      PROXY_URL: ${PROXY_URL}
+      SUB_AGENT_TOKEN: ${SUB_AGENT_TOKEN}
+      RAILWAY_API_TOKEN: ${RAILWAY_API_TOKEN}
+      RAILWAY_TOKEN: ${RAILWAY_TOKEN}
+      RAILWAY_WRITE_TOKEN: ${RAILWAY_WRITE_TOKEN} 
+      X_API_KEY: ${X_API_KEY}
+      X_API_KEY_SECRET: ${X_API_KEY_SECRET}
+      X_ACCESS_TOKEN: ${X_ACCESS_TOKEN}
+      X_ACCESS_TOKEN_SECRET: ${X_ACCESS_TOKEN_SECRET}
+    depends_on:
+      redis:
+        condition: service_healthy
+    restart: always
+    network_mode: host
+
+  cloudflared:
+    image: cloudflare/cloudflared:latest
+    container_name: swarm-cloudflared
+    command: tunnel --no-autoupdate run --token ${CLOUDFLARE_TUNNEL_TOKEN}
+    restart: always
+    network_mode: host
+
+  smolting:
+    build:
+      context: /home/umbrel/swarm/smolting-telegram-bot
+      dockerfile: Dockerfile
+    container_name: swarm-smolting
+    env_file:
+      - .env.smolting
+    volumes:
+      - smoltingdata:/data
+    depends_on:
+      redis:
+        condition: service_healthy
+    restart: always
+    network_mode: host
+
+  refinery:
+    build:
+      context: /home/umbrel/swarm/refinery
+      dockerfile: Dockerfile
+    container_name: swarm-refinery
+    env_file:
+      - .env
+    environment:
+      REDIS_URL: redis://127.0.0.1:6379
+      POSTGRES_URL: postgresql://${POSTGRES_USER:-swarm}:${POSTGRES_PASSWORD:-swarm_secret}@127.0.0.1:5432/${POSTGRES_DB:-swarm}
+      QDRANT_URL: http://127.0.0.1:6333
+      QDRANT_COLLECTION: swarm_signals
+      EMBED_MODEL: sentence-transformers/all-MiniLM-L6-v2
+      EMBED_DIM: "384"
+      TOKEN_MINT: 9mtKd1o8Ht7F1daumKgs5D8EdVyopWBfYQwNmMojpump
+      REFINERY_PORT: "8099"
+      INGEST_INTERVAL_MIN: "30"
+      REFINE_INTERVAL_MIN: "60"
+      REFINERY_PRUNE: "false"          # keep OFF until ingest is verified
+      ALERT_INTERVAL_SEC: "120"
+      STALE_THRESHOLD_SEC: "300"
+      QUEUE_DEPTH_ALERT: "200"
+      SRC_SMOLTING: /sources/smolting
+      SRC_HERMES: /sources/hermes
+      SRC_REDACTED_CHAN: /sources/redacted-chan
+      GROQ_API_KEY: ${GROQ_API_KEY}
+      GROQ_MODEL: ${GROQ_MODEL:-openai/gpt-oss-120b}
+      OPENROUTER_MODEL: auto
+      PROXY_TOKEN: ${PROXY_TOKEN}  # REDACTED — real value on box
+      PYTHONUNBUFFERED: "1"
+    volumes:
+      - smoltingdata:/sources/smolting:ro
+      - hermesdata:/sources/hermes:ro
+      - /home/umbrel/redacted-chan/data:/sources/redacted-chan:ro
+      - refinerymodels:/models
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    restart: always
+    network_mode: host
+
+  builder:
+    build:
+      context: /home/umbrel/swarm/redactedbuilder-telegram-bot
+      dockerfile: Dockerfile
+    container_name: swarm-builder
+    env_file:
+      - .env.builder
+    volumes:
+      - builderdata:/data
+    depends_on:
+      redis:
+        condition: service_healthy
+    restart: always
+    network_mode: host
+
+  redacted-proxy:
+    build:
+      context: /home/umbrel/swarm/redacted-proxy
+      dockerfile: Dockerfile
+    container_name: swarm-redacted-proxy
+    env_file:
+      - .env
+    environment:
+      PORT: "7080"
+      REDIS_URL: redis://127.0.0.1:6379
+      PRIVACY_MODE: anonymous
+      UPSTREAM_PROXY: "http://127.0.0.1:8888"
+      PYTHONUNBUFFERED: "1"
+    restart: always
+    network_mode: host
+
+
+  gluetun:
+    image: qmcgaw/gluetun:latest
+    container_name: swarm-gluetun
+    cap_add:
+      - NET_ADMIN
+    devices:
+      - /dev/net/tun:/dev/net/tun
+    ports:
+      - "127.0.0.1:8888:8888"
+    env_file:
+      - .env.gluetun
+    environment:
+      VPN_SERVICE_PROVIDER: mullvad
+      VPN_TYPE: wireguard
+      SERVER_COUNTRIES: Switzerland
+      HTTPPROXY: "on"
+      HTTPPROXY_LISTENING_ADDRESS: ":8888"
+      FIREWALL_OUTBOUND_SUBNETS: 172.16.0.0/12,192.168.0.0/16,10.0.0.0/8
+    restart: always
+
+volumes:
+  builderdata:
+  refinerymodels:
+  pgdata:
+  smoltingdata:
+  redisdata:
+  qdrantdata:
+  hermesdata:

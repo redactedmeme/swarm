@@ -3,6 +3,7 @@ import os
 import logging
 import asyncio
 import json
+import sys
 import threading
 from pathlib import Path
 from datetime import datetime
@@ -23,6 +24,9 @@ _REPO_ROOT = _BOT_DIR.parent
 _PYTHON_PATH = _BOT_DIR / "python" if (_BOT_DIR / "python").exists() else _REPO_ROOT / "python"
 if str(_PYTHON_PATH) not in _sys.path:
     _sys.path.insert(0, str(_PYTHON_PATH))
+from tg_fmt import TgFmt, from_llm, truncate
+
+fmt = TgFmt("HTML")
 
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import (
@@ -2732,6 +2736,15 @@ def main():
         Notifies admin via Telegram if ADMIN_CHAT_ID is set.
         """
         try:
+            # Refresh liveness heartbeat every poll (600s TTL) so smolting doesn't
+            # read as offline in the dashboard / webchat /agents / refinery /liveness.
+            # The startup-only heartbeat expires after 10 min otherwise.
+            try:
+                swarm_inbox.heartbeat("smolting", {"status": "online", "role": "telegram+moltbook"})
+                swarm_inbox.heartbeat("redactedintern", {"status": "online", "role": "telegram+moltbook", "alias": "smolting"})
+            except Exception:
+                pass
+
             pending = swarm_inbox.read_pending(for_agent="redactedintern")
             for msg in pending:
                 msg_id   = msg.get("id", "")
@@ -3124,6 +3137,13 @@ def main():
         asyncio.run(_run())
     else:
         logger.info("WEBHOOK_URL not set; running with polling (local dev).")
+        if swarm_mesh:
+            async def _start_mesh_polling(context):
+                async def _mesh_llm_call(messages):
+                    return await bot.llm.chat_completion(messages)
+                asyncio.create_task(swarm_mesh.heartbeat_loop(_mesh_llm_call))
+                logger.info("[swarm_mesh] mesh heartbeat started (polling mode, thought dispatch enabled)")
+            application.job_queue.run_once(_start_mesh_polling, when=5, name="swarm_mesh_start")
         application.run_polling()
 
 
