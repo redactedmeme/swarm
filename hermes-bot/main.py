@@ -115,12 +115,16 @@ async def _amain() -> None:
     # 4. Scheduler
     scheduler = AsyncIOScheduler()
     if oracle:
+        # POST_ON_START only decides whether the first post fires immediately. Passing
+        # next_run_time=None for the "no" case adds the job PAUSED in APScheduler, so it
+        # never fired at all — omit the kwarg instead and let the interval schedule it.
+        _post_kw = ({"next_run_time": datetime.now(timezone.utc)} if POST_ON_START else {})
         scheduler.add_job(
             oracle.autonomous_post,
             "interval",
             minutes=POST_INTERVAL_MIN,
             id="oracle_post",
-            next_run_time=datetime.now(timezone.utc) if POST_ON_START else None,
+            **_post_kw,
         )
         scheduler.add_job(
             oracle.scan_and_comment,
