@@ -57,8 +57,12 @@ def mem0_dir() -> Path:
 
 
 def vault_dir() -> Path:
-    """Markdown knowledge vault."""
-    env = os.getenv("SWARM_VAULT_DIR")
+    """Markdown knowledge vault.
+
+    `VAULT_PATH` is accepted as well as `SWARM_VAULT_DIR`: services that bundle
+    their own copy of the vault (smolting ships one in its image) already set it.
+    """
+    env = os.getenv("SWARM_VAULT_DIR") or os.getenv("VAULT_PATH")
     return Path(env) if env else repo_root() / "vault"
 
 

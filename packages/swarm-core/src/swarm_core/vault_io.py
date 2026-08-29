@@ -12,7 +12,8 @@ from datetime import datetime, timezone, timedelta
 from pathlib import Path
 from typing import Optional
 
-_VAULT_ROOT = Path(__file__).resolve().parent
+from swarm_core.paths import vault_dir as _vault_dir
+_VAULT_ROOT = _vault_dir()
 
 
 # ── Helpers ────────────────────────────────────────────────────────────────────
