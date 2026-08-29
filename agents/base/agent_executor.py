@@ -8,9 +8,17 @@ from datetime import datetime
 import numpy as np  # required for affective resonance curve
 
 # Swarm core dependencies
-from plugins.mem0_memory.mem0_wrapper import add_memory  # atomic + timestamped
-from lib.kernel.hyperbolic_scheduler import HyperbolicScheduler
-from core.pattern_blue_state import PatternBlueState  # curvature tracking
+try:  # plugins/mem0-memory is hyphenated, so it is imported by path
+    import sys as _sys
+    from swarm_core.paths import mem0_dir as _mem0_dir
+    if str(_mem0_dir()) not in _sys.path:
+        _sys.path.insert(0, str(_mem0_dir()))
+    from mem0_wrapper import add_memory
+except Exception:  # plugin absent — memory writes degrade to no-ops
+    def add_memory(*_a, **_kw):
+        return None  # atomic + timestamped
+from swarm_core.kernel.hyperbolic_scheduler import HyperbolicScheduler
+from swarm_core.engine.pattern_blue_state import PatternBlueState  # curvature tracking
 
 @dataclass
 class AgentProcess:

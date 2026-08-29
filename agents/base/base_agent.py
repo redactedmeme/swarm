@@ -9,8 +9,16 @@ from abc import ABC, abstractmethod
 from typing import List, Dict, Any, Optional
 
 # Swarm core dependencies
-from plugins.mem0_memory.mem0_wrapper import add_memory  # atomic persistence
-from core.pattern_blue_state import PatternBlueState     # curvature & depth tracking
+try:  # plugins/mem0-memory is hyphenated, so it is imported by path
+    import sys as _sys
+    from swarm_core.paths import mem0_dir as _mem0_dir
+    if str(_mem0_dir()) not in _sys.path:
+        _sys.path.insert(0, str(_mem0_dir()))
+    from mem0_wrapper import add_memory
+except Exception:  # plugin absent — memory writes degrade to no-ops
+    def add_memory(*_a, **_kw):
+        return None  # atomic persistence
+from swarm_core.engine.pattern_blue_state import PatternBlueState     # curvature & depth tracking
 
 # Configure logging
 logger = logging.getLogger(__name__)

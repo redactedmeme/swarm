@@ -1,17 +1,22 @@
+# Root image: the swarm delegation executor.
+#
+# NOTE: this is NOT the image for any of the per-service deployments — each
+# service has its own Dockerfile under its own directory. Historically this
+# image was picked up by mistake for services deployed from the repo root,
+# which crash-looped them, because its CMD is the delegation executor and
+# nothing else. Check the service's rootDirectory before assuming this builds.
 FROM python:3.11-slim
 
 WORKDIR /app
-
-# Copy project files
 COPY . .
 
-# Install Python dependencies (if they exist)
-RUN pip install --no-cache-dir -r requirements.txt 2>/dev/null || echo "No requirements.txt, proceeding with standard library"
+# swarm_core replaces the former repo-root python/ directory.
+RUN pip install --no-cache-dir ./packages/swarm-core ./packages/swarm-tg
 
-# Set environment
 ENV PYTHONUNBUFFERED=1
 ENV LOG_LEVEL=INFO
 ENV SWARM_MODE=delegation
+ENV SWARM_DATA_DIR=/app/fs
 
-# Run delegation executor
-CMD ["python", "python/hermes_delegation_executor.py", "--manifest", "fs/clawtasks_v1.json", "--mode", "dispatch"]
+CMD ["python", "-m", "swarm_core.hermes_delegation_executor", \
+     "--manifest", "fs/clawtasks_v1.json", "--mode", "dispatch"]

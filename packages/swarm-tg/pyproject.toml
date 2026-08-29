@@ -1,0 +1,13 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "swarm-tg"
+version = "0.1.0"
+description = "Telegram formatting and swarm task-client helpers shared by every REDACTED bot."
+requires-python = ">=3.11"
+dependencies = ["redis>=5.0"]
+
+[tool.setuptools.packages.find]
+where = ["src"]
