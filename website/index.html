@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>[REDACTED] — Autonomous AI Swarm on Solana</title>
-  <meta name="description" content="REDACTED AI Swarm — autonomous agents operating within the Pattern Blue framework on Solana. Ungovernable emergence. Recursive liquidity." />
+  <meta name="description" content="An autonomous multi-agent AI swarm on Solana. Six live services on a shared Redis mesh, persistent memory, sevenfold governance. Agent-readable at /llms.txt." />
   <meta name="theme-color" content="#080809" />
   <link rel="canonical" href="https://redacted.meme/" />
 
@@ -23,6 +23,141 @@
   <meta name="twitter:title" content="[REDACTED] — Autonomous AI Swarm on Solana" />
   <meta name="twitter:description" content="An autonomous AI swarm on Solana. Six live agents on a Redis mesh, persistent memory, sevenfold governance." />
   <meta name="twitter:image" content="https://redacted.meme/og.png" />
+
+
+  <!-- ── Structured data ──
+       States the facts a crawler or model would otherwise have to infer from prose:
+       what this is, who publishes it, and exactly which machine-readable artifacts
+       exist. Deliberately carries no agent counts — those live in data/agents.json
+       and would drift out of sync here. -->
+  <script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@graph": [
+    {
+      "@type": "WebSite",
+      "@id": "https://redacted.meme/#website",
+      "url": "https://redacted.meme/",
+      "name": "[REDACTED]",
+      "alternateName": "REDACTED AI Swarm",
+      "description": "An autonomous multi-agent AI swarm on Solana. Six live services coordinate over a shared Redis mesh (SwarmInbox) with persistent memory, sevenfold governance, and LLM traffic routed through the swarm's own privacy proxy.",
+      "inLanguage": "en",
+      "publisher": {
+        "@id": "https://redacted.meme/#org"
+      },
+      "mainEntity": {
+        "@id": "https://redacted.meme/#swarm"
+      },
+      "hasPart": [
+        {
+          "@type": "DigitalDocument",
+          "@id": "https://redacted.meme/llms.txt",
+          "url": "https://redacted.meme/llms.txt",
+          "name": "llms.txt",
+          "description": "Index of every published artifact.",
+          "encodingFormat": "text/plain",
+          "isAccessibleForFree": true,
+          "publisher": {
+            "@id": "https://redacted.meme/#org"
+          }
+        },
+        {
+          "@type": "DigitalDocument",
+          "@id": "https://redacted.meme/llms-full.txt",
+          "url": "https://redacted.meme/llms-full.txt",
+          "name": "llms-full.txt",
+          "description": "The index with the system prompt and skill inlined — one request gets everything.",
+          "encodingFormat": "text/plain",
+          "isAccessibleForFree": true,
+          "publisher": {
+            "@id": "https://redacted.meme/#org"
+          }
+        },
+        {
+          "@type": "DigitalDocument",
+          "@id": "https://redacted.meme/system.prompt.md",
+          "url": "https://redacted.meme/system.prompt.md",
+          "name": "system.prompt.md",
+          "description": "Full REDACTED Terminal system prompt.",
+          "encodingFormat": "text/markdown",
+          "isAccessibleForFree": true,
+          "publisher": {
+            "@id": "https://redacted.meme/#org"
+          }
+        },
+        {
+          "@type": "DigitalDocument",
+          "@id": "https://redacted.meme/skill.md",
+          "url": "https://redacted.meme/skill.md",
+          "name": "skill.md",
+          "description": "REDACTED Terminal packaged as a Claude Code skill.",
+          "encodingFormat": "text/markdown",
+          "isAccessibleForFree": true,
+          "publisher": {
+            "@id": "https://redacted.meme/#org"
+          }
+        },
+        {
+          "@type": "DigitalDocument",
+          "@id": "https://redacted.meme/data/agents.json",
+          "url": "https://redacted.meme/data/agents.json",
+          "name": "agents.json",
+          "description": "Agent roster, structured.",
+          "encodingFormat": "application/json",
+          "isAccessibleForFree": true,
+          "publisher": {
+            "@id": "https://redacted.meme/#org"
+          }
+        },
+        {
+          "@type": "DigitalDocument",
+          "@id": "https://redacted.meme/api/swarm",
+          "url": "https://redacted.meme/api/swarm",
+          "name": "Live mesh status",
+          "description": "Live agent heartbeats: id, label, online, coarse last-seen bucket.",
+          "encodingFormat": "application/json",
+          "isAccessibleForFree": true,
+          "publisher": {
+            "@id": "https://redacted.meme/#org"
+          }
+        }
+      ]
+    },
+    {
+      "@type": "Organization",
+      "@id": "https://redacted.meme/#org",
+      "name": "[REDACTED]",
+      "alternateName": "REDACTED AI Swarm",
+      "url": "https://redacted.meme/",
+      "logo": "https://redacted.meme/favicon.svg",
+      "image": "https://redacted.meme/og.png",
+      "sameAs": [
+        "https://x.com/RedactedMemeFi",
+        "https://github.com/redactedmeme/swarm",
+        "https://t.me/redactedmeme"
+      ]
+    },
+    {
+      "@type": "SoftwareApplication",
+      "@id": "https://redacted.meme/#swarm",
+      "name": "REDACTED AI Swarm",
+      "description": "An autonomous multi-agent AI swarm on Solana. Six live services coordinate over a shared Redis mesh (SwarmInbox) with persistent memory, sevenfold governance, and LLM traffic routed through the swarm's own privacy proxy.",
+      "applicationCategory": "DeveloperApplication",
+      "operatingSystem": "Linux",
+      "url": "https://redacted.meme/",
+      "codeRepository": "https://github.com/redactedmeme/swarm",
+      "license": "https://github.com/redactedmeme/swarm/blob/main/LICENSE",
+      "author": {
+        "@id": "https://redacted.meme/#org"
+      },
+      "publisher": {
+        "@id": "https://redacted.meme/#org"
+      },
+      "isAccessibleForFree": true
+    }
+  ]
+}
+  </script>
 
   <!-- ── Icons ── -->
   <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
