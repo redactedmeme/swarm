@@ -130,7 +130,7 @@ their content genuinely doesn't change.
 | `SWARM_STATUS_TIMEOUT` | `4` | Upstream fetch timeout, seconds. |
 | `SWARM_CACHE_TTL` | `30` | How long a status response is reused. |
 
-The upstream service lives in [`../swarm-status/`](../swarm-status/) and runs on the
+The upstream service lives in [`../apps/status/`](../apps/status/) and runs on the
 umbrel node next to the mesh Redis. `serve.py` re-projects its response onto exactly
 the four fields the page renders, so anything the upstream adds later stays off the
 public surface until it is deliberately allowed through.

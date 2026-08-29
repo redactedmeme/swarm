@@ -28,9 +28,8 @@ from datetime import datetime, timezone
 
 from aiohttp import web
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "vendor"))
 
-from swarm_heartbeat import (  # noqa: E402
+from swarm_core.swarm_heartbeat import (
     HEARTBEAT_LOOKUP_KEYS,
     heartbeat_redis_key,
     parse_heartbeat_value,
