@@ -45,6 +45,38 @@ AGENTS = {
 
 ALLOWED_TASK_SENDERS = {"redacted-chan"}
 
+# Broadcast fan-out targets. AGENTS is a static roster and has drifted from reality —
+# it still lists three agents that were never deployed (redactedgovimprover,
+# mandalaasettler, redactedbankrbot) and omits one that was (smolting). Fanning a
+# broadcast to a name that never runs writes an index entry nobody ever reaps, because
+# reap-on-read only fires when *that* agent reads its own queue. Three such queues had
+# accumulated ~93k orphan entries each before this was caught.
+#
+# So target agents with a live heartbeat instead: the roster then maintains itself as
+# agents come and go, and a name that stops running stops receiving.
+
+
+def _live_agents(r) -> set[str]:
+    """Agents with an unexpired heartbeat key. Empty set if the scan fails."""
+    try:
+        return {k.split(":")[-1] for k in r.scan_iter(match="swarm:heartbeat:*", count=100)}
+    except Exception:
+        return set()
+
+
+def _broadcast_targets(r) -> set[str]:
+    """Who a `to="all"` message is indexed for.
+
+    Falls back to the static roster when no heartbeats are visible — a momentary Redis
+    hiccup must not silently deliver a broadcast to nobody.
+    """
+    return (_live_agents(r) & AGENTS) or set(AGENTS)
+
+
+def _cleanup_keys(r) -> set[str]:
+    """Every queue a msg id might be indexed in, for removal on claim/complete."""
+    return set(AGENTS) | _live_agents(r)
+
 _DONE_TTL = 7 * 86400
 
 
@@ -74,7 +106,7 @@ def _write_message(from_agent: str, to_agent: str, msg_type: str,
     pipe.set(f"swarm:msg:{msg_id}", json.dumps(doc, ensure_ascii=False))
     score = time.time()
     if to_agent == "all":
-        for a in AGENTS:
+        for a in _broadcast_targets(r):
             pipe.zadd(f"swarm:pending:{a}", {msg_id: score})
     else:
         pipe.zadd(f"swarm:pending:{to_agent}", {msg_id: score})
@@ -124,7 +156,7 @@ def _claim_message(msg_id: str) -> bool:
     doc["status"] = "processing"
     doc["claimed_at"] = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
     r.set(f"swarm:msg:{msg_id}", json.dumps(doc, ensure_ascii=False))
-    for a in AGENTS:
+    for a in _cleanup_keys(r):
         r.zrem(f"swarm:pending:{a}", msg_id)
     return True
 

@@ -390,6 +390,13 @@ async def poll_loop():
                     elif msg.get("type") == "heartbeat":
                         # Ack and skip
                         inbox_tools._complete_message(msg["id"], result={"ack": True})
+                    else:
+                        # Not ours: `thought` belongs to main.py's _inbox_poll, which
+                        # owns the LLM reply path. Say so out loud — silently reading
+                        # and dropping a type left 102 thoughts pending since 08-02,
+                        # re-read every 15s, with nothing in the log to show for it.
+                        logger.debug("[manager] skipping %s id=%s (not handled here)",
+                                     msg.get("type"), msg.get("id"))
             else:
                 logger.debug("[manager] No pending messages")
 

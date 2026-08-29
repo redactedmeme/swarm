@@ -310,14 +310,12 @@ async def _amain() -> None:
             "interval",
             seconds=60,
             id="hermes_inbox_poll",
-            next_run_time=None,
         )
         scheduler.add_job(
             _initiate_thought,
             "interval",
             seconds=int(_thought_interval_h * 3600),
             id="hermes_thought_initiate",
-            next_run_time=None,
         )
         logger.info("[swarm_inbox] Polling loop scheduled: every 60s")
         logger.info("[thought] hermes will initiate thoughts every %.1fh → %s",
