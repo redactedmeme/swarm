@@ -25,9 +25,14 @@ from pathlib import Path
 from typing import Optional
 
 import requests
+from swarm_core.paths import (
+    repo_root as _repo_root,
+    data_dir as _data_dir,
+    mem0_dir as _mem0_dir,
+)
 
 # ── Paths ─────────────────────────────────────────────────────────────────────
-SKILLS_DIR = Path(__file__).resolve().parent.parent / "skills"
+SKILLS_DIR = _repo_root() / 'skills'
 SKILLS_DIR.mkdir(exist_ok=True)
 
 GITHUB_RAW = "https://raw.githubusercontent.com"

@@ -17,6 +17,11 @@ import json
 import threading
 from pathlib import Path
 from typing import Optional
+from swarm_core.paths import (
+    repo_root as _repo_root,
+    data_dir as _data_dir,
+    mem0_dir as _mem0_dir,
+)
 
 # ── Pending tweet queue (shard → tweet pipeline) ─────────────────────────────
 # Maps session_id → list of pending tweet drafts awaiting /tweet confirm
@@ -41,11 +46,12 @@ def pending_tweet_count(session_id: str) -> int:
         return len(_pending_tweets.get(session_id, []))
 
 # ── Path setup ────────────────────────────────────────────────────────────────
-TOOLS_DIR = str(Path(__file__).resolve().parent.parent / "python" / "tools")
+import swarm_core.tools as _swarm_tools
+TOOLS_DIR = str(Path(_swarm_tools.__file__).parent)
 if TOOLS_DIR not in sys.path:
     sys.path.insert(0, TOOLS_DIR)
 
-_MEM0_DIR = str(Path(__file__).resolve().parent.parent / "plugins" / "mem0-memory")
+_MEM0_DIR = str(_mem0_dir())
 if _MEM0_DIR not in sys.path:
     sys.path.insert(0, _MEM0_DIR)
 
@@ -72,7 +78,7 @@ except Exception:
 # to this file's real location — so character lookups here always raised
 # FileNotFoundError and silently fell through. Fixed to the same repo-root
 # relative path agents/base/loader.py's load_all_agents() uses.
-_REPO_ROOT  = Path(__file__).resolve().parent.parent.parent
+_REPO_ROOT  = _repo_root()
 _NODES_DIR  = _REPO_ROOT / "agents" / "nodes"
 _AGENTS_DIR = _REPO_ROOT / "agents" / "characters"
 
@@ -583,9 +589,6 @@ def dispatch(cmd: str) -> Optional[str]:
 
     if verb == '/organism':
         try:
-            _kernel_dir = str(Path(__file__).resolve().parent.parent / 'kernel')
-            if _kernel_dir not in sys.path:
-                sys.path.insert(0, _kernel_dir)
             from swarm_core.kernel.hyperbolic_kernel import HyperbolicKernel
             kernel = HyperbolicKernel()
             org = kernel.organism
@@ -612,9 +615,6 @@ def dispatch(cmd: str) -> Optional[str]:
         # Special sub-command: /observe pattern — live 7-dimension readout
         if target.lower() == 'pattern':
             try:
-                _kernel_dir = str(Path(__file__).resolve().parent.parent / 'kernel')
-                if _kernel_dir not in sys.path:
-                    sys.path.insert(0, _kernel_dir)
                 from swarm_core.kernel.hyperbolic_kernel import HyperbolicKernel
                 import math
                 kernel = HyperbolicKernel()
@@ -703,7 +703,7 @@ def dispatch(cmd: str) -> Optional[str]:
     # ── Spaces ────────────────────────────────────────────────────────────────
 
     if verb == '/space':
-        spaces_dir = Path(__file__).resolve().parent.parent / 'spaces'
+        spaces_dir = _repo_root() / 'spaces'
         sub = parts[1] if len(parts) > 1 else 'list'
 
         if sub == 'list':
@@ -743,7 +743,7 @@ def dispatch(cmd: str) -> Optional[str]:
         proposal = ' '.join(parts[1:]) if len(parts) > 1 else ''
         if not proposal:
             return "[TOOL] Usage: /committee <proposal text>"
-        committee_path = Path(__file__).resolve().parent.parent / 'nodes' / 'SevenfoldCommittee.json'
+        committee_path = _repo_root() / 'nodes' / 'SevenfoldCommittee.json'
         if not committee_path.exists():
             return "[TOOL ERROR] committee: SevenfoldCommittee.json not found"
         try:
@@ -755,7 +755,7 @@ def dispatch(cmd: str) -> Optional[str]:
     # ── Node discovery / launch ───────────────────────────────────────────────
 
     if verb == '/node':
-        nodes_dir = Path(__file__).resolve().parent.parent / 'nodes'
+        nodes_dir = _repo_root() / 'nodes'
         sub = parts[1].lower() if len(parts) > 1 else 'list'
 
         if sub == 'list':
@@ -783,7 +783,8 @@ def dispatch(cmd: str) -> Optional[str]:
             if not candidates:
                 return f"[TOOL:node_summon] no node matching '{node_name}'"
             node_file = candidates[0]
-            python_dir = Path(__file__).resolve().parent.parent / 'python'
+            import swarm_core as _sc
+            python_dir = Path(_sc.__file__).parent.parent
             import subprocess as _subprocess
             env = os.environ.copy()
             env['PYTHONPATH'] = str(python_dir) + os.pathsep + env.get('PYTHONPATH', '')
@@ -811,7 +812,7 @@ def dispatch(cmd: str) -> Optional[str]:
         try:
             import hashlib as _hashlib
             import time as _time
-            _scarify_dir = str(Path(__file__).resolve().parent.parent / 'committeerituals')
+            _scarify_dir = str(_repo_root() / 'committeerituals')
             if _scarify_dir not in sys.path:
                 sys.path.insert(0, _scarify_dir)
             from x402_sigil_scarifier import (
@@ -1055,7 +1056,7 @@ def dispatch(cmd: str) -> Optional[str]:
     if verb == '/contract':
         sub = parts[1].lower() if len(parts) > 1 else 'status'
         try:
-            _contracts_dir = str(Path(__file__).resolve().parent.parent / 'contracts')
+            _contracts_dir = str(_repo_root() / 'contracts')
             _contract_path = str(Path(_contracts_dir) / 'interface_contract_v1-initial.json')
             from swarm_core.negotiation_engine import NegotiationEngine
             engine = NegotiationEngine(_contract_path)
@@ -1190,7 +1191,7 @@ def dispatch(cmd: str) -> Optional[str]:
     if verb == '/sigil':
         sub = parts[1].lower() if len(parts) > 1 else 'log'
         try:
-            _sigil_dir = str(Path(__file__).resolve().parent.parent / 'sigils')
+            _sigil_dir = str(_repo_root() / 'sigils')
             if _sigil_dir not in sys.path:
                 sys.path.insert(0, _sigil_dir)
             from sigil_pact_aeon import SigilPactAeon
@@ -1274,9 +1275,6 @@ def dispatch(cmd: str) -> Optional[str]:
         sub = parts[1].lower() if len(parts) > 1 else 'enter'
         session_id = os.environ.get('_DISPATCH_SESSION_ID', 'swarm')
         try:
-            _sim_dir = str(Path(__file__).resolve().parent.parent / 'python')
-            if _sim_dir not in sys.path:
-                sys.path.insert(0, _sim_dir)
             import swarm_core.noclip_simulator as _chamber
         except Exception as e:
             return f"[TOOL ERROR] chamber: could not load noclip_simulator — {e}"
@@ -1307,7 +1305,7 @@ def dispatch(cmd: str) -> Optional[str]:
 
         if sub == 'stats':
             # Show ingestion index stats
-            _index_path = Path(__file__).resolve().parent.parent / 'fs' / 'smolting_log_index.json'
+            _index_path = _data_dir() / 'smolting_log_index.json'
             if not _index_path.exists():
                 return (
                     "[TOOL:smolting_stats] no smolting logs ingested yet\n"
@@ -1515,9 +1513,6 @@ def status() -> dict:
     # Φ approximation from live kernel state (graceful failure)
     try:
         import math as _math
-        _kernel_dir = str(Path(__file__).resolve().parent.parent / 'kernel')
-        if _kernel_dir not in sys.path:
-            sys.path.insert(0, _kernel_dir)
         from swarm_core.kernel.hyperbolic_kernel import HyperbolicKernel
         _k = HyperbolicKernel()
         _org = _k.organism
