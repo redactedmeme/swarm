@@ -11,3 +11,9 @@ __pycache__/
 *.pyc
 node_modules/
 .git/
+
+# Reorg: nothing below is needed inside a service build context.
+infra/
+arb-keeper/
+docs/
+handoff.md
