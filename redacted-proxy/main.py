@@ -108,6 +108,30 @@ logger = logging.getLogger(__name__)
 # ── Config ────────────────────────────────────────────────────────────────────
 
 PROXY_TOKEN         = os.getenv("PROXY_TOKEN", "")
+# Name attributed to requests that authenticate with the legacy shared PROXY_TOKEN and
+# send no X-Client header. As projects migrate to their own tokens (PROXY_TOKEN_MAP) or
+# start sending X-Client, their traffic splits out of this bucket.
+PROXY_TOKEN_NAME    = os.getenv("PROXY_TOKEN_NAME", "shared").strip() or "shared"
+# Per-project bearer tokens: JSON {"<token>": "<project_name>"}. Each mapped token both
+# authenticates AND attributes usage to its project. The shared PROXY_TOKEN still works.
+def _load_token_map() -> dict[str, str]:
+    raw = os.getenv("PROXY_TOKEN_MAP", "").strip()
+    if not raw:
+        return {}
+    try:
+        m = json.loads(raw)
+        return {str(k): str(v) for k, v in m.items() if k and v}
+    except Exception:
+        logger.warning("[proxy] PROXY_TOKEN_MAP invalid JSON — ignoring")
+        return {}
+_TOKEN_MAP = _load_token_map()
+# Admin token for /usage mutations (reset). Defaults to the shared PROXY_TOKEN.
+ADMIN_TOKEN         = os.getenv("ADMIN_TOKEN", "").strip() or PROXY_TOKEN
+# Per-project usage accounting (requests/tokens/cost) in Redis. Metadata only — no
+# prompt/response content — so it is compatible with every privacy mode.
+USAGE_ENABLED       = os.getenv("USAGE_ENABLED", "true").lower() not in ("false", "0", "no")
+USAGE_PREFIX        = os.getenv("USAGE_PREFIX", "proxy:usage:")
+USAGE_DAILY_TTL_DAYS = int(os.getenv("USAGE_DAILY_TTL_DAYS", "90"))
 DEFAULT_TEMPERATURE = os.getenv("DEFAULT_TEMPERATURE", "")
 DEFAULT_TOP_P       = os.getenv("DEFAULT_TOP_P", "")
 RATE_LIMIT_RPM      = int(os.getenv("RATE_LIMIT_RPM", "60"))
@@ -121,6 +145,20 @@ HEARTBEAT_TTL       = 600   # 10 min — proxy announces every 3 min so key stay
 # mullvad-ch → Mullvad exit) so provider traffic never leaves on the host's
 # home IP. socks5h/rdns keeps DNS inside the tunnel (no leak). Empty = direct.
 UPSTREAM_PROXY      = os.getenv("UPSTREAM_PROXY", "").strip()
+
+# Providers that must egress DIRECT (bypassing UPSTREAM_PROXY / the Mullvad exit),
+# because their edge (Cloudflare) blocks VPN/datacenter IPs. Groq returns
+# 403 {"message":"Access denied. Please check your network settings."} for the
+# Mullvad exit while the home IP reaches it fine, so Groq egresses direct. Content
+# is still PII-scrubbed before forwarding. Comma-separated provider names; add
+# "xai" here if xAI proves blocked too. Only matters when UPSTREAM_PROXY is set.
+DIRECT_EGRESS_PROVIDERS = {p.strip() for p in
+                           os.getenv("DIRECT_EGRESS_PROVIDERS", "groq").split(",") if p.strip()}
+
+# Reasoning effort cap for Groq gpt-oss models — they otherwise burn the whole token
+# budget on hidden reasoning and return empty content at the swarm's modest max_tokens.
+# "low" leaves room for the answer. Empty string disables the injection.
+GROQ_REASONING_EFFORT = os.getenv("GROQ_REASONING_EFFORT", "low").strip()
 
 # Modes that always enforce maximum privacy (no disk, forced scrub)
 _MAX_PRIVACY_MODES = {"maximum", "zero", "tee", "e2ee"}
@@ -373,18 +411,17 @@ _MODEL_ALIASES = {
 # Failover cascade when primary provider is unavailable
 _MODEL_EQUIVALENTS: dict[str, list[str]] = {
     # deepseek (OpenRouter primary) → Groq → Venice → xAI, in order of availability
-    "deepseek/deepseek-v4-flash": ["llama-3.3-70b", "llama-3.1-8b", "llama-3-3-70b", "grok-4-1-fast"],
-    "grok-4-1-fast":             ["llama-3.3-70b", "claude-opus", "gpt-4o"],
-    "grok-3-fast":               ["llama-3.3-70b", "gemma-4-uncensored"],
-    "llama-3.3-70b":             ["llama-3-3-70b", "gpt-4o", "claude-opus", "grok-4-1-fast"],
-    "llama-3.1-8b-instant":      ["gemma2-9b-it", "gpt-4o-mini", "claude-haiku"],
-    "claude-opus":               ["gpt-4o", "llama-3.3-70b"],
-    "claude-sonnet":             ["gpt-4o", "llama-3.1-8b"],
-    "claude-haiku":              ["gpt-4o-mini", "llama-3.1-8b-instant"],
-    "gpt-4o":                    ["claude-opus", "llama-3.3-70b"],
-    "gpt-4o-mini":               ["claude-haiku", "llama-3.1-8b-instant"],
-    "gemma-4-uncensored":        ["llama-3.3-70b", "gpt-4o"],
-    "nous-hermes-3-nitro":       ["llama-3.3-70b", "gpt-4o"],
+    "deepseek/deepseek-v4-flash": ["openai/gpt-oss-120b", "openai/gpt-oss-20b", "llama-3-3-70b"],
+    "grok-4-1-fast":             ["openai/gpt-oss-120b", "claude-opus", "gpt-4o"],
+    "grok-3-fast":               ["openai/gpt-oss-120b", "gemma-4-uncensored"],
+    "llama-3.3-70b":             ["llama-3-3-70b", "gpt-4o", "claude-opus"],
+    "claude-opus":               ["gpt-4o", "openai/gpt-oss-120b"],
+    "claude-sonnet":             ["gpt-4o", "openai/gpt-oss-20b"],
+    "claude-haiku":              ["gpt-4o-mini", "openai/gpt-oss-20b"],
+    "gpt-4o":                    ["claude-opus", "openai/gpt-oss-120b"],
+    "gpt-4o-mini":               ["claude-haiku", "openai/gpt-oss-20b"],
+    "gemma-4-uncensored":        ["openai/gpt-oss-120b", "gpt-4o"],
+    "nous-hermes-3-nitro":       ["openai/gpt-oss-120b", "gpt-4o"],
 }
 
 # Free-first cascade — tried in order before the originally-requested (paid) model.
@@ -392,10 +429,11 @@ _MODEL_EQUIVALENTS: dict[str, list[str]] = {
 # is the volume workhorse at 500K tok/day). OpenRouter ":free" ids follow. The list is
 # env-overridable because the OpenRouter free lineup rotates — validate ids against
 # https://openrouter.ai/api/v1/models when updating.
+# NOTE: this key's Groq lineup no longer includes the llama-3.x / gemma small models
+# (they 404 as model_not_found); the live Groq chat models are gpt-oss-{20b,120b} and
+# qwen3.6-27b. Keep only live ids here so the cascade doesn't burn round-trips on 404s.
 _FREE_CASCADE: list[str] = [m.strip() for m in os.getenv("FREE_CASCADE",
-    "llama-3.1-8b-instant,openai/gpt-oss-120b,openai/gpt-oss-20b,qwen/qwen3.6-27b,"
-    "llama-3.3-70b,"
-    "nvidia/nemotron-3.5-lightning:free,inclusionai/ling-3.0-tiny:free,"
+    "openai/gpt-oss-20b,openai/gpt-oss-120b,qwen/qwen3.6-27b,"
     "cohere/north-mini-code:free"
 ).split(",") if m.strip()]
 
@@ -411,7 +449,13 @@ _CASCADE_MODELS: set[str] = {m.strip() for m in os.getenv("CASCADE_MODELS",
 # and enters the free-first cascade at the cheapest capable tier (cost-first). Opt-in and
 # non-breaking: bots send model:"auto"; every other model id behaves exactly as before.
 _AUTO_MODELS: set[str] = {m.strip() for m in os.getenv("AUTO_MODELS", "auto").split(",") if m.strip()}
-_AUTO_CLASSIFIER_MODEL = os.getenv("AUTO_CLASSIFIER_MODEL", "llama-3.1-8b-instant")
+# Empty by default: no cheap non-reasoning model is currently available to act as a
+# 1-token difficulty classifier (Groq's llama/gemma small models were removed from the
+# key's lineup; the remaining Groq gpt-oss/qwen models are reasoning models that emit
+# empty content at tiny budgets; OpenRouter free is daily-rate-limited). With no model
+# set, the ambiguous middle band takes the medium tier directly. Set to a non-reasoning
+# model id to re-enable classification.
+_AUTO_CLASSIFIER_MODEL = os.getenv("AUTO_CLASSIFIER_MODEL", "")
 # Score bands: <= EASY_MAX → easy; >= HARD_MIN → hard; in between → classifier decides.
 _AUTO_EASY_MAX = int(os.getenv("AUTO_EASY_MAX", "3"))
 _AUTO_HARD_MIN = int(os.getenv("AUTO_HARD_MIN", "8"))
@@ -426,10 +470,10 @@ def _auto_tiers() -> dict[str, list[str]]:
     # Cost-first: cheapest capable free model first in each tier. All tiers share the
     # free-cascade tail + paid last resort (appended in _build_auto_chain).
     return {
-        "easy":   ["llama-3.1-8b-instant", "inclusionai/ling-3.0-tiny:free", "openai/gpt-oss-20b"],
-        "medium": ["openai/gpt-oss-120b", "openai/gpt-oss-20b", "qwen/qwen3.6-27b", "llama-3.3-70b"],
-        "hard":   ["llama-3.3-70b", "openai/gpt-oss-120b", "nvidia/nemotron-3.5-lightning:free"],
-        "code":   ["cohere/north-mini-code:free", "openai/gpt-oss-120b", "llama-3.3-70b"],
+        "easy":   ["openai/gpt-oss-20b", "qwen/qwen3.6-27b"],
+        "medium": ["openai/gpt-oss-120b", "openai/gpt-oss-20b", "qwen/qwen3.6-27b"],
+        "hard":   ["openai/gpt-oss-120b", "qwen/qwen3.6-27b"],
+        "code":   ["cohere/north-mini-code:free", "openai/gpt-oss-120b"],
     }
 _AUTO_TIERS = _auto_tiers()
 
@@ -460,7 +504,6 @@ _PROVIDER_COSTS: dict[str, dict[str, float]] = {
     "openrouter": {
         # ":free" ids are billed at $0 by OpenRouter.
         "nvidia/nemotron-3.5-lightning:free": {"input": 0.0, "output": 0.0},
-        "inclusionai/ling-3.0-tiny:free": {"input": 0.0, "output": 0.0},
         "cohere/north-mini-code:free": {"input": 0.0, "output": 0.0},
     },
     "anthropic": {
@@ -704,8 +747,39 @@ def _to_anthropic(payload: dict) -> dict:
     return body
 
 
+_THINK_RE = re.compile(r"<(think|thinking|reasoning)>.*?</\1>", re.DOTALL | re.IGNORECASE)
+
+
+def _strip_think(s: str) -> str:
+    """Strip inline <think>/<reasoning> traces that weaker fallback models leak
+    into `content` even when the reasoning param is honored elsewhere."""
+    if not s:
+        return s
+    try:
+        return _THINK_RE.sub("", s).strip()
+    except Exception:
+        return s
+
+
+def _clean_choices(result: dict) -> dict:
+    """Scrub reasoning traces from an OpenAI-shape response in place, and drop any
+    separate reasoning field so callers only ever see clean content."""
+    try:
+        for choice in result.get("choices", []):
+            msg = choice.get("message")
+            if not isinstance(msg, dict):
+                continue
+            if isinstance(msg.get("content"), str):
+                msg["content"] = _strip_think(msg["content"])
+            msg.pop("reasoning", None)
+            msg.pop("reasoning_content", None)
+    except Exception:
+        pass
+    return result
+
+
 def _from_anthropic(result: dict) -> dict:
-    text  = result.get("content", [{}])[0].get("text", "")
+    text  = _strip_think(result.get("content", [{}])[0].get("text", ""))
     usage = result.get("usage", {})
     return {
         "id":      result.get("id", ""),
@@ -801,12 +875,14 @@ async def _ring_purge_loop() -> None:
 
 # ── Core proxy ────────────────────────────────────────────────────────────────
 
-def _new_session() -> aiohttp.ClientSession:
+def _new_session(direct: bool = False) -> aiohttp.ClientSession:
     """Create a ClientSession for upstream provider calls. When UPSTREAM_PROXY is
     set, route through it (socks5h://… keeps DNS in-tunnel) so provider traffic
     egresses via the Mullvad exit rather than the host's home IP. Unset → direct,
-    identical to the previous behavior."""
-    if UPSTREAM_PROXY:
+    identical to the previous behavior. Pass direct=True to force a plain session
+    that bypasses the proxy (used for providers in DIRECT_EGRESS_PROVIDERS whose
+    edge blocks the Mullvad exit — see the Groq case)."""
+    if UPSTREAM_PROXY and not direct:
         if ProxyConnector is None:
             raise RuntimeError(
                 "UPSTREAM_PROXY is set but aiohttp_socks is not installed — "
@@ -851,11 +927,106 @@ async def _forward(provider: str, upstream_model: str, payload: dict,
                 # `content` (qwen) or emit a separate reasoning field — hide it so callers get
                 # clean content. Only these models accept the param (llama/gemma reject it).
                 body.setdefault("reasoning_format", "hidden")
+            if provider == "groq" and "gpt-oss" in _um_l:
+                # gpt-oss spends its token budget on hidden reasoning first, so at the modest
+                # max_tokens the swarm requests `content` comes back empty (→ counted as a
+                # failure → needless escalation to the paid tier). Capping reasoning effort at
+                # "low" leaves room for the actual answer. Validated: low → full content,
+                # default/medium → empty. Env-overridable (set GROQ_REASONING_EFFORT="" to skip).
+                if GROQ_REASONING_EFFORT:
+                    body.setdefault("reasoning_effort", GROQ_REASONING_EFFORT)
         async with session.post(url, json=body, headers=headers, timeout=aiohttp.ClientTimeout(total=90)) as resp:
             result = await resp.json(content_type=None)
             if "choices" not in result:
                 raise ValueError(f"{provider} error: {result.get('error', result)}")
-            return result
+            return _clean_choices(result)
+
+
+# ── Client attribution + usage accounting ─────────────────────────────────────
+
+_CLIENT_SANITIZE = re.compile(r"[^a-z0-9_.-]+")
+
+def _sanitize_client(name: str) -> str:
+    """Normalize a client/project label into a safe, bounded Redis-key segment."""
+    s = _CLIENT_SANITIZE.sub("-", name.strip().lower())[:64].strip("-")
+    return s or "unknown"
+
+def _known_token(token: str) -> bool:
+    return bool(token) and (token in _TOKEN_MAP or (PROXY_TOKEN and token == PROXY_TOKEN))
+
+def _resolve_client(token: str, request: web.Request) -> str:
+    """Hybrid attribution: a per-project token wins (un-spoofable); otherwise fall back
+    to a self-reported X-Client header; otherwise the shared-token bucket, else 'unknown'."""
+    if token in _TOKEN_MAP:
+        return _sanitize_client(_TOKEN_MAP[token])
+    hdr = request.headers.get("X-Client", "").strip()
+    if hdr:
+        return _sanitize_client(hdr)
+    if PROXY_TOKEN and token == PROXY_TOKEN:
+        return _sanitize_client(PROXY_TOKEN_NAME)
+    return "unknown"
+
+_usage_redis = None  # lazily-created shared async client
+
+async def _usage_redis_client():
+    global _usage_redis
+    if _usage_redis is None:
+        import redis.asyncio as aioredis
+        _usage_redis = aioredis.from_url(REDIS_URL, decode_responses=True)
+    return _usage_redis
+
+
+def _extract_usage(result: dict) -> tuple[int, int, bool]:
+    """(prompt_tokens, completion_tokens, exact) from an upstream response.
+
+    Handles the OpenAI-style (prompt_tokens/completion_tokens) and Anthropic-style
+    (input_tokens/output_tokens) spellings. exact=False means upstream sent no usable
+    usage block and the caller should fall back to its own estimate.
+    """
+    u = result.get("usage") or {}
+    if not isinstance(u, dict):
+        return 0, 0, False
+    pt = u.get("prompt_tokens", u.get("input_tokens"))
+    ct = u.get("completion_tokens", u.get("output_tokens"))
+    if isinstance(pt, int) and isinstance(ct, int) and (pt > 0 or ct > 0):
+        return pt, ct, True
+    return 0, 0, False
+
+
+async def _record_usage(client: str, provider: str, model: str,
+                        prompt_tokens: int, completion_tokens: int,
+                        cost_usd: float, error: bool = False,
+                        exact: bool = True) -> None:
+    """Best-effort per-project usage accounting in Redis (metadata only). Never raises."""
+    if not USAGE_ENABLED:
+        return
+    try:
+        r = await _usage_redis_client()
+        base = f"{USAGE_PREFIX}client:{client}"
+        pipe = r.pipeline()
+        pipe.sadd(f"{USAGE_PREFIX}clients", client)
+        if error:
+            pipe.hincrby(base, "errors", 1)
+        else:
+            pipe.hincrby(base, "requests", 1)
+            pipe.hincrby(base, "prompt_tokens", prompt_tokens)
+            pipe.hincrby(base, "completion_tokens", completion_tokens)
+            pipe.hincrbyfloat(base, "cost_usd", cost_usd)
+            pipe.hincrby(f"{base}:models", f"{provider}/{model}", 1)
+            # Track how many requests fell back to estimated tokens, so the totals above
+            # can be read as "exact unless this is non-zero".
+            if not exact:
+                pipe.hincrby(base, "estimated_requests", 1)
+            day = time.strftime("%Y-%m-%d", time.gmtime())
+            dkey = f"{base}:daily:{day}"
+            pipe.hincrby(dkey, "requests", 1)
+            pipe.hincrby(dkey, "prompt_tokens", prompt_tokens)
+            pipe.hincrby(dkey, "completion_tokens", completion_tokens)
+            pipe.hincrbyfloat(dkey, "cost_usd", cost_usd)
+            pipe.expire(dkey, USAGE_DAILY_TTL_DAYS * 86400)
+        await pipe.execute()
+    except Exception as e:
+        logger.debug("[usage] record failed: %s", e)
 
 
 # ── Auth middleware ───────────────────────────────────────────────────────────
@@ -864,15 +1035,18 @@ async def _auth_middleware(app, handler):
     async def middleware(request: web.Request):
         if request.path in ("/health", "/v1/models", "/privacy", "/debug/egress"):
             return await handler(request)
-        if PROXY_TOKEN:
+        if PROXY_TOKEN or _TOKEN_MAP:
             auth = request.headers.get("Authorization", "")
             token = auth.removeprefix("Bearer ").strip()
-            if token != PROXY_TOKEN:
+            if not _known_token(token):
                 return web.json_response(
                     {"error": {"message": "Unauthorized", "type": "auth_error"}}, status=401)
             if not _check_rate_limit(token):
                 return web.json_response(
                     {"error": {"message": "Rate limit exceeded", "type": "rate_limit_error"}}, status=429)
+            # Attribute this request to a project for usage accounting.
+            request["client"] = _resolve_client(token, request)
+            request["is_admin"] = bool(ADMIN_TOKEN) and token == ADMIN_TOKEN
         return await handler(request)
     return middleware
 
@@ -1065,6 +1239,12 @@ async def _classify_difficulty(messages: list, payload: dict) -> tuple[str, bool
     # Ambiguous middle. Don't add latency before a stream — use the medium tier.
     if payload.get("stream"):
         return "medium", code_dominant, False
+    # No classifier configured (AUTO_CLASSIFIER_MODEL="") — skip the extra call and
+    # take the medium tier. Reasoning models (Groq gpt-oss/qwen) can't act as a
+    # 1-token classifier (hidden reasoning eats the budget → empty content), so
+    # there is currently no cheap non-reasoning model to route this to.
+    if not _AUTO_CLASSIFIER_MODEL:
+        return "medium", code_dominant, False
     last_user = ""
     for m in reversed(messages):
         if isinstance(m, dict) and m.get("role") == "user":
@@ -1080,13 +1260,17 @@ async def _classify_difficulty(messages: list, payload: dict) -> tuple[str, bool
     body = {"model": _AUTO_CLASSIFIER_MODEL, "messages": preview, "max_tokens": 1, "temperature": 0}
     try:
         prov, um = _resolve_provider(_AUTO_CLASSIFIER_MODEL, "")
-        async with _new_session() as s:
+        async with _new_session(direct=prov in DIRECT_EGRESS_PROVIDERS) as s:
             res = await asyncio.wait_for(_forward(prov, um, body, s), timeout=6)
         letter = (res.get("choices", [{}])[0].get("message", {}).get("content", "") or "").strip().upper()[:1]
         return ("hard" if letter == "H" else "easy"), code_dominant, True
     except Exception as _e:
         logger.warning("[proxy] auto classifier failed (%s) — medium fallback", _e)
         return "medium", code_dominant, False  # still free; failover escalates if needed
+
+
+class _CascadeExhausted(RuntimeError):
+    """Every candidate in the failover chain failed; carries the last upstream error."""
 
 
 def _build_auto_chain(tier: str, code_dominant: bool) -> tuple[list[tuple[str, str]], str]:
@@ -1120,7 +1304,7 @@ async def handle_chat_completions(request: web.Request) -> web.Response:
     if validation_err:
         return web.json_response({"error": {"message": validation_err, "type": "invalid_request_error"}}, status=400)
 
-    model    = payload.get("model", "llama-3.1-8b-instant")
+    model    = payload.get("model", "openai/gpt-oss-20b")
     explicit = request.headers.get("X-Provider", "")
 
     # Auto-router: when model is "auto" (and no provider is pinned), classify the prompt
@@ -1130,7 +1314,7 @@ async def handle_chat_completions(request: web.Request) -> web.Response:
     if not explicit and model in _AUTO_MODELS:
         tier, code_dominant, used_llm = await _classify_difficulty(payload.get("messages", []), payload)
         _chain, auto_tier = _build_auto_chain(tier, code_dominant)
-        provider, upstream_model = _chain[0] if _chain else ("groq", "llama-3.1-8b-instant")
+        provider, upstream_model = _chain[0] if _chain else ("groq", "openai/gpt-oss-20b")
         logger.info("[proxy] auto → tier=%s code=%s llm=%s", auto_tier, code_dominant, used_llm)
     else:
         provider, upstream_model = _resolve_provider(model, explicit)
@@ -1183,38 +1367,68 @@ async def handle_chat_completions(request: web.Request) -> web.Response:
     response_text = ""
     try:
         result = None
-        async with _new_session() as session:
+        # Two lazily-created sessions: proxied (via UPSTREAM_PROXY / Mullvad) and direct
+        # (home IP). Providers in DIRECT_EGRESS_PROVIDERS use the direct one because their
+        # edge blocks the Mullvad exit (see Groq). Keyed by the `direct` bool.
+        _sessions: dict[bool, aiohttp.ClientSession] = {}
+        def _session_for(prov: str) -> aiohttp.ClientSession:
+            direct = prov in DIRECT_EGRESS_PROVIDERS
+            if direct not in _sessions:
+                _sessions[direct] = _new_session(direct=direct)
+            return _sessions[direct]
+        _skip_providers: set[str] = set()
+        _fails = 0
+        try:
             for _i, (_prov, _um) in enumerate(candidates):
+                if _prov in _skip_providers:
+                    continue
                 try:
-                    result = await _forward(_prov, _um, payload, session)
+                    result = await _forward(_prov, _um, payload, _session_for(_prov))
                     # Some models (esp. reasoning/agentic ":free" ones) return HTTP 200 with
                     # null/empty content — useless as a chat reply. Treat that as a failure so
                     # the cascade escalates, unless the reply carries tool_calls.
                     _msg = (result.get("choices") or [{}])[0].get("message", {}) or {}
                     if not (_msg.get("content") or _msg.get("tool_calls")):
                         raise RuntimeError(f"empty content from {_prov}/{_um}")
-                    if _i > 0:
+                    if _fails > 0:
                         logger.info("[proxy] failover: %s/%s succeeded after %d failure(s)",
-                                    _prov, _um, _i)
+                                    _prov, _um, _fails)
                     provider, upstream_model = _prov, _um  # reflect who actually served
                     break
                 except Exception as _fe:
                     error_text = str(_fe)
+                    _fails += 1
                     logger.warning("[proxy] %s/%s failed: %s", _prov, _um, error_text)
+                    # A prompt that overruns the per-minute token limit overruns it on every
+                    # model of that provider — the rest of its candidates would fail the same
+                    # way, so skip straight past them instead of burning a round-trip each.
+                    if "rate_limit_exceeded" in error_text and "Request too large" in error_text:
+                        _skip_providers.add(_prov)
                     continue
+        finally:
+            for _s in _sessions.values():
+                await _s.close()
         if result is None:
-            raise RuntimeError(error_text or "all providers failed")
+            raise _CascadeExhausted(error_text or "all providers failed")
         response_text = (result.get("choices", [{}])[0].get("message", {}).get("content") or "")
         latency_ms = (time.monotonic() - t0) * 1000
-        prompt_chars = sum(len(str(m.get("content", ""))) for m in original_messages)
-        input_tokens = prompt_chars // 4
-        output_tokens = len(response_text) // 4
+        # Prefer the exact counts upstream already returned — the char/4 heuristic ignores
+        # system prompts, roles and template overhead and undercounts badly (a 28-char
+        # probe measured 7 estimated vs 78 actual prompt tokens). Fall back to the
+        # estimate only when a provider omits the usage block.
+        input_tokens, output_tokens, tokens_exact = _extract_usage(result)
+        if not tokens_exact:
+            prompt_chars = sum(len(str(m.get("content", ""))) for m in original_messages)
+            input_tokens = prompt_chars // 4
+            output_tokens = len(response_text) // 4
         cost_usd = _estimate_cost_usd(provider, upstream_model, input_tokens, output_tokens)
         logger.info("[proxy] %s/%s → %d chars (%.0fms) $%.6f%s",
                     provider, upstream_model, len(response_text), latency_ms, cost_usd,
                     " [ephemeral]" if (ephemeral or EPHEMERAL_MODE()) else "")
         _log_entry(provider, upstream_model, original_messages, response_text,
                    latency_ms, ephemeral=ephemeral, cost_usd=cost_usd)
+        await _record_usage(request.get("client", "unknown"), provider, upstream_model,
+                            input_tokens, output_tokens, cost_usd, exact=tokens_exact)
         resp = web.json_response(result)
         resp.headers["X-Privacy-Mode"] = PRIVACY_MODE()
         if auto_tier:
@@ -1224,9 +1438,17 @@ async def handle_chat_completions(request: web.Request) -> web.Response:
     except Exception as e:
         error_text = str(e)
         latency_ms = (time.monotonic() - t0) * 1000
-        logger.warning("[proxy] %s/%s failed: %s", provider, upstream_model, error_text)
+        if isinstance(e, _CascadeExhausted):
+            # Every candidate already logged its own failure; naming one here would
+            # pin the last error on whichever model happened to lead the chain.
+            logger.warning("[proxy] all %d candidate(s) failed, last error: %s",
+                           len(candidates), error_text)
+        else:
+            logger.warning("[proxy] %s/%s failed: %s", provider, upstream_model, error_text)
         _log_entry(provider, upstream_model, original_messages, "",
                    latency_ms, error=error_text, ephemeral=ephemeral)
+        await _record_usage(request.get("client", "unknown"), provider, upstream_model,
+                            0, 0, 0.0, error=True)
         return web.json_response(
             {"error": {"message": error_text, "provider": provider}}, status=502)
 
@@ -1257,6 +1479,86 @@ async def handle_logs(request: web.Request) -> web.Response:
         "data_sensitivity": sensitivity,
         "note": "Entries contain metadata only — no prompt/response content." if mode != "anonymous" else "Entries may contain message previews.",
     })
+
+
+# ── Usage metrics ──────────────────────────────────────────────────────────────
+
+async def handle_usage(request: web.Request) -> web.Response:
+    """Per-project usage breakdown (requests/tokens/cost/errors), read from Redis.
+    Query params: ?client=<name> to filter one project; ?days=<N> to include the last
+    N daily buckets per project. Metadata only — no prompt/response content is stored."""
+    if not USAGE_ENABLED:
+        return web.json_response({"error": "usage accounting disabled"}, status=404)
+    try:
+        r = await _usage_redis_client()
+        want = request.query.get("client", "").strip()
+        clients = [_sanitize_client(want)] if want else sorted(await r.smembers(f"{USAGE_PREFIX}clients"))
+        try:
+            days = max(0, min(int(request.query.get("days", "0")), 90))
+        except ValueError:
+            days = 0
+        day_keys = [time.strftime("%Y-%m-%d", time.gmtime(time.time() - i * 86400)) for i in range(days)]
+
+        out: dict[str, Any] = {}
+        totals = {"requests": 0, "prompt_tokens": 0, "completion_tokens": 0, "cost_usd": 0.0, "errors": 0}
+        for c in clients:
+            base = f"{USAGE_PREFIX}client:{c}"
+            h = await r.hgetall(base)
+            if not h:
+                continue
+            models = await r.hgetall(f"{base}:models")
+            rec: dict[str, Any] = {
+                "requests":          int(h.get("requests", 0)),
+                "prompt_tokens":     int(h.get("prompt_tokens", 0)),
+                "completion_tokens": int(h.get("completion_tokens", 0)),
+                "cost_usd":          round(float(h.get("cost_usd", 0) or 0), 6),
+                "errors":            int(h.get("errors", 0)),
+                "models":            {k: int(v) for k, v in models.items()},
+            }
+            if days:
+                daily = {}
+                for dk in day_keys:
+                    dh = await r.hgetall(f"{base}:daily:{dk}")
+                    if dh:
+                        daily[dk] = {"requests": int(dh.get("requests", 0)),
+                                     "cost_usd": round(float(dh.get("cost_usd", 0) or 0), 6)}
+                rec["daily"] = daily
+            out[c] = rec
+            for k in totals:
+                totals[k] += rec.get(k, 0)
+        totals["cost_usd"] = round(totals["cost_usd"], 6)
+        return web.json_response({
+            "clients":      out,
+            "totals":       totals,
+            "generated_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+        })
+    except Exception as e:
+        return web.json_response({"error": str(e)}, status=500)
+
+
+async def handle_usage_reset(request: web.Request) -> web.Response:
+    """Reset usage counters. Admin-token only. ?client=<name> resets one project;
+    otherwise all projects are cleared. Requires ?confirm=true."""
+    if not request.get("is_admin"):
+        return web.json_response({"error": "admin token required"}, status=403)
+    if request.query.get("confirm") != "true":
+        return web.json_response({"error": "add ?confirm=true to reset"}, status=400)
+    try:
+        r = await _usage_redis_client()
+        want = request.query.get("client", "").strip()
+        targets = [_sanitize_client(want)] if want else list(await r.smembers(f"{USAGE_PREFIX}clients"))
+        deleted = 0
+        for c in targets:
+            base = f"{USAGE_PREFIX}client:{c}"
+            keys = [base, f"{base}:models"]
+            async for dk in r.scan_iter(match=f"{base}:daily:*"):
+                keys.append(dk)
+            if keys:
+                deleted += await r.delete(*keys)
+            await r.srem(f"{USAGE_PREFIX}clients", c)
+        return web.json_response({"reset": targets, "keys_deleted": deleted})
+    except Exception as e:
+        return web.json_response({"error": str(e)}, status=500)
 
 
 # ── Redis heartbeat ────────────────────────────────────────────────────────────
@@ -1296,6 +1598,8 @@ async def make_app() -> web.Application:
     app.router.add_get("/v1/models",            handle_models)
     app.router.add_post("/v1/chat/completions", handle_chat_completions)
     app.router.add_get("/logs",                 handle_logs)
+    app.router.add_get("/usage",                handle_usage)
+    app.router.add_post("/usage/reset",         handle_usage_reset)
     app.router.add_get("/config",               handle_config_get)
     app.router.add_post("/config",              handle_config_post)
 
