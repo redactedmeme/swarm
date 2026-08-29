@@ -246,6 +246,15 @@ function loadMarket() {
 
       if (p.url) $('mk-src').href = p.url;
       strip.hidden = false;
+
+      // Same numbers into the marquee. usd()/price() already carry the formatting
+      // contract, so the ticker can't drift from the strip above it.
+      const mcap = p.marketCap != null ? p.marketCap : p.fdv;
+      const vol = p.volume && p.volume.h24;
+      const px = parseFloat(p.priceUsd);
+      if (usd(mcap)) setTicker('tk-mcap', { raw: mcap, text: usd(mcap), format: usd });
+      if (usd(vol)) setTicker('tk-vol', { raw: vol, text: usd(vol), format: usd });
+      if (price(px)) setTicker('tk-price', { raw: px, text: price(px), format: price });
     })
     .catch(() => {
       strip.hidden = true;
@@ -299,6 +308,25 @@ function renderStatus(data) {
   const stamp = $('status-updated');
   if (stamp) stamp.textContent = new Date().toISOString().slice(11, 19) + 'Z';
 
+  const online = agents.filter((a) => a.online).length;
+  setTicker('tk-agents', {
+    raw: online,
+    text: online + '/' + agents.length,
+    format: (v) => Math.round(v) + '/' + agents.length,
+  });
+
+  // Queue depth is optional upstream — only show a total when at least one agent
+  // actually reported one, so a missing field reads as absent, not as zero.
+  const withPending = agents.filter((a) => typeof a.pending === 'number');
+  if (withPending.length) {
+    const total = withPending.reduce((n, a) => n + a.pending, 0);
+    setTicker('tk-pending', {
+      raw: total,
+      text: String(total),
+      format: (v) => String(Math.round(v)),
+    });
+  }
+
   // This section appears only once its data lands, which can be either side of
   // initReveal. Either way it goes straight to visible rather than waiting on an
   // intersection that may never be re-evaluated after display:none.
@@ -315,6 +343,75 @@ function loadStatus() {
       const s = $('status');
       if (s) s.hidden = true;
     });
+}
+
+
+// ── Live ticker ───────────────────────────────────────────────────────────────
+// The marquee under the hero carries real telemetry, not decoration. Values come from
+// the same two polls that feed the mesh section and the market strip, so the strip is
+// only ever as live as the page already is. It stays hidden until something resolves.
+
+const tickerState = Object.create(null);
+const reduceMotion =
+  window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+// Count up to a numeric value. Falls straight through to the final text when the
+// value isn't numeric, when nothing changed, or when the reader asked for less motion.
+function animateValue(el, next) {
+  const prevRaw = el.getAttribute('data-raw');
+  el.setAttribute('data-raw', String(next.raw == null ? '' : next.raw));
+
+  if (reduceMotion || next.raw == null || prevRaw === null || prevRaw === '') {
+    el.textContent = next.text;
+    return;
+  }
+  const from = Number(prevRaw);
+  const to = Number(next.raw);
+  if (!isFinite(from) || !isFinite(to) || from === to) {
+    el.textContent = next.text;
+    if (from !== to) flash(el);
+    return;
+  }
+
+  // Land the real value first, then animate towards it. requestAnimationFrame is
+  // throttled to a standstill in a backgrounded tab, so a loop that only assigns the
+  // final text in its last frame leaves a stale number on screen indefinitely. This
+  // way the correct value is always displayed and the count-up is pure decoration.
+  el.textContent = next.text;
+
+  const start = performance.now();
+  const dur = 650;
+  function step(now) {
+    const t = Math.min(1, (now - start) / dur);
+    // easeOutCubic — fast to settle, no bounce past the real value
+    const v = from + (to - from) * (1 - Math.pow(1 - t, 3));
+    el.textContent = t < 1 && next.format ? next.format(v) : next.text;
+    if (t < 1) requestAnimationFrame(step);
+  }
+  requestAnimationFrame(step);
+  flash(el);
+}
+
+function flash(el) {
+  if (reduceMotion) return;
+  el.classList.remove('val-flash');
+  void el.offsetWidth; // restart the animation on a repeat change
+  el.classList.add('val-flash');
+}
+
+// Both sequences carry the same data-live ids (the second copy is the marquee's
+// duplicate), so every update writes to all matching cells.
+function setTicker(id, value) {
+  tickerState[id] = value;
+  document.querySelectorAll('[data-live="' + id + '"]').forEach((el) => {
+    animateValue(el, value);
+    // Mark the whole item live. Cells that never resolve stay hidden rather than
+    // scrolling an em-dash past the reader — the strip carries readings, not slots.
+    const item = el.closest('.ticker-item');
+    if (item) item.classList.add('is-live');
+  });
+  const strip = $('live-ticker');
+  if (strip && strip.hidden) strip.hidden = false;
 }
 
 // ── Boot ──────────────────────────────────────────────────────────────────────

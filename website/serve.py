@@ -33,6 +33,12 @@ SITE_ORIGIN = 'https://redacted.meme'
 
 IMMUTABLE_EXT = ('.woff2', '.woff', '.ttf', '.png', '.jpg', '.svg', '.ico')
 
+# Stylesheet and script are the two files that change on almost every deploy, and their
+# filenames never do — so an hour-long cache means an hour of visitors on the old CSS
+# against the new HTML. Kept short and revalidated instead. Fonts and images stay
+# immutable: their content genuinely doesn't change.
+VERSIONED_EXT = ('.css', '.js')
+
 # Flask guesses application/octet-stream for .md, which makes browsers download it
 # and tells an agent nothing. These are published documents - label them as such.
 TEXT_TYPES = {
@@ -85,12 +91,19 @@ def _fetch_swarm_status():
     for a in agents:
         if not isinstance(a, dict) or not a.get('id'):
             continue
-        clean.append({
+        entry = {
             'id': str(a['id'])[:40],
             'label': str(a.get('label') or a['id'])[:60],
             'online': bool(a.get('online')),
             'last_seen': str(a.get('last_seen_bucket') or a.get('last_seen') or '')[:40],
-        })
+        }
+        # Queue depth, when the upstream reports it. Coerced and clamped rather than
+        # passed through, and simply omitted when absent or unparseable — the page
+        # treats a missing field as "no reading", which is the honest render.
+        pending = a.get('pending')
+        if isinstance(pending, (int, float)) and not isinstance(pending, bool):
+            entry['pending'] = max(0, min(int(pending), 10 ** 7))
+        clean.append(entry)
     return {'agents': clean, 'ts': raw.get('ts')}
 
 
@@ -174,8 +187,11 @@ def add_headers(resp):
                 break
         if path.endswith(PUBLIC_EXT):
             resp.headers['Access-Control-Allow-Origin'] = '*'
-        if request.path.lower().endswith(IMMUTABLE_EXT):
+        lower = request.path.lower()
+        if lower.endswith(IMMUTABLE_EXT):
             resp.headers['Cache-Control'] = 'public, max-age=31536000, immutable'
+        elif lower.endswith(VERSIONED_EXT):
+            resp.headers['Cache-Control'] = 'public, max-age=60, must-revalidate'
         elif resp.headers.get('Content-Type', '').startswith('text/html'):
             resp.headers['Cache-Control'] = 'public, max-age=300'
         else:
