@@ -1,8 +1,16 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="[REDACTED]">
-  <rect width="64" height="64" fill="#080809"/>
-  <rect x="10" y="26" width="44" height="13" fill="#FFFCFC"/>
-  <g fill="#ff2200" font-family="Archivo, Arial Black, sans-serif" font-weight="900" font-size="40">
-    <text x="6" y="46" textLength="12">[</text>
-    <text x="46" y="46" textLength="12">]</text>
+  <!-- White ground so the mark holds against dark browser chrome, where the old black
+       square vanished. Brackets are drawn as rectangles rather than text glyphs: at
+       16px a font-rendered "[" collapses to a smudge, four rects do not. -->
+  <rect width="64" height="64" fill="#FFFCFC"/>
+  <g fill="#080809">
+    <!-- left bracket -->
+    <rect x="11" y="9"  width="9"  height="46"/>
+    <rect x="11" y="9"  width="17" height="9"/>
+    <rect x="11" y="46" width="17" height="9"/>
+    <!-- right bracket -->
+    <rect x="44" y="9"  width="9"  height="46"/>
+    <rect x="36" y="9"  width="17" height="9"/>
+    <rect x="36" y="46" width="17" height="9"/>
   </g>
 </svg>

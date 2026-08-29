@@ -90,6 +90,19 @@ starts, because `requestAnimationFrame` is throttled to a standstill in a backgr
 tab — a loop that only assigns the real number in its last frame leaves a stale one on
 screen. The count-up is decoration over an already-correct value.
 
+### Colour
+
+The palette is a near-black ramp plus a grey text ramp. Only two chromatic tokens exist
+and both are strictly reserved:
+
+- `--blue` — **liveness only**: the heartbeat dot, the ONLINE state, and the per-agent
+  live marker. Nothing else. A number being fresh, a filename, a focus ring or a hover
+  state are not liveness; colouring those made the blue read as decoration rather than
+  signal, which is exactly what a reserved colour must not do.
+- `--red` — warnings and negative values only.
+
+If you reach for either outside those roles, use `--text`/`--muted`/`--dim` instead.
+
 ### Caching
 
 `style.css` and `script.js` are served `max-age=60, must-revalidate`. Their filenames

@@ -12,9 +12,11 @@
   --accent:   #FFFFFF;
   --red:      #ff2200;
 
-  /* Pattern Blue — reserved for live instrumentation. --red stays a warning colour. */
+  /* Pattern Blue — reserved for LIVENESS ONLY: the heartbeat dot, the ONLINE state,
+     and the per-agent live marker. Nothing else. A number being fresh, a filename, a
+     focus ring or a hover are not liveness, and colouring them here made the blue read
+     as decoration rather than signal. --red stays a warning colour. */
   --blue:     #4da6ff;
-  --blue-dim: rgba(77, 166, 255, 0.14);
 
   --gap:      1rem;
   --mono:     'Inconsolata', 'Space Mono', monospace;
@@ -117,7 +119,7 @@ a:hover { opacity: 0.7; }
    cell goes with it, so the strip never shows a gap where a reading should be. */
 .ticker-live .ticker-item:not(.is-live),
 .ticker-live .ticker-item:not(.is-live) + .ticker-sep { display: none; }
-.ticker-val  { color: var(--blue); font-variant-numeric: tabular-nums; }
+.ticker-val  { color: var(--text); font-variant-numeric: tabular-nums; }
 
 @keyframes ticker-slide {
   from { transform: translate3d(0, 0, 0); }
@@ -820,7 +822,7 @@ blockquote {
 .artifact-name {
   font-size: 0.85rem;
   font-weight: 600;
-  color: var(--blue);
+  color: var(--text);
 }
 .artifact-meta {
   font-size: 0.6rem;
@@ -1039,7 +1041,7 @@ blockquote {
 .skip-link:focus { left: 0; }
 
 :where(a, button):focus-visible {
-  outline: 2px solid var(--blue);
+  outline: 2px solid var(--text);
   outline-offset: 3px;
 }
 
@@ -1082,10 +1084,10 @@ blockquote {
 .market-val {
   font-size: 0.95rem;
   font-weight: 600;
-  color: var(--blue);
+  color: var(--text);
   font-variant-numeric: tabular-nums;
 }
-.market-val.pos { color: var(--blue); }
+.market-val.pos { color: var(--text); }
 .market-val.neg { color: var(--red); }
 
 .market-src {
@@ -1122,7 +1124,7 @@ blockquote {
   color: var(--muted);
 }
 .status-updated {
-  color: var(--blue);
+  color: var(--dim);
   font-variant-numeric: tabular-nums;
 }
 
@@ -1281,7 +1283,7 @@ blockquote {
   font-family: var(--mono);
   font-size: var(--fs-xs);
   letter-spacing: var(--tracking);
-  color: var(--blue);
+  color: var(--text);
 }
 .live-badge::before { content: "▶"; font-size: 0.7em; }
 
@@ -1308,12 +1310,12 @@ blockquote {
   padding-bottom: 0.25em;
   transition: border-color 0.18s ease, color 0.18s ease;
 }
-.arrow-link:hover { opacity: 1; color: var(--blue); border-bottom-color: var(--blue); }
+.arrow-link:hover { opacity: 1; color: var(--text); border-bottom-color: var(--text); }
 
 /* Value that just changed — a brief hairline flash, no layout shift. */
 .val-flash { animation: val-flash 0.7s ease-out; }
 @keyframes val-flash {
-  0%   { color: var(--blue); }
+  0%   { color: var(--text); }
   100% { color: inherit; }
 }
 
