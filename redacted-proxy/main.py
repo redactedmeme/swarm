@@ -437,6 +437,62 @@ _FREE_CASCADE: list[str] = [m.strip() for m in os.getenv("FREE_CASCADE",
     "cohere/north-mini-code:free"
 ).split(",") if m.strip()]
 
+# Groq's on_demand tier caps tokens-per-minute per model. The swarm's full-context
+# prompts run right at the ceiling, so an oversized request fails identically on every
+# Groq model — the cheapest fix is not to dial Groq at all when the prompt is clearly
+# over. Set to 0 to disable the pre-flight guard.
+GROQ_TPM_LIMIT = int(os.getenv("GROQ_TPM_LIMIT", "8000"))
+
+# A provider that is out of credits, or whose key is unauthorized, will be in the same
+# state on the next request. Remember such failures for the process lifetime (or
+# PROVIDER_COOLDOWN_S) instead of rediscovering them one wasted round-trip at a time.
+# This is deliberately provider-level and pattern-based: hardcoding dead model ids is
+# what let them hide in _MODEL_EQUIVALENTS after two separate prunes.
+PROVIDER_COOLDOWN_S = int(os.getenv("PROVIDER_COOLDOWN_S", "900"))
+_PROVIDER_COOLDOWN: dict[str, float] = {}
+
+# Substrings that mean "this provider is unusable right now", as opposed to a transient
+# or request-specific failure. Matched case-insensitively against the upstream error.
+_HARD_PROVIDER_FAILURES = (
+    "used all available credits",
+    "monthly spending limit",
+    "insufficient_quota",
+    "invalid_api_key",
+    "unauthorized",
+)
+
+
+def _is_hard_provider_failure(error_text: str) -> bool:
+    low = error_text.lower()
+    return any(sig in low for sig in _HARD_PROVIDER_FAILURES)
+
+
+def _provider_in_cooldown(provider: str) -> bool:
+    until = _PROVIDER_COOLDOWN.get(provider)
+    if until is None:
+        return False
+    if time.time() >= until:
+        del _PROVIDER_COOLDOWN[provider]
+        return False
+    return True
+
+
+def _estimate_prompt_tokens(payload: dict) -> int:
+    """Conservative chars/4 estimate over messages + tool definitions.
+
+    Deliberately an under-estimate (it ignores role and template overhead), so the
+    pre-flight guard only ever skips a provider when the prompt is clearly over the
+    limit — a false skip would cost us a healthy free model.
+    """
+    chars = 0
+    for m in payload.get("messages") or []:
+        c = m.get("content")
+        chars += len(c) if isinstance(c, str) else len(str(c))
+    if payload.get("tools"):
+        chars += len(json.dumps(payload["tools"]))
+    return chars // 4
+
+
 # Models that should be served free-first (the swarm's standardized defaults). When a
 # request names one of these and pins no explicit provider, the free cascade is prepended
 # ahead of it, so the paid model is only reached as a genuine last resort.
@@ -1005,8 +1061,14 @@ async def _record_usage(client: str, provider: str, model: str,
         base = f"{USAGE_PREFIX}client:{client}"
         pipe = r.pipeline()
         pipe.sadd(f"{USAGE_PREFIX}clients", client)
+        day = time.strftime("%Y-%m-%d", time.gmtime())
+        dkey = f"{base}:daily:{day}"
         if error:
             pipe.hincrby(base, "errors", 1)
+            # Also roll errors up daily. The lifetime counter alone can't be date-sliced,
+            # which made a stale error count indistinguishable from an active one.
+            pipe.hincrby(dkey, "errors", 1)
+            pipe.expire(dkey, USAGE_DAILY_TTL_DAYS * 86400)
         else:
             pipe.hincrby(base, "requests", 1)
             pipe.hincrby(base, "prompt_tokens", prompt_tokens)
@@ -1017,8 +1079,6 @@ async def _record_usage(client: str, provider: str, model: str,
             # can be read as "exact unless this is non-zero".
             if not exact:
                 pipe.hincrby(base, "estimated_requests", 1)
-            day = time.strftime("%Y-%m-%d", time.gmtime())
-            dkey = f"{base}:daily:{day}"
             pipe.hincrby(dkey, "requests", 1)
             pipe.hincrby(dkey, "prompt_tokens", prompt_tokens)
             pipe.hincrby(dkey, "completion_tokens", completion_tokens)
@@ -1273,12 +1333,25 @@ class _CascadeExhausted(RuntimeError):
     """Every candidate in the failover chain failed; carries the last upstream error."""
 
 
-def _build_auto_chain(tier: str, code_dominant: bool) -> tuple[list[tuple[str, str]], str]:
+# Models that reliably fail when a request carries tool definitions. Cohere's
+# north-mini-code returns INVALID_TOOL_GENERATION on every tool-call request, and it
+# leads the "code" tier — so a code-tier tool call always opened with a guaranteed
+# failure. Fine as a plain-completion model; just never dial it with tools attached.
+_NO_TOOL_MODELS: set[str] = {m.strip() for m in os.getenv(
+    "NO_TOOL_MODELS", "cohere/north-mini-code:free").split(",") if m.strip()}
+
+
+def _build_auto_chain(tier: str, code_dominant: bool,
+                      has_tools: bool = False) -> tuple[list[tuple[str, str]], str]:
     """Cost-first candidate chain: tier entry models → shared free tail → paid last resort."""
     key = "code" if (code_dominant and "code" in _AUTO_TIERS) else tier
     entry = _AUTO_TIERS.get(key) or _AUTO_TIERS.get("medium", [])
-    chain: list[tuple[str, str]] = [_resolve_provider(m, "") for m in entry]
+    _skip = _NO_TOOL_MODELS if has_tools else set()
+    chain: list[tuple[str, str]] = [
+        _resolve_provider(m, "") for m in entry if m not in _skip]
     for m in _FREE_CASCADE:
+        if m in _skip:
+            continue
         chain.append(_resolve_provider(m, ""))
     for paid in _CASCADE_MODELS:
         chain.append(_resolve_provider(paid, ""))
@@ -1313,7 +1386,8 @@ async def handle_chat_completions(request: web.Request) -> web.Response:
     auto_tier = ""
     if not explicit and model in _AUTO_MODELS:
         tier, code_dominant, used_llm = await _classify_difficulty(payload.get("messages", []), payload)
-        _chain, auto_tier = _build_auto_chain(tier, code_dominant)
+        _chain, auto_tier = _build_auto_chain(
+            tier, code_dominant, has_tools=bool(payload.get("tools")))
         provider, upstream_model = _chain[0] if _chain else ("groq", "openai/gpt-oss-20b")
         logger.info("[proxy] auto → tier=%s code=%s llm=%s", auto_tier, code_dominant, used_llm)
     else:
@@ -1330,14 +1404,37 @@ async def handle_chat_completions(request: web.Request) -> web.Response:
         if not explicit:  # don't override an explicitly-pinned provider
             for equiv in _MODEL_EQUIVALENTS.get(model, []):
                 _chain.append(_resolve_provider(equiv, ""))
+    # Pre-flight: drop candidates we already know will fail, before spending a
+    # round-trip on each. Two independent reasons, both provider-level.
+    _est_tokens = _estimate_prompt_tokens(payload)
+    _over_tpm = bool(GROQ_TPM_LIMIT) and _est_tokens > GROQ_TPM_LIMIT
     candidates: list[tuple[str, str]] = []
     _seen: set[tuple[str, str]] = set()
+    _preskipped: list[str] = []
     for p, m in _chain:
         if (p, m) in _seen:
             continue
         _seen.add((p, m))
-        if _PROVIDER_KEYS.get(p):
-            candidates.append((p, m))
+        if not _PROVIDER_KEYS.get(p):
+            continue
+        if _over_tpm and p == "groq":
+            _preskipped.append(f"{p}/{m} (est {_est_tokens}tok > TPM {GROQ_TPM_LIMIT})")
+            continue
+        if _provider_in_cooldown(p):
+            _preskipped.append(f"{p}/{m} (provider in cooldown)")
+            continue
+        candidates.append((p, m))
+    if _preskipped:
+        logger.info("[proxy] pre-flight skipped %d candidate(s): %s",
+                    len(_preskipped), ", ".join(_preskipped))
+
+    # Never strand a request on an empty chain because of a pre-flight guess: if the
+    # guards filtered everything out, fall back to the unfiltered set and let the
+    # upstream have the final say.
+    if not candidates and _chain:
+        candidates = [(p, m) for p, m in dict.fromkeys(_chain) if _PROVIDER_KEYS.get(p)]
+        if candidates:
+            logger.info("[proxy] pre-flight filtered every candidate — using full chain")
 
     if not candidates:
         return web.json_response(
@@ -1404,6 +1501,14 @@ async def handle_chat_completions(request: web.Request) -> web.Response:
                     # way, so skip straight past them instead of burning a round-trip each.
                     if "rate_limit_exceeded" in error_text and "Request too large" in error_text:
                         _skip_providers.add(_prov)
+                    # Out of credits / bad key: this provider is unusable for everyone,
+                    # not just this request. Remember it so the next request skips it
+                    # in pre-flight instead of rediscovering it here.
+                    elif _is_hard_provider_failure(error_text):
+                        _skip_providers.add(_prov)
+                        _PROVIDER_COOLDOWN[_prov] = time.time() + PROVIDER_COOLDOWN_S
+                        logger.warning("[proxy] provider %s in cooldown for %ds: %s",
+                                       _prov, PROVIDER_COOLDOWN_S, error_text[:120])
                     continue
         finally:
             for _s in _sessions.values():
@@ -1444,7 +1549,10 @@ async def handle_chat_completions(request: web.Request) -> web.Response:
             logger.warning("[proxy] all %d candidate(s) failed, last error: %s",
                            len(candidates), error_text)
         else:
-            logger.warning("[proxy] %s/%s failed: %s", provider, upstream_model, error_text)
+            # Name the class: a non-cascade exception here is a proxy bug, not an
+            # upstream failure, and the two were indistinguishable in the logs.
+            logger.warning("[proxy] %s/%s failed (%s): %s",
+                           provider, upstream_model, type(e).__name__, error_text)
         _log_entry(provider, upstream_model, original_messages, "",
                    latency_ms, error=error_text, ephemeral=ephemeral)
         await _record_usage(request.get("client", "unknown"), provider, upstream_model,
