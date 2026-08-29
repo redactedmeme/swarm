@@ -60,14 +60,42 @@ listed in `robots.txt` and `sitemap.xml`.
 
 ## Live data
 
-Three readouts, each of which degrades to *absent* rather than to an error state:
+Four readouts, each of which degrades to *absent* rather than to an error state:
 
 - **Market strip** — client-side fetch of the Dexscreener public API. Hidden if the
   call fails or the token has no pairs.
 - **Agent roster** — `data/agents.json`, with the server-rendered cards as fallback.
 - **Mesh status** — `GET /api/swarm`, which `serve.py` proxies from the swarm's own
   status service and caches for 30s. Unset or unreachable ⇒ `{"agents": []}` ⇒ the
-  whole `#status` section stays hidden.
+  whole `#status` section stays hidden. Queue depth is projected as `pending` when the
+  upstream supplies it, and simply omitted when it doesn't.
+- **Live ticker** (`#live-ticker`) — the marquee under the hero. Carries real telemetry
+  from the two polls above, never hardcoded copy. Each cell stays hidden until its value
+  resolves (`.is-live`), and the whole strip stays hidden until at least one does, so it
+  scrolls readings rather than a row of em-dashes.
+
+### Motion
+
+The two marquees are pure CSS: the track holds the item sequence twice and translates
+-50%, so the second copy lands where the first began. Nothing animates per-item, and
+hovering pauses the strip.
+
+`prefers-reduced-motion` needs an explicit rule here. The global `animation-duration:
+0.01ms !important` clamp would *finish* the marquee rather than stop it — snapping the
+track to its end position. The reduced-motion block instead sets `animation: none`,
+drops the duplicate sequence, and makes the strip hand-scrollable.
+
+The live values count up on change. The final value is written **before** the animation
+starts, because `requestAnimationFrame` is throttled to a standstill in a backgrounded
+tab — a loop that only assigns the real number in its last frame leaves a stale one on
+screen. The count-up is decoration over an already-correct value.
+
+### Caching
+
+`style.css` and `script.js` are served `max-age=60, must-revalidate`. Their filenames
+never change but their contents change on nearly every deploy, so a long cache means
+visitors run new HTML against old CSS. Fonts and images stay `immutable` for a year —
+their content genuinely doesn't change.
 
 ### Environment
 
