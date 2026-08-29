@@ -91,7 +91,7 @@ smolting-telegram-bot/bot_audit.log.bak
 *.bak
 
 # redacted-proxy runtime logs (conversation data — never commit)
-redacted-proxy/data/
+apps/proxy/data/
 
 # ── Repo root: ephemeral / one-off (not source) ───────────────────────────────
 .session_state.json
