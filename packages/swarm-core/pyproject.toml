@@ -12,6 +12,10 @@ requires-python = ">=3.11"
 # and python/requirements.txt. Only what swarm_core itself imports lives here;
 # per-service extras stay with the service.
 dependencies = [
+    # The {7,3} hyperbolic kernel is core library code, not an extra — CI
+    # caught this the first time it ran: committee_engine, engine.swarm_engine
+    # and kernel.hyperbolic_kernel all fail to import without it.
+    "numpy>=1.26",
     "requests>=2.31",
     "aiohttp>=3.9",
     "openai>=1.40",
