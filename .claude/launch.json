@@ -17,7 +17,7 @@
         "serve.py"
       ],
       "port": 8080,
-      "cwd": "website",
+      "cwd": "apps/website",
       "env": {
         "PYTHONIOENCODING": "utf-8"
       }
