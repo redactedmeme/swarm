@@ -182,6 +182,10 @@ curl -X POST $PROXY_URL/config \
 | `LOG_LEVEL` | No | mode default | `none`, `minimal`, or `full` |
 | `LOG_CONTENT` | No | — | Legacy: `"false"` forces `LOG_LEVEL=minimal` |
 | `RATE_LIMIT_RPM` | No | `60` | Max requests/min per token (0 = off) |
+| `CREDITS_PER_1K_TOKENS` | No | `100` | $REDACTED charged per 1k LLM tokens. Same env var name as `swarm_core.tokens` so the proxy and settler can't drift |
+| `CREDITS_ENFORCE` | No | `false` | When true, a client whose `credits:balance` is ≤ 0 gets a **402** on `/v1/chat/completions`. Off = balance still moves, would-be refusals logged |
+| `CREDITS_EXEMPT` | No | — | Comma-separated client names never hard-blocked (the swarm's own bots). They still debit |
+| `CREDITS_TOPUP_HINT` | No | built-in | Human string returned in the 402 body |
 | `PROXY_TOKEN_MAP` | No | — | JSON `{"<token>": "<project>"}` — per-project bearer tokens that both authenticate and attribute usage |
 | `PROXY_TOKEN_NAME` | No | `shared` | Bucket name for traffic using the legacy shared `PROXY_TOKEN` with no `X-Client` header |
 | `ADMIN_TOKEN` | No | `PROXY_TOKEN` | Token required for `/usage/reset` |
@@ -270,6 +274,39 @@ prompt tokens), which is why it is the fallback rather than the default.
 
 `errors` counts requests where **every** candidate in the failover chain failed; a request
 that recovers on a later candidate counts as a normal request.
+
+---
+
+## $REDACTED credits
+
+Every `/v1/chat/completions` response debits the client's Redis balance by
+`(prompt + completion tokens) / 1000 × CREDITS_PER_1K_TOKENS` and pushes the
+spend to `credits:spend:queue`, which `apps/settler` turns into an on-chain
+burn-split settlement — so proxied inference flows through the same 50/30/20
+split and burn as any other paid job.
+
+| Key | Type | Meaning |
+|---|---|---|
+| `credits:balance:<client>` | string float | Remaining $REDACTED. Credited by deposits, debited per request |
+| `credits:debited:<client>` | string float | Lifetime $REDACTED debited |
+| `credits:spend:queue` | list | Per-request spend entries the settler drains |
+
+**Top up:** send $REDACTED to the treasury with an SPL Memo
+`redacted-credits:<client>`. `apps/settler` parses the memo and credits the
+balance 1:1 with the sticker price (the burn happens as the credit is *spent*,
+not on deposit).
+
+**Enforcement** is off by default (`CREDITS_ENFORCE=false`): balances still
+move and a would-be refusal is logged once/min/client, but nothing is blocked.
+With it on, a client at ≤ 0 (and not in `CREDITS_EXEMPT`) gets:
+
+```json
+{"error": {"message": "Insufficient $REDACTED credits — top up to continue",
+           "type": "insufficient_credits", "balance": -123.45, "top_up": "…"}}
+```
+
+`GET /usage` reports `credits_balance` / `credits_debited` per client and a
+top-level `credits` block (`rate_per_1k_tokens`, `enforced`, `exempt`).
 
 ---
 
