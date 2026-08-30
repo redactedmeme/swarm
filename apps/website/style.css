@@ -1373,3 +1373,194 @@ blockquote {
   .contract-row { flex-direction: column; align-items: flex-start; }
   #copy-btn { width: 100%; }
 }
+
+/* ── Hero thesis ──────────────────────────────────────────────────────────────
+   The mechanic, stated in the one place a first-time reader is guaranteed to
+   look. Sits between the lore line and the CTA so the aesthetic survives but
+   the page no longer asks a stranger to infer why the token exists. */
+.hero-thesis {
+  font-family: var(--mono);
+  font-size: clamp(0.72rem, 2.2vw, 0.92rem);
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  line-height: 2.1;
+  color: var(--text);
+  max-width: 44rem;
+  margin: 0 auto 1.75rem;
+  padding: 0.9rem 1.25rem;
+  border-top: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
+}
+.hero-thesis .accent { color: var(--red); }
+
+/* ── Offers / price sheet ─────────────────────────────────────────────────── */
+.offers-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(15rem, 1fr));
+  gap: var(--gap);
+  margin-top: 1.5rem;
+}
+
+.offer-card {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  padding: 1.1rem 1.2rem;
+  background: var(--bg2);
+  border: 1px solid var(--border);
+  font-family: var(--mono);
+}
+
+/* Not-yet-reachable offers are dimmed rather than hidden: the roster stays
+   honest about what exists without advertising a dead endpoint as live. */
+.offer-closed { opacity: 0.62; }
+
+.offer-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+.offer-id {
+  font-size: 0.95rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  color: var(--text);
+}
+.offer-state {
+  font-size: 0.55rem;
+  letter-spacing: 0.18em;
+  color: var(--dim);
+  border: 1px solid var(--border2);
+  padding: 0.15rem 0.4rem;
+}
+.offer-card:not(.offer-closed) .offer-state {
+  color: var(--blue);
+  border-color: var(--blue);
+}
+
+.offer-title {
+  font-size: 0.72rem;
+  line-height: 1.7;
+  color: var(--muted);
+  margin: 0;
+}
+
+.offer-price {
+  display: flex;
+  align-items: baseline;
+  gap: 0.4rem;
+  margin-top: auto;
+  padding-top: 0.6rem;
+  border-top: 1px solid var(--border);
+}
+.offer-amount {
+  font-size: 1.3rem;
+  font-weight: 700;
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+}
+.offer-unit {
+  font-size: 0.6rem;
+  letter-spacing: 0.14em;
+  color: var(--dim);
+}
+
+.offer-agent {
+  font-size: 0.58rem;
+  letter-spacing: 0.16em;
+  color: var(--dim);
+}
+
+/* ── Treasury / burn counter ──────────────────────────────────────────────── */
+.treasury-box {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0 2rem;
+  margin-top: 1.5rem;
+  padding-top: 1rem;
+  border-top: 1px solid var(--border);
+  font-family: var(--mono);
+}
+.treasury-box[hidden] { display: none; }
+
+.treasury-cell {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  padding: 0.35rem 0;
+}
+.treasury-label {
+  font-size: 0.6rem;
+  letter-spacing: 0.18em;
+  color: var(--dim);
+}
+.treasury-val {
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+}
+.treasury-src {
+  margin-left: auto;
+  align-self: center;
+  font-size: 0.6rem;
+  letter-spacing: 0.16em;
+  color: var(--dim);
+  text-decoration: none;
+}
+.treasury-src[hidden] { display: none; }
+.treasury-src + .treasury-src { margin-left: 1rem; }
+
+/* ── Settlement feed ──────────────────────────────────────────────────────────
+   Recent paid jobs, each linking to its on-chain memo transaction. The number
+   that goes up with usage. */
+.settlements-feed {
+  list-style: none;
+  margin: 1.25rem 0 0;
+  padding: 0;
+  font-family: var(--mono);
+  border-top: 1px solid var(--border);
+}
+.settlements-feed[hidden] { display: none; }
+
+.settlement-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.5rem 1rem;
+  padding: 0.55rem 0;
+  border-bottom: 1px solid var(--border);
+  font-size: 0.68rem;
+}
+.settlement-sig {
+  color: var(--blue);
+  text-decoration: none;
+  letter-spacing: 0.06em;
+}
+.settlement-sig:hover { text-decoration: underline; }
+.settlement-endpoint {
+  color: var(--text);
+  font-weight: 600;
+  letter-spacing: 0.08em;
+}
+.settlement-amount {
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+.settlement-burn {
+  color: var(--red);
+  font-variant-numeric: tabular-nums;
+}
+.settlement-age {
+  margin-left: auto;
+  color: var(--dim);
+  letter-spacing: 0.12em;
+}
+
+@media (max-width: 640px) {
+  .treasury-box { gap: 0 1.5rem; }
+  .hero-thesis { letter-spacing: 0.1em; line-height: 1.9; }
+  .settlement-age { margin-left: 0; width: 100%; }
+}

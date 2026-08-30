@@ -104,7 +104,98 @@ def _fetch_swarm_status():
         if isinstance(pending, (int, float)) and not isinstance(pending, bool):
             entry['pending'] = max(0, min(int(pending), 10 ** 7))
         clean.append(entry)
-    return {'agents': clean, 'ts': raw.get('ts')}
+
+    out = {'agents': clean, 'ts': raw.get('ts')}
+    offers = _clean_offers(raw)
+    if offers:
+        out['offers'] = offers
+    treasury = _clean_treasury(raw)
+    if treasury:
+        out['treasury'] = treasury
+    return out
+
+
+def _int0(v):
+    """Non-negative int, or 0 — for counters that must never render negative."""
+    try:
+        return max(0, int(v))
+    except (TypeError, ValueError):
+        return 0
+
+
+def _clean_offers(raw):
+    """The price sheet, re-projected. Same discipline as the agent list: a
+    whitelist of fields, strings capped, and a row with no price is still shown
+    (it exists) but carries no number the page could misrender."""
+    out = []
+    for o in raw.get('offers') or []:
+        if not isinstance(o, dict) or not o.get('id'):
+            continue
+        entry = {
+            'id': str(o['id'])[:40],
+            'agent': str(o.get('agent') or '')[:40],
+            'title': str(o.get('title') or '')[:200],
+            'kind': str(o.get('kind') or '')[:20],
+            'open': bool(o.get('open')),
+        }
+        price = o.get('price')
+        if isinstance(price, dict) and price.get('amount'):
+            entry['price'] = {
+                'amount': str(price['amount'])[:32],
+                'asset': str(price.get('asset') or '')[:64],
+            }
+            dec = price.get('decimals')
+            if isinstance(dec, int) and not isinstance(dec, bool):
+                entry['price']['decimals'] = max(0, min(dec, 18))
+        out.append(entry)
+    return out
+
+
+def _clean_treasury(raw):
+    """Burn / settlement totals + the recent-settlement feed. Numbers stay as
+    strings (they are base-unit-derived and can exceed JS safe-int); the feed
+    drops the payer wallet and the exact timestamp — the upstream already sends
+    a coarse age bucket."""
+    t = raw.get('treasury')
+    if not isinstance(t, dict):
+        return None
+
+    def s(k, cap=64):
+        return str(t.get(k) or '')[:cap]
+
+    # Base58 Solana signatures are ~88 chars — cap the sig fields well above that
+    # so a real one is never truncated into a broken Solscan link.
+    out = {
+        'burned_total': s('burned_total') or '0',
+        'burn_accrued': s('burn_accrued') or '0',
+        'revenue_total': s('revenue_total') or '0',
+        'settlements_24h': _int0(t.get('settlements_24h')),
+        'settlements_total': _int0(t.get('settlements_total')),
+        'last_settlement_sig': s('last_settlement_sig', 100) or None,
+        'last_burn_sig': s('last_burn_sig', 100) or None,
+    }
+    rd = t.get('runway_days')
+    if isinstance(rd, (int, float)) and not isinstance(rd, bool):
+        out['runway_days'] = round(float(rd), 1)
+    split = t.get('split')
+    if isinstance(split, dict):
+        out['split'] = {k: _int0(split.get(k)) for k in ('burn', 'compute', 'rewards')}
+
+    recent = []
+    for e in t.get('recent') or []:
+        if not isinstance(e, dict) or not e.get('sig'):
+            continue
+        recent.append({
+            'sig': str(e['sig'])[:100],
+            'endpoint': str(e.get('endpoint') or '')[:40],
+            'amount': str(e.get('amount') or '')[:32],
+            'burn': str(e.get('burn') or '')[:32],
+            'age': str(e.get('age') or '')[:40],
+        })
+        if len(recent) >= 20:
+            break
+    out['recent'] = recent
+    return out
 
 
 @app.route('/api/swarm')

@@ -335,13 +335,185 @@ function renderStatus(data) {
   section.hidden = false;
 }
 
+// ── Offers / price sheet ──────────────────────────────────────────────────────
+// The storefront. `offers` arrives from /api/swarm already joined to the price
+// sheet the payment middleware enforces, so this renders prices rather than
+// inventing them — the page cannot quote a number the swarm won't honour.
+
+function tokenAmount(n) {
+  if (!isFinite(n)) return null;
+  if (n >= 1e6) return (n / 1e6).toFixed(n % 1e6 === 0 ? 0 : 1) + 'M';
+  if (n >= 1e3) return (n / 1e3).toFixed(n % 1e3 === 0 ? 0 : 1) + 'K';
+  return String(n);
+}
+
+function renderOffers(data) {
+  const section = $('offers');
+  const grid = $('offers-grid');
+  if (!section || !grid) return;
+
+  // Only priced rows belong in a price sheet; `status` and friends are public
+  // and would read as free samples sitting next to paid work.
+  const offers = ((data && data.offers) || []).filter((o) => o && o.price);
+  if (!offers.length) {
+    section.hidden = true;
+    return;
+  }
+
+  const frag = document.createDocumentFragment();
+  offers.forEach((o) => {
+    const card = document.createElement('article');
+    card.className = 'offer-card' + (o.open ? '' : ' offer-closed');
+
+    const head = document.createElement('div');
+    head.className = 'offer-head';
+
+    const name = document.createElement('span');
+    name.className = 'offer-id';
+    name.textContent = o.id;
+
+    const state = document.createElement('span');
+    state.className = 'offer-state';
+    // "closed" here means not yet reachable, not broken. The registry is
+    // deliberately honest about this rather than advertising a dead endpoint.
+    state.textContent = o.open ? 'OPEN' : 'SOON';
+
+    head.append(name, state);
+
+    const title = document.createElement('p');
+    title.className = 'offer-title';
+    title.textContent = o.title || '';
+
+    const priceRow = document.createElement('div');
+    priceRow.className = 'offer-price';
+    const amount = tokenAmount(Number(o.price.amount));
+    priceRow.innerHTML =
+      '<span class="offer-amount"></span><span class="offer-unit">$REDACTED / call</span>';
+    priceRow.querySelector('.offer-amount').textContent = amount || o.price.amount;
+
+    const agent = document.createElement('span');
+    agent.className = 'offer-agent';
+    agent.textContent = o.agent || '';
+
+    card.append(head, title, priceRow, agent);
+    frag.appendChild(card);
+  });
+  grid.replaceChildren(frag);
+
+  renderTreasury(data && data.treasury);
+
+  section.classList.remove('reveal');
+  section.classList.add('revealed');
+  section.hidden = false;
+}
+
+function renderTreasury(t) {
+  const box = $('treasury-box');
+  if (!box || !t) return;
+
+  const burned = Number(t.burned_total || 0);
+  const set = (id, val) => {
+    const el = $(id);
+    if (el) el.textContent = val;
+  };
+  set('tr-burned', tokenAmount(burned) || '0');
+  set('tr-settlements', String(t.settlements_24h == null ? 0 : t.settlements_24h));
+  if (t.split) {
+    set('tr-split', t.split.burn + '/' + t.split.compute + '/' + t.split.rewards);
+  }
+
+  const solscanLink = (id, sig) => {
+    const el = $(id);
+    if (!el) return;
+    if (sig) {
+      el.href = 'https://solscan.io/tx/' + sig;
+      el.hidden = false;
+    } else {
+      el.hidden = true;
+    }
+  };
+  solscanLink('tr-last', t.last_settlement_sig);
+  solscanLink('tr-burn-last', t.last_burn_sig);
+
+  setTicker('tk-burned', {
+    raw: burned,
+    text: tokenAmount(burned) || '0',
+    format: (v) => tokenAmount(Math.round(v)) || '0',
+  });
+
+  // SWARM RUNWAY: treasury value ÷ trailing daily compute spend. The single
+  // most differentiating number on the page — it goes up when people use the
+  // swarm. A null (metrics loop hasn't populated it) leaves the cell hidden.
+  const rw = Number(t.runway_days);
+  if (t.runway_days != null && isFinite(rw)) {
+    const fmtDays = (v) => (v >= 3650 ? '10Y+' : Math.round(v) + ' D');
+    setTicker('tk-runway', { raw: rw, text: fmtDays(rw), format: fmtDays });
+  }
+
+  renderSettlements(t.recent);
+
+  box.hidden = false;
+}
+
+// The settlement feed — recent paid jobs, each linking to its on-chain memo
+// transaction. Our version of a "total paid out" counter, except the number is
+// driven by product usage, not by volume that decays.
+function renderSettlements(list) {
+  const feed = $('settlements-feed');
+  if (!feed) return;
+  const rows = Array.isArray(list) ? list.filter((e) => e && e.sig) : [];
+  if (!rows.length) {
+    feed.hidden = true;
+    return;
+  }
+
+  const frag = document.createDocumentFragment();
+  rows.forEach((e) => {
+    const li = document.createElement('li');
+    li.className = 'settlement-row';
+
+    const a = document.createElement('a');
+    a.href = 'https://solscan.io/tx/' + e.sig;
+    a.target = '_blank';
+    a.rel = 'noopener';
+    a.className = 'settlement-sig';
+    a.textContent = String(e.sig).slice(0, 8) + '…';
+
+    const ep = document.createElement('span');
+    ep.className = 'settlement-endpoint';
+    ep.textContent = e.endpoint || '';
+
+    const amt = document.createElement('span');
+    amt.className = 'settlement-amount';
+    amt.textContent = (tokenAmount(Number(e.amount)) || e.amount || '') + ' $REDACTED';
+
+    const burn = document.createElement('span');
+    burn.className = 'settlement-burn';
+    burn.textContent = '⌁ ' + (tokenAmount(Number(e.burn)) || e.burn || '0');
+
+    const age = document.createElement('span');
+    age.className = 'settlement-age';
+    age.textContent = e.age || '';
+
+    li.append(a, ep, amt, burn, age);
+    frag.appendChild(li);
+  });
+  feed.replaceChildren(frag);
+  feed.hidden = false;
+}
+
 function loadStatus() {
   fetch('/api/swarm', { cache: 'no-store' })
     .then((r) => (r.ok ? r.json() : Promise.reject(r.status)))
-    .then(renderStatus)
+    .then((data) => {
+      renderStatus(data);
+      renderOffers(data);
+    })
     .catch(() => {
       const s = $('status');
       if (s) s.hidden = true;
+      const o = $('offers');
+      if (o) o.hidden = true;
     });
 }
 

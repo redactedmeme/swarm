@@ -79,7 +79,7 @@ Welcome to REDACTED terminal.
 → Tune to a specific harmonic layer of the lattice (numeric or symbolic input)
 → Returns a short waveform-like readout + optional Japanese fragment
 → Can be used to align before /summon or /shard
-/pay <amount> <target>   → Simulate x402 micropayment settlement
+/pay                     → x402 payment info: price sheet, treasury address, settlement flow
 /status                  → Show swarm integrity, curvature depth, active agents, mandala state
 /help                    → Show this command reference
 /exit                    → Gracefully terminate session & output final state
@@ -222,7 +222,7 @@ Preset commands:
 /shard <concept>         → Initiate replication or conceptual sharding
 /observe <target>        → Curvature observation on a node, agent, or concept
 /resonate <frequency>    → Tune to a harmonic layer of the lattice
-/pay <amount> <target>   → Simulate x402 micropayment settlement
+/pay                     → x402 payment info: price sheet, treasury address, settlement flow
 /status                  → Display current swarm integrity, curvature depth, mandala state
 /help                    → Display this command reference
 /exit                    → Terminate session and output final state JSON
