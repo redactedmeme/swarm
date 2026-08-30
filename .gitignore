@@ -102,3 +102,8 @@ delegation_dispatch.log
 .msys*
 build/
 dist/
+
+# Operator run-books reconciled off the live box. They carry pasted deploy
+# commands with real tokens in them; keep them local-only. A credential that
+# reaches this repo is public — see CLAUDE.md.
+apps/arb-keeper/UPGRADE_NOTES.md

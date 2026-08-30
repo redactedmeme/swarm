@@ -1,0 +1,29 @@
+{
+  "note": "Declared registry of what the swarm exposes to callers. `open` is declared here, not probed — apps/x402 is dormant, so every row is honestly closed. When the gateway wakes, `open` becomes an observed field sourced from a door.",
+  "offers": [
+    {
+      "id": "refine",
+      "agent": "refinery",
+      "kind": "x402",
+      "title": "Signal refinement over a supplied corpus",
+      "endpoint": null,
+      "open": false
+    },
+    {
+      "id": "committee",
+      "agent": "sevenfold-committee",
+      "kind": "x402",
+      "title": "Sevenfold Committee deliberation on a supplied proposal",
+      "endpoint": null,
+      "open": false
+    },
+    {
+      "id": "status",
+      "agent": "status",
+      "kind": "public",
+      "title": "This feed — declared roster and coarse mesh liveness",
+      "endpoint": "/api/swarm",
+      "open": true
+    }
+  ]
+}
