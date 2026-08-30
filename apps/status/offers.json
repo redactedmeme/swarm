@@ -1,5 +1,5 @@
 {
-  "note": "Declared registry of what the swarm exposes to callers. `open` is declared here, not probed — apps/x402 is dormant, so every row is honestly closed. When the gateway wakes, `open` becomes an observed field sourced from a door.",
+  "note": "Declared registry of what the swarm exposes to callers. `open` is declared here, not probed. `refine` now enforces payment in code (swarm_core.x402 guards apps/refinery POST /query), but the refinery listens on the box only — so the row stays honestly closed until the endpoint is actually reachable. `price` is not stored here: it is joined in from swarm_core.tokens.PRICE_SHEET at serve time, so the feed cannot advertise a price the middleware does not charge.",
   "offers": [
     {
       "id": "refine",
