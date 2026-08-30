@@ -50,13 +50,14 @@ no `sys.path` inserts reaching across the tree.
 | `apps/dashboard/` | Solana volume dashboard | Railway |
 | `apps/webchat/` | Private web chat for chan | Railway + umbrel |
 | `apps/status/` | Public heartbeat feed | not deployed |
+| `apps/settler/` | Settlement ledger + on-chain burn executor — the only treasury-key holder | umbrel |
 | `apps/degen/`, `apps/x402/`, `apps/arb-keeper/`, `apps/mcp/` | Dormant / stubs | — |
 
 ### Build contexts — the one rule that matters
 
 A service builds with the **repo root** as its Docker context if it imports the
 shared packages (`hermes`, `smolting`, `chan`, `refinery`, `runtime`,
-`terminal`), because the image must `COPY packages/`. Self-contained services
+`terminal`, `settler`), because the image must `COPY packages/`. Self-contained services
 (`proxy`, `builder`, `degen`, `dashboard`, `webchat`, `website`) keep their own
 directory as context so their builds stay small.
 

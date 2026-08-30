@@ -207,6 +207,27 @@ services:
     restart: always
     network_mode: host
 
+  # Settlement ledger + on-chain burn executor. The ONLY component that holds
+  # the treasury private key — hence its own git-ignored .env.settler, never
+  # the shared .env that refinery/proxy load. Burns are gated: SETTLEMENT_EXECUTE
+  # defaults to false (ledger only), turn on deliberately.
+  settler:
+    build:
+      context: /home/umbrel/swarm
+      dockerfile: apps/settler/Dockerfile
+    container_name: swarm-settler
+    env_file:
+      - .env.settler
+    environment:
+      REDIS_URL: redis://127.0.0.1:6379
+      SETTLEMENT_EXECUTE: ${SETTLEMENT_EXECUTE:-false}
+      PYTHONUNBUFFERED: "1"
+    depends_on:
+      redis:
+        condition: service_healthy
+    restart: always
+    network_mode: host
+
 
   gluetun:
     image: qmcgaw/gluetun:latest
