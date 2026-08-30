@@ -524,11 +524,30 @@ async def refresh_metrics(redis, *, session=None) -> None:
         await redis.hset(TREASURY_KEY, mapping=fields)
 
 
+def _genesis_ts() -> int:
+    """Unix seconds before which an inbound transfer is not swarm revenue."""
+    try:
+        return int(float(os.getenv("SETTLEMENT_GENESIS_TS", "0") or 0))
+    except ValueError:
+        log.warning("SETTLEMENT_GENESIS_TS unparseable — treating as 0 (no floor)")
+        return 0
+
+
 async def reconcile_chain(redis, *, limit: int = 50, session=None) -> int:
     """Backstop: replay any inbound treasury payment `record_settlement` missed
     (e.g. a redis blip during the paid call). Outbound burns net negative and
-    are skipped by `_treasury_delta`."""
+    are skipped by `_treasury_delta`.
+
+    Only transactions at or after SETTLEMENT_GENESIS_TS are considered. Without
+    that floor this books the treasury's entire inbound history as swarm
+    revenue — on the first real deploy it picked up a 24,250,000 token funding
+    transfer that predated the payment rail and accrued a 12,125,000 token burn
+    against it. Set the genesis to the moment the rail went live; leaving it 0
+    keeps the old behaviour and is almost never what you want on a wallet that
+    existed before the rail did.
+    """
     treasury = tokens.treasury_address()
+    genesis = _genesis_ts()
     try:
         sigs = await rpc("getSignaturesForAddress", [treasury, {"limit": limit}],
                          session=session)
@@ -539,6 +558,11 @@ async def reconcile_chain(redis, *, limit: int = 50, session=None) -> int:
     for row in sigs or []:
         sig = row.get("signature")
         if not sig or row.get("err") is not None:
+            continue
+        # Cheap filter first: the signature listing already carries blockTime,
+        # so a pre-genesis transaction costs no getTransaction round-trip.
+        block_time = row.get("blockTime")
+        if genesis and block_time is not None and int(block_time) < genesis:
             continue
         if await redis.sismember(settle.SEEN_KEY, sig):
             continue

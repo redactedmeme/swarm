@@ -356,3 +356,64 @@ def _boom(msg):
     async def f(*a, **kw):
         raise AssertionError(msg)
     return f
+
+
+# ── reconcile_chain's genesis floor ───────────────────────────────────────────
+# Without a floor this books the treasury's whole inbound history as revenue.
+# On the first real deploy it picked up a 24,250,000 token funding transfer that
+# predated the payment rail and accrued a 12,125,000 token burn against it —
+# a debt that, with SETTLEMENT_EXECUTE on, would have burned real supply.
+
+def _sig_row(sig: str, block_time: int) -> dict:
+    return {"signature": sig, "err": None, "blockTime": block_time}
+
+
+def _inbound_tx(treasury: str, amount: int, block_time: int) -> dict:
+    return {
+        "blockTime": block_time,
+        "meta": {
+            "err": None,
+            "preTokenBalances": [
+                {"owner": treasury, "mint": MINT,
+                 "uiTokenAmount": {"amount": "0", "decimals": 6}}
+            ],
+            "postTokenBalances": [
+                {"owner": treasury, "mint": MINT,
+                 "uiTokenAmount": {"amount": str(amount), "decimals": 6}}
+            ],
+        },
+        "transaction": {"message": {"accountKeys": [{"pubkey": "PayerAAA"}]}},
+    }
+
+
+@pytest.mark.asyncio
+async def test_reconcile_skips_transfers_before_genesis(kp, treasury_env, redis,
+                                                        monkeypatch):
+    treasury = str(kp.pubkey())
+    old, new = 1_700_000_000, 1_900_000_000
+    monkeypatch.setenv("SETTLEMENT_GENESIS_TS", str(1_800_000_000))
+    _stub_rpc(monkeypatch, {
+        "getSignaturesForAddress": lambda p: [_sig_row("OLDSIG", old),
+                                              _sig_row("NEWSIG", new)],
+        "getTransaction": lambda p: _inbound_tx(treasury, 5_000, new),
+    })
+
+    recovered = await B.reconcile_chain(redis, limit=10)
+
+    assert recovered == 1, "only the post-genesis transfer is revenue"
+    assert await redis.sismember(S.SEEN_KEY, "NEWSIG")
+    assert not await redis.sismember(S.SEEN_KEY, "OLDSIG")
+    assert int(await redis.hget("swarm:treasury", "revenue_total") or 0) == 5_000
+
+
+@pytest.mark.asyncio
+async def test_reconcile_without_genesis_keeps_old_behaviour(kp, treasury_env,
+                                                             redis, monkeypatch):
+    treasury = str(kp.pubkey())
+    monkeypatch.delenv("SETTLEMENT_GENESIS_TS", raising=False)
+    _stub_rpc(monkeypatch, {
+        "getSignaturesForAddress": lambda p: [_sig_row("OLDSIG", 1_700_000_000)],
+        "getTransaction": lambda p: _inbound_tx(treasury, 5_000, 1_700_000_000),
+    })
+
+    assert await B.reconcile_chain(redis, limit=10) == 1
