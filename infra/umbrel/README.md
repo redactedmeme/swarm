@@ -1,7 +1,7 @@
 # Umbrel box — captured stack definitions
 
 These files are the **authoritative** definitions for everything running on the
-umbrel node (`umbrel@<redacted-host>`). Until 2026-08-29 they existed only on the
+umbrel node (`umbrel@${UMBREL_HOST}`). Until 2026-08-29 they existed only on the
 box and were not in version control; losing the box meant losing the stack.
 
 | File | Lives on box at | What it is |
@@ -45,7 +45,7 @@ one, copy it up and re-up the stack:
 
 ```bash
 scp -i secrets/ssh/<redacted-key> infra/umbrel/swarm-infra-docker-compose.yml \
-    umbrel@<redacted-host>:/home/umbrel/swarm-infra/docker-compose.yml
+    umbrel@${UMBREL_HOST}:/home/umbrel/swarm-infra/docker-compose.yml
 ```
 
 ## Redactions

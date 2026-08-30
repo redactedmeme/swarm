@@ -1,7 +1,7 @@
 # Swarm Project Consolidation — Summary
 
 **Date:** 2026-07-29
-**Location:** `\\<redacted-host>\shared\swarm-main\` (zk-node, SSD-backed — `/propagated-mount/umbrel-backup/shared`)
+**Location:** `\\${ZK_NODE_HOST}\shared\swarm-main\` (zk-node, SSD-backed — `/propagated-mount/umbrel-backup/shared`)
 **Why this exists:** the swarm project's real source was scattered across an untracked local working directory, a stale 2-month-old git branch, and several live Railway containers, with no single place holding a complete, verified, current copy. This doc explains what's here now, where it came from, and what still needs a human decision.
 
 ---
