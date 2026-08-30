@@ -96,7 +96,11 @@ def main():
     from aiohttp import web
     import api
     logger.info("serving API on :%d", REFINERY_PORT)
-    web.run_app(api.make_app(), host="0.0.0.0", port=REFINERY_PORT, print=None)
+    # Loopback by default. Every caller (builder, smolting) is host-networked
+    # on this box, so 0.0.0.0 bought nothing and published the whole ingested
+    # corpus to the LAN over the unauthenticated GET /signals.
+    host = os.getenv("REFINERY_HOST", "127.0.0.1")
+    web.run_app(api.make_app(), host=host, port=REFINERY_PORT, print=None)
 
 
 if __name__ == "__main__":
