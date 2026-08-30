@@ -94,6 +94,8 @@ from typing import Any
 import aiohttp
 from aiohttp import web
 
+import credits  # self-contained; $REDACTED credit balance per client
+
 try:
     from aiohttp_socks import ProxyConnector
 except ImportError:  # optional dep — only required when UPSTREAM_PROXY is set
@@ -1107,6 +1109,13 @@ async def _auth_middleware(app, handler):
             # Attribute this request to a project for usage accounting.
             request["client"] = _resolve_client(token, request)
             request["is_admin"] = bool(ADMIN_TOKEN) and token == ADMIN_TOKEN
+            # $REDACTED credit gate — only inference is metered/charged.
+            if request.path == "/v1/chat/completions":
+                allowed, bal = await credits.check(
+                    await _usage_redis_client(), request["client"])
+                if not allowed:
+                    return web.json_response(
+                        credits.insufficient_body(bal), status=402)
         return await handler(request)
     return middleware
 
@@ -1534,6 +1543,10 @@ async def handle_chat_completions(request: web.Request) -> web.Response:
                    latency_ms, ephemeral=ephemeral, cost_usd=cost_usd)
         await _record_usage(request.get("client", "unknown"), provider, upstream_model,
                             input_tokens, output_tokens, cost_usd, exact=tokens_exact)
+        # Charge the client's $REDACTED balance and queue the spend for the
+        # settler to turn into a burn-split settlement. Never raises.
+        await credits.debit(await _usage_redis_client(), request.get("client", "unknown"),
+                            input_tokens, output_tokens)
         resp = web.json_response(result)
         resp.headers["X-Privacy-Mode"] = PRIVACY_MODE()
         if auto_tier:
@@ -1635,9 +1648,18 @@ async def handle_usage(request: web.Request) -> web.Response:
             for k in totals:
                 totals[k] += rec.get(k, 0)
         totals["cost_usd"] = round(totals["cost_usd"], 6)
+        # $REDACTED credit balance / lifetime debit per client (Phase 2).
+        for c, bal in (await credits.balances(r, list(out.keys()))).items():
+            out[c]["credits_balance"] = bal["balance"]
+            out[c]["credits_debited"] = bal["debited"]
         return web.json_response({
             "clients":      out,
             "totals":       totals,
+            "credits": {
+                "rate_per_1k_tokens": credits.RATE,
+                "enforced": credits.ENFORCE,
+                "exempt": sorted(credits.EXEMPT),
+            },
             "generated_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
         })
     except Exception as e:
