@@ -23,6 +23,9 @@ dependencies = [
     "pydantic>=2.0",
     "pyyaml>=6.0",
     "redis>=5.0",
+    # ed25519 verification for the holder gate (swarm_core.gate). Small, has
+    # manylinux wheels, and a security primitive — not an optional extra.
+    "cryptography>=42",
 ]
 
 [project.optional-dependencies]
@@ -35,6 +38,13 @@ solana = ["solana>=0.34", "solders>=0.21", "anchorpy>=0.19"]
 # mem0-memory plugin integration (lore_vault, gnosis_*, log_ingest, docs_ingest)
 memory = ["mem0ai>=0.0.1"]
 dev = ["pytest>=8.3", "pytest-asyncio>=0.21", "ruff>=0.6"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+# The x402 verification suite is async throughout; without this every test in
+# it is silently skipped with an "unknown mark" warning rather than failing,
+# which is the worst possible outcome for the code that guards payments.
+asyncio_mode = "auto"
 
 [tool.setuptools.packages.find]
 where = ["src"]

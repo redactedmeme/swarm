@@ -44,6 +44,7 @@ from pathlib import Path
 from aiohttp import web
 
 
+from swarm_core import tokens
 from swarm_core.swarm_heartbeat import (
     DOOR_KEY_PREFIX,
     HEARTBEAT_LOOKUP_KEYS,
@@ -157,6 +158,13 @@ REGISTRY_DIR = Path(__file__).resolve().parent
 AGENTS_PATH = Path(os.environ.get(
     "AGENTS_JSON", REGISTRY_DIR.parent / "website" / "data" / "agents.json"))
 OFFERS_PATH = Path(os.environ.get("OFFERS_JSON", REGISTRY_DIR / "offers.json"))
+
+# Hash the settlement writer maintains: burned_total, settlements_24h,
+# last_settlement_sig. Read-only here — this service never writes it.
+TREASURY_KEY = os.environ.get("TREASURY_KEY", "swarm:treasury")
+# Capped list of recent settlement records (newest first), written by
+# swarm_core.x402.settle. Read-only here.
+SETTLEMENTS_LOG_KEY = os.environ.get("SETTLEMENTS_LOG_KEY", "swarm:settlements:log")
 
 NONPRIVILEGED = (
     "Read from mesh heartbeat keys and a checked-in registry. No credential, "
@@ -289,6 +297,121 @@ def _blank_observation() -> dict:
     return {"hb": parse_heartbeat_value(None), "doors": []}
 
 
+def _priced_offers() -> list[dict]:
+    """Declared offers, joined to the price sheet.
+
+    `offers.json` stays the registry of *what exists and whether it is open* —
+    that stays a declared, hand-maintained fact. Price comes from
+    `swarm_core.tokens`, which is what the payment middleware actually charges,
+    so the feed cannot advertise a price the endpoints do not honour.
+
+    An offer with no matching price is published without one rather than
+    dropped: a caller should still be able to see that it exists.
+    """
+    rows = _load_json(OFFERS_PATH, "offers")
+    for row in rows:
+        try:
+            price = tokens.price_of(row["id"])
+        except KeyError:
+            continue
+        row["price"] = {
+            "amount": str(price),
+            "asset": tokens.token_mint(),
+            "decimals": tokens.TOKEN_DECIMALS,
+            "base_units": str(tokens.to_base_units(price)),
+        }
+    return rows
+
+
+async def _treasury(redis_client) -> dict:
+    """Burn and settlement totals, as recorded by the settlement writer.
+
+    Reports zeros rather than omitting the block when nothing has settled yet.
+    A missing field reads as "not built"; an explicit zero reads as "built, and
+    nobody has paid yet" — which is the honest state and the one that changes
+    visibly the moment it does.
+
+    Follows this module's existing discipline: never 500 a public endpoint on a
+    Redis blip, and never publish a precise timestamp.
+    """
+    split = tokens.revenue_split()
+    empty = {
+        "burned_total": "0",
+        "burn_accrued": "0",
+        "settlements_24h": 0,
+        "settlements_total": 0,
+        "revenue_total": "0",
+        "last_settlement_sig": None,
+        "last_burn_sig": None,
+        "runway_days": None,
+        "split": {"burn": split.burn, "compute": split.compute, "rewards": split.rewards},
+        "recent": [],
+    }
+    try:
+        raw = await redis_client.hgetall(TREASURY_KEY)
+    except Exception as exc:  # noqa: BLE001 — same rule as the observation read
+        log.warning("treasury read failed: %s", exc)
+        return empty
+    if not raw:
+        return empty
+
+    def _num(field: str):
+        v = raw.get(field)
+        try:
+            return float(v) if v not in (None, "") else None
+        except (TypeError, ValueError):
+            return None
+
+    return {
+        # `burned_total` is executed-on-chain; `burn_accrued` is owed. Both are
+        # on-chain-derivable, so neither widens the disclosure boundary. No
+        # `*_at` field is surfaced — the module never publishes a precise time.
+        "burned_total": raw.get("burned_total", "0"),
+        "burn_accrued": raw.get("burn_accrued", "0"),
+        "settlements_24h": int(raw.get("settlements_24h", 0) or 0),
+        "settlements_total": int(raw.get("settlements_total", 0) or 0),
+        "revenue_total": raw.get("revenue_total", "0"),
+        "last_settlement_sig": raw.get("last_settlement_sig") or None,
+        "last_burn_sig": raw.get("last_burn_sig") or None,
+        "runway_days": _num("runway_days"),
+        "split": {"burn": split.burn, "compute": split.compute, "rewards": split.rewards},
+        "recent": await _settlements(redis_client),
+    }
+
+
+async def _settlements(redis_client, n: int = 20) -> list[dict]:
+    """Recent settlements for the public feed, from `swarm:settlements:log`.
+
+    Each row is projected to `{sig, endpoint, amount, burn, age}` — the payer
+    wallet and the exact timestamp are dropped; the signature is public on any
+    explorer anyway, and `age` is a coarse bucket. Unparseable rows are skipped
+    and a Redis blip yields an empty list, never a 500.
+    """
+    try:
+        rows = await redis_client.lrange(SETTLEMENTS_LOG_KEY, 0, n - 1)
+    except Exception as exc:  # noqa: BLE001 — same rule as the observation read
+        log.warning("settlements read failed: %s", exc)
+        return []
+    now = time.time()
+    out: list[dict] = []
+    for row in rows or []:
+        try:
+            e = json.loads(row)
+            sig = e["sig"]
+        except (TypeError, ValueError, KeyError):
+            continue
+        ts = e.get("ts")
+        age_s = (now - ts) if isinstance(ts, (int, float)) else None
+        out.append({
+            "sig": str(sig)[:100],
+            "endpoint": str(e.get("endpoint") or "")[:40],
+            "amount": str(tokens.from_base_units(int(e.get("amount_raw", 0) or 0))),
+            "burn": str(tokens.from_base_units(int(e.get("burn", 0) or 0))),
+            "age": bucket(age_s, age_s is not None),
+        })
+    return out
+
+
 async def api_swarm(request: web.Request) -> web.Response:
     now = time.time()
     spec = _parse_query(request.query)
@@ -357,7 +480,8 @@ async def api_swarm(request: web.Request) -> web.Response:
             "doors_open": sum(1 for r in shown for d in r["doors"] if d["open"]),
         },
         "agents": shown,
-        "offers": _load_json(OFFERS_PATH, "offers"),
+        "offers": _priced_offers(),
+        "treasury": await _treasury(request.app["redis"]),
     }
 
     _api_cache[cache_key] = (now, payload)
