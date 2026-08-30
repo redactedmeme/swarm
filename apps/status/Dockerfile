@@ -15,5 +15,11 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 COPY apps/status/ .
 
+# The declared roster lives with the website, outside this service's own
+# directory, so it has to be copied in explicitly and pointed at. Without this
+# the registry read fails soft and /api/swarm publishes an empty roster.
+COPY apps/website/data/agents.json ./data/agents.json
+ENV AGENTS_JSON=/app/data/agents.json
+
 EXPOSE 8098
 CMD ["python", "-u", "app.py"]
