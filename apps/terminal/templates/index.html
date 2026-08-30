@@ -234,6 +234,9 @@
     <input id="auth-token" type="password" placeholder="enter access token..." autocomplete="off" />
     <div id="auth-err">Invalid token. Try again.</div>
     <button id="auth-btn" onclick="submitAuth()">AUTHENTICATE</button>
+    <div style="margin:14px 0 8px;font-size:9px;letter-spacing:2px;color:var(--dim,#666);">— OR —</div>
+    <button id="gate-btn" onclick="gateSignIn()">CONNECT WALLET · HOLD 1,000,000 $REDACTED</button>
+    <div id="gate-msg" style="margin-top:8px;font-size:10px;color:var(--dim,#888);min-height:14px;"></div>
   </div>
 </div>
 
@@ -368,6 +371,7 @@ const COMMANDS = [
   { cmd:'/bridge',          desc:'status — Kernel↔Contract bridge' },
   { cmd:'/contract',        desc:'status|propose|history|sync — interface contract' },
   { cmd:'/scarify',         desc:'<payer> <amount> [tier] — issue TAP token' },
+  { cmd:'/pay',             desc:'— x402 payment info: prices, treasury, settlement flow' },
 ];
 
 // ══ STATE ══
@@ -530,6 +534,52 @@ function submitAuth() {
   apiToken = tok;
   if (socket) socket.disconnect();
   initSocket(tok);
+}
+
+// ══ HOLDER GATE — connect Phantom, sign a nonce, prove the $REDACTED balance ══
+async function gateSignIn() {
+  const msg = document.getElementById('gate-msg');
+  const set = t => { msg.textContent = t; };
+  const prov = window.solana;
+  if (!prov || !prov.isPhantom) { set('Phantom wallet not found. Install the extension.'); return; }
+  try {
+    set('connecting…');
+    await prov.connect();
+    const wallet = prov.publicKey.toString();
+
+    set('requesting challenge…');
+    const nr = await fetch('/api/gate/nonce', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ wallet }),
+    });
+    if (!nr.ok) { set('gate error: ' + (await nr.json()).error); return; }
+    const { message } = await nr.json();
+
+    set('sign the message in Phantom…');
+    const signed = await prov.signMessage(new TextEncoder().encode(message), 'utf8');
+    const sigB64 = btoa(String.fromCharCode(...signed.signature));
+
+    set('verifying balance…');
+    const vr = await fetch('/api/gate/verify', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ wallet, message, signature: sigB64 }),
+    });
+    const body = await vr.json();
+    if (!vr.ok) {
+      if (body.error === 'below_threshold') {
+        set(`balance ${body.balance} $REDACTED — need ${body.min_required.toLocaleString()}`);
+      } else {
+        set('denied: ' + (body.error || vr.status));
+      }
+      return;
+    }
+    set(`✓ ${body.tier} — ${body.wallet.slice(0, 6)}… granting access`);
+    document.getElementById('auth-modal').classList.remove('show');
+    if (socket) socket.disconnect();
+    initSocket();  // session cookie is now authenticated
+  } catch (e) {
+    set('sign-in failed: ' + (e.message || e));
+  }
 }
 
 // ══ OUTPUT ══

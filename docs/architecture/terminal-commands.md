@@ -54,7 +54,7 @@ Complete slash-command reference for the swarm terminal (`web_ui/` + `python/`).
 /user <@handle>                User profile lookup
 
 /scarify <payer> <amt>         Issue x402 scarification token (base / deeper / monolith)
-/pay <amount> <target>          Simulate x402 micropayment settlement
+/pay                            x402 payment info: price sheet, treasury address, settlement flow
 
 /space list                     List available spaces
 /space <name>                    Load a specific space

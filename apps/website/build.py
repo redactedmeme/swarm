@@ -25,8 +25,13 @@ import sys
 
 HERE = pathlib.Path(__file__).parent
 REPO = HERE.parent
+REPO_ROOT = HERE.parent.parent
 
-PROMPT_SRC = REPO / "terminal" / "system.prompt.md"
+# The canonical prompt is the file the live terminal actually loads at runtime
+# (apps/terminal/app.py -> _repo_root() / "terminal" / "system.prompt.md", and
+# the terminal Dockerfile COPYs terminal/ into the image). The monorepo reorg
+# moved the service to apps/terminal/ but left the prompt at the repo root.
+PROMPT_SRC = REPO_ROOT / "terminal" / "system.prompt.md"
 PROMPT_OUT = HERE / "system.prompt.md"
 
 AGENTS = json.loads((HERE / "data" / "agents.json").read_text(encoding="utf-8"))
@@ -36,9 +41,15 @@ AGENTS = json.loads((HERE / "data" / "agents.json").read_text(encoding="utf-8"))
 
 def sync_prompt() -> None:
     if not PROMPT_SRC.exists():
-        sys.exit(f"missing canonical prompt: {PROMPT_SRC}")
+        # Non-fatal: keep the last-synced copy and let the roster / llms.txt
+        # regeneration below still run. A hard exit here once silently stopped
+        # the whole build when the prompt was relocated.
+        print(f"WARNING: canonical prompt not found at {PROMPT_SRC} — "
+              f"keeping existing {PROMPT_OUT.name}")
+        return
     shutil.copyfile(PROMPT_SRC, PROMPT_OUT)
-    print(f"system.prompt.md: {PROMPT_OUT.stat().st_size} bytes from {PROMPT_SRC.relative_to(REPO)}")
+    print(f"system.prompt.md: {PROMPT_OUT.stat().st_size} bytes from "
+          f"{PROMPT_SRC.relative_to(REPO_ROOT)}")
 
 
 # ── roster ────────────────────────────────────────────────────────────────────

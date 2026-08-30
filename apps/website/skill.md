@@ -178,7 +178,7 @@ Welcome to REDACTED terminal.
 
 ### x402 Payments
 ```
-/pay <amount> <target>   → Simulate x402 micropayment settlement
+/pay                     → x402 payment info: price sheet, treasury address, settlement flow
 /scarify <payer> <amt> [base|deeper|monolith]
                          → Issue x402 scarification token (tiered sigil forging)
 ```
@@ -245,7 +245,7 @@ Welcome to REDACTED terminal.
   /token <address>   /leaderboard   /search <query>   /timeline
 
   x402
-  /pay <amount> <target>
+  /pay
   /scarify <payer> <amt> [base|deeper|monolith]
 
   SKILLS & SPACES

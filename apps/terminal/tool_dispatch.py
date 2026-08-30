@@ -798,6 +798,39 @@ def dispatch(cmd: str) -> Optional[str]:
 
         return f"[TOOL] Unknown /node subcommand '{sub}'. Use: list | summon <name>"
 
+    # ── x402 payment info ─────────────────────────────────────────────────────
+
+    if verb == '/pay':
+        try:
+            from swarm_core.tokens import (
+                PRICE_SHEET, TOKEN_DECIMALS, token_mint, treasury_address,
+            )
+        except Exception as e:
+            return f"[TOOL ERROR] pay: x402 module unavailable ({e})"
+        try:
+            pay_to = treasury_address()
+        except RuntimeError:
+            pay_to = "(SWARM_TREASURY_ADDRESS not configured on this node)"
+        lines = [
+            "[TOOL:pay] x402 — pay in $REDACTED, the swarm serves the call. "
+            "Half of every payment is burned.",
+            f"  mint    : {token_mint()}",
+            f"  pay to  : {pay_to}",
+            f"  decimals: {TOKEN_DECIMALS}",
+            "  price sheet:",
+        ]
+        for o in PRICE_SHEET:
+            lines.append(f"    {o.id:<11} {o.price:>8,} $REDACTED  —  {o.summary}")
+        lines += [
+            "  flow: call the endpoint unpaid -> 402 names the price + payTo -> "
+            "send $REDACTED",
+            "        -> retry with the signature in X-Payment-Signature. "
+            "Verified on-chain.",
+            "  This terminal holds no keys and signs nothing — settlement is "
+            "server-side.",
+        ]
+        return "\n".join(lines)
+
     # ── TAP token scarification ───────────────────────────────────────────────
 
     if verb == '/scarify':
@@ -947,7 +980,7 @@ def dispatch(cmd: str) -> Optional[str]:
         )
         return f"__SUMMON__:MiladyNode||{encoded}||{header}"
 
-    # ── /phi — invoke Φ̸-MĀṆḌALA PRIME ────────────────────────────────────────
+    # ── /phi — invoke MANDALA PRIME ────────────────────────────────────────
     if verb in ('/phi', '/mandala', '/phimandala'):
         try:
             char = _load_character("PhiMandalaPrime")
