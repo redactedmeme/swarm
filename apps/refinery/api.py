@@ -7,19 +7,65 @@
     POST /query  {"text":..,"kind":..,"limit":..,"include_private":false}
                                       -> semantic search via Qdrant
 
-Private rows (redacted-chan soul-adjacent) are withheld unless the caller is
-on-box AND explicitly sets include_private=true. They never leave the box.
+Private rows (redacted-chan soul-adjacent) are withheld unless the caller
+presents the operator token. Until now this docstring claimed the caller had to
+be "on-box AND explicitly set include_private=true", but no on-box check existed
+anywhere — `include_private` was read straight off the request by an endpoint
+with no authentication at all, so anyone who could reach the port could read
+soul-adjacent rows. `_is_operator` is that missing check.
+
+`POST /query` is a priced endpoint (see `swarm_core.tokens.PRICE_SHEET`).
+Operator-token callers — the agents on our own mesh — bypass payment.
 """
 from __future__ import annotations
 
+import hmac
 import logging
+import os
 
+import redis.asyncio as aioredis
 from aiohttp import web
+
+from swarm_core.x402 import require_payment
 
 import common as C
 import liveness
 
 logger = logging.getLogger("refinery.api")
+
+#: Shared secret for on-mesh callers. Unset means no caller is ever treated as
+#: an operator — private rows stay withheld and every /query call must pay.
+OPERATOR_TOKEN = os.getenv("REFINERY_OPERATOR_TOKEN", "").strip()
+
+
+def _is_operator(request: web.Request) -> bool:
+    """True only for a caller presenting the operator token.
+
+    Compared with `compare_digest` because this gates both private rows and
+    free access; a timing-distinguishable comparison here is a real leak.
+    """
+    if not OPERATOR_TOKEN:
+        return False
+    presented = (request.headers.get("Authorization", "")
+                 .removeprefix("Bearer ").strip())
+    if not presented:
+        return False
+    return hmac.compare_digest(presented, OPERATOR_TOKEN)
+
+
+def _wants_private(request: web.Request, requested: bool) -> bool:
+    """Resolve `include_private`, refusing rather than silently downgrading.
+
+    Silently returning public-only rows would let a caller believe they had
+    searched everything. Raising makes the boundary visible.
+    """
+    if not requested:
+        return False
+    if not _is_operator(request):
+        raise web.HTTPForbidden(
+            reason="include_private requires the operator token"
+        )
+    return True
 
 
 async def healthz(request):
@@ -51,7 +97,10 @@ async def stats(request):
 async def signals(request):
     kind = request.query.get("kind")
     limit = min(int(request.query.get("limit", "20")), 200)
-    include_private = request.query.get("include_private", "false").lower() in ("1", "true", "yes")
+    include_private = _wants_private(
+        request,
+        request.query.get("include_private", "false").lower() in ("1", "true", "yes"),
+    )
     q = "SELECT id, source, kind, text, ts, confidence, private FROM signals WHERE 1=1"
     args = []
     if kind:
@@ -70,6 +119,7 @@ async def signals(request):
     return web.json_response({"count": len(out), "signals": out})
 
 
+@require_payment("refine", bypass=_is_operator)
 async def query(request):
     body = await request.json()
     text = (body.get("text") or "").strip()
@@ -77,7 +127,7 @@ async def query(request):
         return web.json_response({"error": "text required"}, status=400)
     limit = min(int(body.get("limit", 10)), 100)
     kind = body.get("kind")
-    include_private = bool(body.get("include_private", False))
+    include_private = _wants_private(request, bool(body.get("include_private", False)))
 
     vec = C.embed(text)
     from qdrant_client.models import Filter, FieldCondition, MatchValue
@@ -94,8 +144,18 @@ async def query(request):
     return web.json_response({"count": len(results), "results": results})
 
 
+async def _close_redis(app: web.Application) -> None:
+    client = app.get("redis")
+    if client is not None:
+        await client.aclose()
+
+
 def make_app() -> web.Application:
     app = web.Application()
+    # The payment middleware's replay guard needs this. Without it a priced
+    # route returns 503 rather than serving unpaid — fail closed, by design.
+    app["redis"] = aioredis.from_url(C.REDIS_URL, decode_responses=True)
+    app.on_cleanup.append(_close_redis)
     app.add_routes([
         web.get("/healthz", healthz),
         web.get("/liveness", liveness_handler),
