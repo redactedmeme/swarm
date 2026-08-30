@@ -28,6 +28,8 @@ dependencies = [
 [project.optional-dependencies]
 # swarm_core.llm providers
 llm = ["groq>=0.10", "anthropic>=0.28", "ollama>=0.3"]
+# swarm_core.engine.swarm_engine's Telegram bridge
+telegram = ["python-telegram-bot>=21"]
 # swarm_core.mandala_client and the settlement path
 solana = ["solana>=0.34", "solders>=0.21", "anchorpy>=0.19"]
 # mem0-memory plugin integration (lore_vault, gnosis_*, log_ingest, docs_ingest)
