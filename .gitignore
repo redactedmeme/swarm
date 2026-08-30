@@ -107,3 +107,6 @@ dist/
 # commands with real tokens in them; keep them local-only. A credential that
 # reaches this repo is public — see CLAUDE.md.
 apps/arb-keeper/UPGRADE_NOTES.md
+# Session handoff log: an internal operator run-book. It maps the access path to
+# the live box (host, key path, where the sudo password lives). Local-only.
+handoff.md
