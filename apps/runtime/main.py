@@ -53,6 +53,34 @@ async def _redis_write_hb(node_id: str, metadata: dict | None = None) -> None:
         logger.debug(f"[hb] redis write failed for {node_id}: {e}")
 
 
+async def _redis_write_doors(node_id: str, capabilities: list) -> None:
+    """Persist each announced capability as a door.
+
+    A heartbeat says the announce loop ran; a door says a named capability is
+    being asserted. Announce-driven on purpose — the agent asserts its own
+    doors, so no reader of these keys needs an outbound-request capability.
+    """
+    if not capabilities:
+        return
+    try:
+        import redis.asyncio as aioredis
+        from swarm_core.swarm_heartbeat import build_door_payload, door_redis_key
+
+        r = aioredis.from_url(REDIS_URL, decode_responses=True)
+        for cap in capabilities:
+            if isinstance(cap, dict):
+                name, kind, is_open = cap.get("name"), cap.get("kind", ""), cap.get("open", True)
+            else:
+                name, kind, is_open = cap, "", True
+            if not name:
+                continue
+            payload = json.dumps(build_door_payload(str(name), str(kind), bool(is_open)))
+            await r.set(door_redis_key(node_id, str(name)), payload, ex=HEARTBEAT_TTL)
+        await r.aclose()
+    except Exception as e:
+        logger.debug(f"[hb] redis door write failed for {node_id}: {e}")
+
+
 async def _self_heartbeat_loop() -> None:
     """Write runtime's own heartbeat every 2 min so webchat shows it online."""
     while True:
@@ -335,6 +363,7 @@ async def mesh_announce(body: dict):
     }
     _mesh_peers[node_id] = {"last_seen": time.time(), **metadata}
     await _redis_write_hb(node_id, metadata)
+    await _redis_write_doors(node_id, metadata.get("capabilities") or [])
     logger.info(f"[mesh] {node_id} announced ({body.get('role', '?')})")
     return {"ok": True, "nodeId": node_id}
 

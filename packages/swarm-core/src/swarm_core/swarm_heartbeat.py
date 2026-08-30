@@ -111,3 +111,81 @@ async def read_heartbeat_async(redis_client, agent_id: str) -> dict[str, Any]:
             parsed["redis_key"] = key
             candidates.append(parsed)
     return pick_best_heartbeat(candidates)
+
+
+# ── Doors ─────────────────────────────────────────────────────────────────────
+# A heartbeat says a process loop ran. A door says a named capability answered.
+# Key: swarm:door:{agent_id}:{name}
+# Value: JSON {"name", "kind", "open", "ts" (ISO), "unix" (float)}
+# Same TTL as a heartbeat, so a door that stops being asserted disappears rather
+# than going stale.
+
+DOOR_KEY_PREFIX = "swarm:door:"
+
+
+def door_redis_key(agent_id: str, name: str) -> str:
+    return f"{DOOR_KEY_PREFIX}{agent_id}:{name}"
+
+
+def build_door_payload(name: str, kind: str = "", is_open: bool = True) -> dict[str, Any]:
+    now = time.time()
+    return {
+        "name": name,
+        "kind": kind,
+        "open": bool(is_open),
+        "ts": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+        "unix": now,
+    }
+
+
+def parse_door_value(raw: Optional[str], now: Optional[float] = None) -> Optional[dict[str, Any]]:
+    """Return a door dict with an `age_s`, or None if the value is unusable."""
+    now = now if now is not None else time.time()
+    if not raw:
+        return None
+    try:
+        data = json.loads(raw)
+    except (ValueError, TypeError, json.JSONDecodeError):
+        return None
+    if not isinstance(data, dict):
+        return None
+
+    ts = data.get("unix")
+    try:
+        ts = float(ts) if ts is not None else None
+    except (ValueError, TypeError):
+        ts = None
+
+    return {
+        "name": str(data.get("name") or ""),
+        "kind": str(data.get("kind") or ""),
+        "open": bool(data.get("open")),
+        "age_s": round(max(0.0, now - ts)) if ts is not None else None,
+    }
+
+
+async def write_door_async(redis_client, agent_id: str, name: str,
+                           kind: str = "", is_open: bool = True) -> None:
+    payload = build_door_payload(name, kind, is_open)
+    await redis_client.set(
+        door_redis_key(agent_id, name),
+        json.dumps(payload, ensure_ascii=False),
+        ex=HEARTBEAT_TTL_SEC,
+    )
+
+
+async def read_doors_async(redis_client, agent_id: str) -> list[dict[str, Any]]:
+    """Every door asserted under any alias of `agent_id`, newest assertion wins."""
+    keys = HEARTBEAT_LOOKUP_KEYS.get(agent_id, [agent_id])
+    now = time.time()
+    best: dict[str, dict[str, Any]] = {}
+    for alias in keys:
+        async for key in redis_client.scan_iter(match=f"{DOOR_KEY_PREFIX}{alias}:*"):
+            raw = await redis_client.get(key)
+            door = parse_door_value(raw, now)
+            if not door or not door["name"]:
+                continue
+            prior = best.get(door["name"])
+            if prior is None or (door["age_s"] or 10**9) < (prior["age_s"] or 10**9):
+                best[door["name"]] = door
+    return sorted(best.values(), key=lambda d: d["name"])
