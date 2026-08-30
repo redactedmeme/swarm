@@ -13,6 +13,7 @@ Environment variables required:
 """
 
 import asyncio
+import hmac
 import json
 import os
 import time
@@ -167,7 +168,10 @@ async def login(body: LoginRequest):
     """Validate password and return a signed JWT."""
     if not WEB_PASSWORD:
         raise HTTPException(status_code=500, detail="server misconfigured: WEB_PASSWORD not set")
-    if body.password != WEB_PASSWORD:
+    if not WEB_SECRET or WEB_SECRET == "changeme":
+        # A known/absent signing secret makes every issued JWT forgeable.
+        raise HTTPException(status_code=500, detail="server misconfigured: WEB_SECRET not set")
+    if not hmac.compare_digest(body.password, WEB_PASSWORD):
         raise HTTPException(status_code=401, detail="wrong password")
     token = _mint_token()
     session_id = str(uuid.uuid4())

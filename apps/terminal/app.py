@@ -47,6 +47,9 @@ app.secret_key = os.getenv('FLASK_SECRET_KEY', hashlib.sha256(os.urandom(32)).he
 
 # ── Security configuration ────────────────────────────────────────────────────
 
+def _truthy(name: str) -> bool:
+    return os.getenv(name, '').strip().lower() in ('1', 'true', 'yes', 'on')
+
 API_KEY                = os.getenv('WEB_TERMINAL_API_KEY')
 CORS_ORIGINS           = os.getenv('WEB_CORS_ORIGINS', '*').split(',')
 RUNTIME_API_URL        = os.getenv('RUNTIME_API_URL', 'http://localhost:4001')
@@ -54,6 +57,51 @@ MAX_COMMAND_LENGTH     = int(os.getenv('WEB_MAX_COMMAND_LENGTH', '4096'))
 RATE_LIMIT_REQUESTS    = int(os.getenv('WEB_RATE_LIMIT', '10'))
 RATE_LIMIT_WINDOW      = int(os.getenv('WEB_RATE_LIMIT_WINDOW', '60'))
 PHANTOM_ALLOWED_ORIGINS = os.getenv('PHANTOM_ALLOWED_ORIGINS', 'http://localhost:5000').split(',')
+
+# ── $REDACTED holder gate ─────────────────────────────────────────────────────
+# Access is closed when EITHER a static WEB_TERMINAL_API_KEY is set OR HOLDER_GATE
+# is on (sign a nonce, hold >= 1M $REDACTED). GATE_STRICT closes it even when
+# neither is configured (otherwise: open, with a loud warning — dev convenience).
+HOLDER_GATE   = _truthy('HOLDER_GATE')
+GATE_STRICT   = _truthy('GATE_STRICT')
+GATE_REDIS_URL = os.getenv('REDIS_URL', 'redis://localhost:6379')
+
+try:
+    import asyncio as _asyncio
+    import redis.asyncio as _aioredis
+    import swarm_core.gate as gate
+    _GATE_AVAILABLE = True
+except Exception as _e:  # noqa: BLE001
+    _GATE_AVAILABLE = False
+    if HOLDER_GATE:
+        logging.getLogger(__name__).error("HOLDER_GATE set but swarm_core.gate import failed: %s", _e)
+
+
+def _gate_required() -> bool:
+    return bool(API_KEY) or HOLDER_GATE
+
+
+def _run_gate(make_coro):
+    """Run one gate coroutine on a throwaway loop with a fresh async Redis
+    client (a redis.asyncio client is bound to the loop that created it)."""
+    loop = _asyncio.new_event_loop()
+    try:
+        async def _wrap():
+            r = _aioredis.from_url(GATE_REDIS_URL, decode_responses=True)
+            try:
+                return await make_coro(r)
+            finally:
+                await r.aclose()
+        return loop.run_until_complete(_wrap())
+    finally:
+        loop.close()
+
+
+if not _gate_required() and not GATE_STRICT:
+    logging.getLogger(__name__).warning(
+        "=" * 68 + "\n  TERMINAL IS UNAUTHENTICATED — neither WEB_TERMINAL_API_KEY "
+        "nor HOLDER_GATE is set.\n  Set one, or GATE_STRICT=true to fail closed.\n" + "=" * 68
+    )
 
 # ── Audit logging ─────────────────────────────────────────────────────────────
 
@@ -241,7 +289,9 @@ def generate_session_id() -> str:
 def require_auth(f):
     @wraps(f)
     def decorated(*args, **kwargs):
-        if API_KEY and not session.get('authenticated'):
+        if GATE_STRICT and not _gate_required():
+            return jsonify({'error': 'Terminal auth is not configured'}), 503
+        if _gate_required() and not session.get('authenticated'):
             return jsonify({'error': 'Authentication required'}), 401
         return f(*args, **kwargs)
     return decorated
@@ -372,6 +422,80 @@ def api_wallet_submit_signed():
         logger.error(f"TX broadcast failed: {e}")
         return jsonify({'error': str(e), 'success': False}), 500
 
+# ── $REDACTED holder gate — nonce / sign / verify ────────────────────────────
+
+
+def _gate_ready():
+    return _GATE_AVAILABLE and HOLDER_GATE
+
+
+@app.route('/api/gate/nonce', methods=['POST'])
+def api_gate_nonce():
+    if not _gate_ready():
+        return jsonify({'error': 'holder gate not enabled'}), 404
+    session_id = session.get('session_id', 'unknown')
+    if not check_rate_limit(session_id + ':gate'):
+        return jsonify({'error': 'rate limited'}), 429
+    wallet = ((request.get_json(silent=True) or {}).get('wallet') or '').strip()
+    if not wallet:
+        return jsonify({'error': 'wallet required'}), 400
+    try:
+        out = _run_gate(lambda r: gate.issue_nonce(r, wallet))
+    except gate.GateError as e:
+        return jsonify({'error': e.reason, 'detail': e.detail}), 400
+    except Exception as e:  # noqa: BLE001
+        logger.error(f"gate nonce error: {e}")
+        return jsonify({'error': 'gate unavailable'}), 503
+    return jsonify(out)
+
+
+@app.route('/api/gate/verify', methods=['POST'])
+def api_gate_verify():
+    if not _gate_ready():
+        return jsonify({'error': 'holder gate not enabled'}), 404
+    session_id = session.get('session_id', 'unknown')
+    if not check_rate_limit(session_id + ':gate'):
+        return jsonify({'error': 'rate limited'}), 429
+    data = request.get_json(silent=True) or {}
+    wallet, message, signature = (data.get('wallet', '').strip(),
+                                  data.get('message', ''), data.get('signature', ''))
+    if not (wallet and message and signature):
+        return jsonify({'error': 'wallet, message, signature required'}), 400
+    try:
+        res = _run_gate(lambda r: gate.authorize(r, wallet, message, signature))
+    except gate.GateError as e:
+        code = 403 if e.reason in ('bad_signature', 'nonce', 'bad_message') else 503
+        return jsonify({'error': e.reason, 'detail': e.detail}), code
+    except Exception as e:  # noqa: BLE001
+        logger.error(f"gate verify error: {e}")
+        return jsonify({'error': 'gate unavailable'}), 503
+
+    if res['ok']:
+        session['authenticated']  = True
+        session['wallet_address'] = res['wallet']
+        session['tier']           = res['tier']
+        session['grants']         = res['grants']
+        audit_log('gate_verify', session_id, '', 'success',
+                  {'wallet_prefix': res['wallet'][:8], 'tier': res['tier']})
+        return jsonify(res)
+
+    audit_log('gate_verify', session_id, '', 'denied',
+              {'wallet_prefix': res['wallet'][:8], 'balance': res['balance']})
+    return jsonify({'error': 'below_threshold', 'balance': res['balance'],
+                    'min_required': res['min_required'], 'tier': res['tier']}), 403
+
+
+@app.route('/api/gate/status', methods=['GET'])
+def api_gate_status():
+    return jsonify({
+        'gate_required': _gate_required(),
+        'holder_gate':   _gate_ready(),
+        'authenticated': bool(session.get('authenticated')),
+        'wallet':        session.get('wallet_address'),
+        'tier':          session.get('tier'),
+        'grants':        session.get('grants', []),
+    })
+
 # ── Telegram bot event bridge ─────────────────────────────────────────────────
 
 BRIDGE_TOKEN = os.environ.get("WEBUI_BRIDGE_TOKEN", "")
@@ -404,22 +528,29 @@ def handle_connect():
     sid        = request.sid
     session_id = generate_session_id()
     session['session_id']       = session_id
-    session['authenticated']    = False
     session['wallet_connected'] = False
-    session['wallet_address']   = None
+    # Preserve an existing holder-gate authentication carried on the shared
+    # Flask session cookie (set by POST /api/gate/verify). Only default these.
+    session.setdefault('authenticated', False)
+    session.setdefault('wallet_address', None)
 
-    token     = request.args.get('token')
-    signature = request.args.get('sig')
+    token = request.args.get('token')
 
-    if API_KEY:
-        if token and hmac.compare_digest(token, API_KEY):
+    if GATE_STRICT and not _gate_required():
+        emit('auth_error', {'data': 'Terminal auth is not configured'})
+        disconnect()
+        return
+
+    if _gate_required():
+        if token and API_KEY and hmac.compare_digest(token, API_KEY):
             session['authenticated'] = True
-        elif signature:
-            session['authenticated'] = True
+        elif session.get('authenticated'):
+            pass  # already verified via the holder-gate sign-in
         else:
             audit_log('connect_failed', session_id, '', 'unauthorized',
                       {'reason': 'invalid_credentials'})
-            emit('auth_error', {'data': 'Authentication required'})
+            emit('auth_error', {'data': 'Authentication required — hold at least '
+                 '1,000,000 $REDACTED and sign in, or present a valid token'})
             disconnect()
             return
 
@@ -477,11 +608,14 @@ def handle_wallet_connected(data):
     if not address:
         emit('wallet:error', {'message': 'No address provided'})
         return
+    # Cosmetic only. A client-asserted address is NOT proof of ownership and
+    # never grants access — `session['wallet_address']` is set solely by
+    # POST /api/gate/verify after an ed25519 nonce signature.
     session['wallet_connected'] = True
-    session['wallet_address']   = address
+    session['wallet_display']   = address
     audit_log('wallet_connected', session_id, '', 'success', {'address_prefix': address[:8]})
     emit('wallet_status', {'connected': True, 'address': address,
-                           'message': 'Wallet connected (local signing enabled)'})
+                           'message': 'Wallet linked — sign in to unlock the terminal'})
 
 
 @socketio.on('wallet:disconnected')
@@ -552,6 +686,12 @@ def handle_command(data):
     session_id = session.get('session_id', 'unknown')
     raw_cmd    = data.get('cmd', '').strip()
     sid        = request.sid
+
+    # Defense in depth: `connect` already gates, but never dispatch a command
+    # from a session that isn't authenticated when the gate is required.
+    if _gate_required() and not session.get('authenticated'):
+        emit('auth_error', {'data': 'Authentication required'})
+        return
 
     if not raw_cmd:
         emit('output', {'data': '❌ Empty command'})
