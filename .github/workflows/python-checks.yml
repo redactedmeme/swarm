@@ -1,0 +1,108 @@
+name: Python checks
+
+on:
+  pull_request:
+    branches: [ "main", "master" ]
+  push:
+    branches: [ "main", "master" ]
+
+jobs:
+  packages:
+    name: shared packages import
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install shared packages
+        run: pip install -e packages/swarm-core -e packages/swarm-tg
+
+      # The check that would have caught every layout outage this repo has had:
+      # a moved directory used to break imports at runtime, in production,
+      # rather than here.
+      - name: Import every module
+        run: |
+          python - <<'PY'
+          import importlib, pkgutil, sys
+          import swarm_core, swarm_tg
+
+          # Modules whose import needs a third-party client or external CLI that
+          # is deliberately not installed in CI. Failures here are environmental,
+          # not layout problems.
+          OPTIONAL = {
+              "swarm_core.llm",                    # groq / anthropic clients
+              "swarm_core.mandala_client",         # anchorpy (solana extra)
+              "swarm_core.tools.xredacted_tools",  # clawnch CLI
+          }
+
+          failed = []
+          for pkg in (swarm_core, swarm_tg):
+              for m in pkgutil.walk_packages(pkg.__path__, pkg.__name__ + "."):
+                  try:
+                      importlib.import_module(m.name)
+                  except Exception as e:
+                      if not any(m.name.startswith(o) for o in OPTIONAL):
+                          failed.append(f"{m.name}: {type(e).__name__}: {e}")
+
+          for f in failed:
+              print("FAIL", f)
+          sys.exit(1 if failed else 0)
+          PY
+
+  apps:
+    name: apps compile
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Byte-compile every app
+        run: |
+          python - <<'PY'
+          import pathlib, py_compile, sys
+          bad = []
+          for p in pathlib.Path("apps").rglob("*.py"):
+              if "node_modules" in p.parts:
+                  continue
+              try:
+                  py_compile.compile(str(p), doraise=True, quiet=2)
+              except Exception as e:
+                  bad.append(f"{p}: {e}")
+          for b in bad:
+              print("FAIL", b)
+          sys.exit(1 if bad else 0)
+          PY
+
+  layout:
+    name: layout invariants
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # Shared code belongs in packages/. These files were duplicated across
+      # services for a long time and the copies drifted apart.
+      - name: No duplicated shared modules under apps/
+        run: |
+          dupes=$(find apps -name tg_fmt.py -o -name swarm_heartbeat.py | grep -v node_modules || true)
+          if [ -n "$dupes" ]; then
+            echo "These belong in packages/, not copied into a service:"
+            echo "$dupes"
+            exit 1
+          fi
+
+      # Every app that imports the shared packages must build from the repo
+      # root, or packages/ is outside its Docker context and the image fails.
+      - name: Root-context Dockerfiles COPY packages/
+        run: |
+          fail=0
+          for df in apps/*/Dockerfile; do
+            app=$(basename "$(dirname "$df")")
+            if grep -rqE '(^|[^.])\b(swarm_core|swarm_tg)\b' --include=*.py "apps/$app" 2>/dev/null; then
+              grep -q 'COPY packages/' "$df" || { echo "$df: apps/$app imports the shared packages but never COPYs packages/"; fail=1; }
+            fi
+          done
+          exit $fail
