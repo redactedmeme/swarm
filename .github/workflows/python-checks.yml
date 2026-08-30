@@ -35,6 +35,7 @@ jobs:
               "swarm_core.llm",                    # groq / anthropic clients
               "swarm_core.mandala_client",         # anchorpy (solana extra)
               "swarm_core.tools.xredacted_tools",  # clawnch CLI
+              "swarm_core.engine.swarm_engine",     # python-telegram-bot (telegram extra)
           }
 
           failed = []
