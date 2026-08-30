@@ -92,7 +92,9 @@ def _tier(name: str, path_stem: str = "") -> str:
         if stem.lower() in path_stem.lower():
             return tier
     n = name.lower().replace("-", "").replace("_", "").replace(" ", "")
-    # Strip unicode noise from names like Φ̸-MĀṆḌALA PRIME
+    # Some node names carry decorative non-ASCII (the apex node used to be
+    # written with a crossed phi and combining marks). Match on a stripped copy
+    # as well as the original so tiering survives that.
     n_ascii = "".join(c for c in n if ord(c) < 128)
     for k in _CORE_NAMES:
         if k in n or k in n_ascii:

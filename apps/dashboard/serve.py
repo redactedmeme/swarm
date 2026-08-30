@@ -8,11 +8,18 @@ import threading
 import urllib.request
 from http.server import HTTPServer, SimpleHTTPRequestHandler
 
-TOKEN         = '9a21gb7fWGm9dD2UFdZAzgFn5K1NwfmYkjyLbpAcKgnM'
-V2_TOKEN      = '9mtKd1o8Ht7F1daumKgs5D8EdVyopWBfYQwNmMojpump'
+# This service builds from its own directory (no packages/ in its Docker
+# context), so it cannot import the shared token module. It reads the same env
+# vars instead — keep these defaults in step with packages/swarm-core.
+TOKEN         = os.environ.get('PROJECT_TOKEN_MINT', '9mtKd1o8Ht7F1daumKgs5D8EdVyopWBfYQwNmMojpump')
+LEGACY_TOKEN  = os.environ.get('LEGACY_TOKEN_MINT', '9a21gb7fWGm9dD2UFdZAzgFn5K1NwfmYkjyLbpAcKgnM')
 HELIUS_KEY    = os.environ.get('HELIUS_API_KEY', '')
-DEXSCREENER   = f'https://api.dexscreener.com/latest/dex/tokens/{TOKEN}'
-DEXSCREENER_V2 = f'https://api.dexscreener.com/latest/dex/tokens/{V2_TOKEN}'
+
+# The volume history charts the legacy curve; `/api/v2` charts the current one.
+# The dashboard predates the migration and was built around the legacy mint —
+# the two feeds keep their existing shape so the frontend contract holds.
+DEXSCREENER   = f'https://api.dexscreener.com/latest/dex/tokens/{LEGACY_TOKEN}'
+DEXSCREENER_V2 = f'https://api.dexscreener.com/latest/dex/tokens/{TOKEN}'
 HELIUS_RPC    = 'https://mainnet.helius-rpc.com/?api-key={key}'
 
 V1V2_POOL          = '8Jd4KxLXhSqJx3wx7WRujfLZ7hmddVQkoM4qJqg4cPHo'
@@ -76,6 +83,13 @@ def _parse_mint_authorities(b64_data):
         return None, None
 
 def fetch_token_info():
+    """Supply, mint/freeze authorities, holder count and image for TOKEN.
+
+    These are identity facts about the project token, and until the mint
+    constants were reconciled they were all being fetched for the *legacy*
+    mint — so the dashboard reported the wrong token's holder count and
+    supply as its headline figures.
+    """
     if not HELIUS_KEY:
         return
 

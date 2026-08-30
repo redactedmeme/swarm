@@ -1,6 +1,13 @@
 import os
 
 # ── Token mints ────────────────────────────────────────────────────────────────
+# NOTE: this default is the LEGACY (V1) mint, and it is deliberately still here.
+# The pool addresses below are V1 pools; this bot signs real swaps against them,
+# so the mint and the venues have to move together or it would quote one token
+# and route through the other's liquidity. Migrating both is Phase 5 work
+# (buyback), not a config edit. Every other service resolves PROJECT_TOKEN_MINT
+# through the shared token module in packages/swarm-core; this app builds from
+# its own directory and so reads the environment directly instead.
 TOKEN_MINT = os.environ.get(
     'TOKEN_MINT',
     '9a21gb7fWGm9dD2UFdZAzgFn5K1NwfmYkjyLbpAcKgnM',
