@@ -14,4 +14,8 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 COPY apps/runtime/ .
 
-CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "3000"]
+# Bind loopback, not 0.0.0.0: the container runs on the host network and
+# tailscaled already holds <tailscale-ip>:3000 for `tailscale serve`, so a
+# 0.0.0.0 bind collides with it and uvicorn exits at startup. serve proxies
+# to 127.0.0.1:3000, which is what this now listens on.
+CMD ["uvicorn", "main:app", "--host", "127.0.0.1", "--port", "3000"]
