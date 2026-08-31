@@ -465,6 +465,7 @@ def complete_message(msg_id: str, result: Optional[dict] = None, error: Optional
             pipe.zrem(f"swarm:pending:{to_agent}", msg_id)
             pipe.zrem("swarm:pending:all", msg_id)
             pipe.execute()
+            _write_reply_key(r, doc, result, error)
             return True
         except Exception as e:
             logger.error("[inbox] redis complete_message failed: %s", e)
@@ -472,6 +473,24 @@ def complete_message(msg_id: str, result: Optional[dict] = None, error: Optional
     return _file_update_message(msg_id, {
         "status": status, "completed_at": now, "result": result, "error": error,
     })
+
+
+def _write_reply_key(r, doc: dict, result: Optional[dict], error: Optional[str]) -> None:
+    """Mirror the completion onto ``payload.reply_key`` if the sender asked for a
+    direct-poll reply (the chan→hermes delegation contract in
+    ``apps/chan/hermes_dispatch.py``). Best-effort; never raises."""
+    reply_key = (doc.get("payload") or {}).get("reply_key")
+    if not reply_key:
+        return
+    try:
+        if error:
+            r.set(reply_key, json.dumps({"content": error, "error": True}), ex=3600)
+        else:
+            body = result or {}
+            text = body.get("summary") or body.get("content") or json.dumps(body)
+            r.set(reply_key, json.dumps({"content": text}), ex=3600)
+    except Exception as e:  # pragma: no cover - defensive
+        logger.debug("[inbox] reply_key write failed: %s", e)
 
 
 # ── Convenience helpers ────────────────────────────────────────────────────

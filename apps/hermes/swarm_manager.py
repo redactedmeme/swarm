@@ -334,7 +334,17 @@ async def _run_agent_loop(instruction: str, msg_id: str, task_type: str, service
 # ── Main polling loop ─────────────────────────────────────────────────────────
 
 POLL_INTERVAL = int(os.getenv("SWARM_MANAGER_POLL_SEC", "15"))
-ALLOWED_SENDERS = {"redacted-chan", "webchat"}
+
+# Who may delegate a task_request to hermes. Any roster agent (the inbox itself
+# authenticates the sender via HMAC when SWARM_INBOX_ENFORCE is on), plus the
+# non-agent surfaces that legitimately delegate. Still an allowlist, not "*", so
+# a stray Redis writer with no roster identity is refused.
+try:
+    from swarm_core.security.identity import AGENTS as _ROSTER
+    ALLOWED_SENDERS = set(_ROSTER) | {"webchat"}
+except Exception:  # pragma: no cover - identity always importable in practice
+    ALLOWED_SENDERS = {"redacted-chan", "webchat", "smolting", "redactedbuilder",
+                       "redactedintern", "runtime", "refinery"}
 
 
 async def _process_message(msg: dict) -> None:

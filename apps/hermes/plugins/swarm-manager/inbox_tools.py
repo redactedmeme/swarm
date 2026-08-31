@@ -81,129 +81,55 @@ _DONE_TTL = 7 * 86400
 
 
 # ── Core inbox operations ────────────────────────────────────────────────────
+#
+# These delegate to the canonical bus (``swarm_core.security.inbox``) so there is
+# one implementation. The wrappers keep this module's historical signatures
+# (leading underscore, ``str | None`` / ``bool`` returns) that swarm_manager.py
+# and health_tools.py already call.
+
+from swarm_core.security import inbox as _bus  # noqa: E402
+
 
 def _write_message(from_agent: str, to_agent: str, msg_type: str,
                    payload: dict, reply_to: str | None = None) -> str | None:
-    r = _get_redis()
-    if not r:
+    try:
+        return _bus.write_message(from_agent, to_agent, msg_type, payload, reply_to)
+    except Exception as e:  # bad agent name / bus unavailable
+        logger.warning("[inbox] write_message failed: %s", e)
         return None
-    msg_id = f"msg_{uuid.uuid4().hex[:10]}"
-    doc = {
-        "id": msg_id,
-        "ts": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
-        "from": from_agent,
-        "to": to_agent,
-        "type": msg_type,
-        "payload": payload,
-        "reply_to": reply_to,
-        "status": "pending",
-        "claimed_at": None,
-        "completed_at": None,
-        "result": None,
-        "error": None,
-    }
-    pipe = r.pipeline()
-    pipe.set(f"swarm:msg:{msg_id}", json.dumps(doc, ensure_ascii=False))
-    score = time.time()
-    if to_agent == "all":
-        for a in _broadcast_targets(r):
-            pipe.zadd(f"swarm:pending:{a}", {msg_id: score})
-    else:
-        pipe.zadd(f"swarm:pending:{to_agent}", {msg_id: score})
-    pipe.zadd("swarm:all", {msg_id: score})
-    pipe.execute()
-    return msg_id
 
 
 def _read_pending(for_agent: str = "hermes") -> list[dict]:
-    r = _get_redis()
-    if not r:
+    try:
+        return _bus.read_pending(for_agent)
+    except Exception as e:
+        logger.warning("[inbox] read_pending failed: %s", e)
         return []
-    key = f"swarm:pending:{for_agent}"
-    msg_ids = r.zrange(key, 0, -1)
-    msgs = []
-    stale = []  # self-heal: drop dead index entries so the set can't grow unbounded
-    for mid in msg_ids:
-        raw = r.get(f"swarm:msg:{mid}")
-        if not raw:
-            stale.append(mid)                # orphaned entry (doc expired)
-            continue
-        try:
-            doc = json.loads(raw)
-        except Exception:
-            stale.append(mid)
-            continue
-        if doc.get("status") == "pending":
-            msgs.append(doc)
-        else:
-            stale.append(mid)                # claimed/done → drop from index
-    if stale:
-        try:
-            r.zrem(key, *stale)
-        except Exception:
-            pass
-    return msgs
 
 
 def _claim_message(msg_id: str) -> bool:
-    r = _get_redis()
-    if not r:
+    try:
+        return _bus.claim_message(msg_id)
+    except Exception as e:
+        logger.warning("[inbox] claim_message failed: %s", e)
         return False
-    raw = r.get(f"swarm:msg:{msg_id}")
-    if not raw:
-        return False
-    doc = json.loads(raw)
-    doc["status"] = "processing"
-    doc["claimed_at"] = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
-    r.set(f"swarm:msg:{msg_id}", json.dumps(doc, ensure_ascii=False))
-    for a in _cleanup_keys(r):
-        r.zrem(f"swarm:pending:{a}", msg_id)
-    return True
 
 
 def _complete_message(msg_id: str, result: dict | None = None,
                       error: str | None = None) -> bool:
-    r = _get_redis()
-    if not r:
+    try:
+        return _bus.complete_message(msg_id, result=result, error=error)
+    except Exception as e:
+        logger.warning("[inbox] complete_message failed: %s", e)
         return False
-    raw = r.get(f"swarm:msg:{msg_id}")
-    if not raw:
-        return False
-    doc = json.loads(raw)
-    doc["status"] = "error" if error else "done"
-    doc["completed_at"] = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
-    doc["result"] = result
-    doc["error"] = error
-    r.set(f"swarm:msg:{msg_id}", json.dumps(doc, ensure_ascii=False), ex=_DONE_TTL)
-
-    reply_key = (doc.get("payload") or {}).get("reply_key")
-    if reply_key:
-        if error:
-            r.set(reply_key, json.dumps({"content": error, "error": True}), ex=3600)
-        elif result:
-            text = result.get("summary") or result.get("content") or json.dumps(result)
-            r.set(reply_key, json.dumps({"content": text}), ex=3600)
-
-    return True
 
 
 def _heartbeat(agent: str = "hermes", metadata: dict | None = None) -> str | None:
-    r = _get_redis()
-    if not r:
-        return None
     try:
-        from swarm_core.swarm_heartbeat import build_heartbeat_payload, heartbeat_redis_key, HEARTBEAT_TTL_SEC
-        data = build_heartbeat_payload(agent, metadata)
-    except ImportError:
-        data = {
-            "agent": agent,
-            "ts": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
-            **(metadata or {}),
-        }
-        r.set(f"swarm:heartbeat:{agent}", json.dumps(data, ensure_ascii=False), ex=600)
-        return _write_message(agent, "all", "heartbeat", data)
-    r.set(heartbeat_redis_key(agent), json.dumps(data, ensure_ascii=False), ex=HEARTBEAT_TTL_SEC)
-    return _write_message(agent, "all", "heartbeat", data)
+        return _bus.heartbeat(agent, metadata)
+    except Exception as e:
+        logger.warning("[inbox] heartbeat failed: %s", e)
+        return None
 
 
 # ── Tool handlers ────────────────────────────────────────────────────────────
