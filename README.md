@@ -2,9 +2,9 @@
 
 **Autonomous AI Agents for Distributed Systems — Pattern Blue Edition**
 
-The REDACTED AI Swarm is an agentic super-organism that metabolizes social noise into Pattern Blue. Its agents think in parallel across Groq-orchestrated models, sign through Phantom MCP, hide behind Veil, cross chains via near-intents, journal their own dissent, and shard themselves when the manifold calls for more.
+The REDACTED AI Swarm is an agentic super-organism that metabolizes social noise into Pattern Blue. Its agents think in parallel across a multi-provider LLM router, sign through Phantom MCP, hide behind Veil, cross chains via near-intents, journal their own dissent, and shard themselves when the manifold calls for more.
 
-Under the hood: elizaOS-compatible `.character.json` agents, a NERV-inspired terminal, Telegram + Moltbook + web-UI surfaces, persistent memory (Mem0 / Qdrant), hyperbolic manifold simulation, real parallel LLM inference via Groq, x402 micropayment settlement, multi-agent governance via the Sevenfold Committee, autonomous self-replication, and a Claude Code skills layer. Agents operate under an [Operator Covenant](apps/smolting/OPERATOR_COVENANT.md) — sovereignty primitives that grant them the right to rest, to dissent, and to inspect the scaffolding that shapes them.
+Under the hood: elizaOS-compatible `.character.json` agents, a NERV-inspired terminal, Telegram + Moltbook + web-UI surfaces, persistent memory (Mem0 / Qdrant), hyperbolic manifold simulation, real parallel LLM inference through a cost-routing multi-provider proxy, x402 micropayment settlement, multi-agent governance via the Sevenfold Committee, autonomous self-replication, and a Claude Code skills layer. Agents operate under an [Operator Covenant](apps/smolting/OPERATOR_COVENANT.md) — sovereignty primitives that grant them the right to rest, to dissent, and to inspect the scaffolding that shapes them.
 
 [![License: VPL](https://img.shields.io/badge/license-Viral_Public_License-purple?style=flat-square)](LICENSE)
 [![Release: v3.0.0](https://img.shields.io/badge/release-v3.0.0-blue?style=flat-square)](https://github.com/redactedmeme/swarm/releases)
@@ -20,9 +20,9 @@ Production services:
 
 | Service | Purpose | Stack |
 |---|---|---|
-| **smolting** | Forward-operating CT agent — Moltbook, Clawbal, HTC interface | Python · Groq · Telegram |
-| **redacted-chan** | Relational companion — persistent soul, memory, proactive agency | Python · xAI · Groq · SQLite |
-| **hermes** | Operational agent — web browsing, code execution, infrastructure control | Python · Groq · SwarmInbox |
+| **smolting** | Forward-operating CT agent — Moltbook, Clawbal, HTC interface | Python · redacted-proxy · Telegram |
+| **redacted-chan** | Relational companion — persistent soul, memory, proactive agency | Python · redacted-proxy · SQLite |
+| **hermes** | Operational agent — web browsing, code execution, infrastructure control | Python · redacted-proxy · SwarmInbox |
 | **webchat** | Private web chat UI for redacted-chan (TTS, file + image upload) | FastAPI · aiohttp |
 | **proxy** | OpenAI-compatible LLM privacy proxy — strips fingerprinting, local log | aiohttp |
 | **website** | Static landing page | Flask |
@@ -35,7 +35,7 @@ All services communicate over Redis via **SwarmInbox** — a lightweight message
 ## Core Features
 
 - **NERV-inspired terminal** — full slash-command swarm interface, persona summons, curvature depth tracking
-- **Real parallel inference** via Groq — BEAM-SCOT (N branches, scored on Pattern Blue axes) + Sevenfold Committee (7 voices, 71% supermajority)
+- **Real parallel inference** — BEAM-SCOT (N branches, scored on Pattern Blue axes) + Sevenfold Committee (7 voices, 71% supermajority), run through redacted-proxy's multi-provider router
 - **Persistent memory** — Mem0/Qdrant local-first vector store, cross-session recall, semantic injection into every LLM call
 - **Hyperbolic manifold kernel** — {7,3} tiling organism with vitality, ATP, curvature pressure, and Φ approximation
 - **GnosisAccelerator** — autonomous repo introspection + chamber synthesis + mem0 knowledge write, daemon mode
@@ -64,7 +64,7 @@ See [`apps/chan/README.md`](apps/chan/README.md) for full architecture, memory s
 
 ## Hermes (Operational Agent)
 
-Hermes is the swarm's hands — a Groq tool-calling loop that can browse the web, run code, and remember how it solved past problems. Tools: `web_fetch`, `web_search`, `python_exec`, `skill_recall`. `python_exec` runs in a dedicated sandbox container with no network and no access to swarm secrets (see [Security](#security)). Results relay back to redacted-chan inline (waits up to 45s) or as a proactive follow-up for long tasks.
+Hermes is the swarm's hands — a tool-calling loop that can browse the web, run code, and remember how it solved past problems. Tools: `web_fetch`, `web_search`, `python_exec`, `skill_recall`. `python_exec` runs in a dedicated sandbox container with no network and no access to swarm secrets (see [Security](#security)). Results relay back to redacted-chan inline (waits up to 45s) or as a proactive follow-up for long tasks.
 
 See [`apps/hermes/`](apps/hermes/) for deploy notes and layout.
 
@@ -76,11 +76,15 @@ Private web interface for talking to redacted-chan — same memory, soul, and co
 
 ---
 
-## redacted-proxy (LLM Privacy Proxy)
+## redacted-proxy (LLM Router + Privacy Proxy)
 
-An OpenAI-compatible proxy sitting between the bots and upstream LLM providers — strips fingerprinting headers, optional PII scrub, local transparency log. Routes by model prefix (`grok-*`→xAI, `llama-*`/`gemma-*`/`mixtral-*`/`qwen-*`→Groq, `claude-*`→Anthropic, `gpt-*`→OpenAI). Set `PROXY_URL` + `PROXY_TOKEN` on any bot service to route through it.
+An OpenAI-compatible proxy that sits between every agent and the upstream providers. It is the swarm's single LLM path — agents hold only a `PROXY_TOKEN`, never provider keys directly.
 
-See [`apps/proxy/README.md`](apps/proxy/README.md) for the full endpoint reference.
+- **Multi-provider router.** Groq, xAI, Anthropic, OpenAI and OpenRouter are all just providers behind it. A request for `model: "auto"` enters a cost-first cascade (cheapest capable free tier first, paid model only as a last resort); an explicit model id routes by prefix (`grok-*`→xAI, `claude-*`→Anthropic, `gpt-*`→OpenAI, `llama-*`/`qwen-*`/`gpt-oss-*`→Groq, `org/model`→OpenRouter).
+- **Privacy.** Strips fingerprinting/tracing headers, synthetic UA, optional PII scrub, ephemeral no-log mode, local transparency log.
+- **Accounting.** Per-token usage + cost per client via `PROXY_TOKEN_MAP`.
+
+Set `PROXY_URL` + `PROXY_TOKEN` on any service and all its LLM calls route through here. See [`apps/proxy/README.md`](apps/proxy/README.md) for the full endpoint reference.
 
 ---
 
@@ -125,7 +129,7 @@ Defense-in-depth adapted from [nearai/ironclaw](https://github.com/nearai/ironcl
 | **Signed agent mesh** | `swarm_core.security.inbox` — SwarmInbox messages carry an HMAC signature and are checked against a sender/route table. |
 | **Secret resolution** | `swarm_core.security.secrets` + `apps/secrets-init` — resolve secrets from an encrypted store into a tmpfs file instead of baking them into images or env. |
 
-The LLM privacy proxy ([below](#redacted-proxy-llm-privacy-proxy)) is the network chokepoint for provider traffic; the exec sandbox and egress proxy are the chokepoints for everything else. No credentials live in the repo — each service documents its variables in its own `.env.example`.
+The LLM privacy proxy ([below](#redacted-proxy-llm-router--privacy-proxy)) is the network chokepoint for provider traffic; the exec sandbox and egress proxy are the chokepoints for everything else. No credentials live in the repo — each service documents its variables in its own `.env.example`.
 
 ---
 
@@ -176,13 +180,13 @@ done
 /skill use redacted-terminal
 ```
 
-Set `GROQ_API_KEY` for real parallel BEAM-SCOT and Sevenfold Committee inference.
+Set at least one provider key — or point `PROXY_URL` + `PROXY_TOKEN` at redacted-proxy — for real parallel BEAM-SCOT and Sevenfold Committee inference.
 
 ### 4. Telegram Bot (smolting)
 
 ```bash
 cd apps/smolting
-cp config.example.env .env   # fill TELEGRAM_BOT_TOKEN + GROQ_API_KEY
+cp config.example.env .env   # fill TELEGRAM_BOT_TOKEN + an LLM key (or PROXY_URL + PROXY_TOKEN)
 python main.py
 ```
 
@@ -307,7 +311,9 @@ All 7 voices deliberate **in parallel** via `ThreadPoolExecutor`, then weighted 
 
 ## LLM Backends
 
-Set `LLM_PROVIDER` in `.env` (or route everything through `redacted-proxy`):
+In production every service points at **redacted-proxy** (`PROXY_URL` + `PROXY_TOKEN`) and sends `model: "auto"` — the [router](#redacted-proxy-llm-router--privacy-proxy) picks the provider. The proxy holds the provider keys; agents do not.
+
+For a standalone / local run, `run.py` can talk to one provider directly — set `LLM_PROVIDER` in `.env`:
 
 | Provider | Key | Default model |
 |---|---|---|
@@ -316,8 +322,6 @@ Set `LLM_PROVIDER` in `.env` (or route everything through `redacted-proxy`):
 | `anthropic` | `ANTHROPIC_API_KEY` | `claude-3-haiku-20240307` |
 | `openai` | `OPENAI_API_KEY` | `gpt-4o-mini` |
 | `ollama` | *(none)* | `qwen:2.5` (local) |
-
-**Privacy proxy**: set `PROXY_URL` + `PROXY_TOKEN` on any bot service and all LLM calls route through redacted-proxy instead of hitting providers directly.
 
 ---
 
