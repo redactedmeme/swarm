@@ -164,6 +164,14 @@ def parse_door_value(raw: Optional[str], now: Optional[float] = None) -> Optiona
     }
 
 
+def door_age(door: dict[str, Any]) -> float:
+    """Seconds since a door was asserted; unknown ages sort last. A door
+    asserted under half a second ago has `age_s == 0`, so this cannot use
+    `age_s or <big>` — that would rank the freshest assertion as the oldest."""
+    age = door.get("age_s")
+    return float(age) if age is not None else float("inf")
+
+
 async def write_door_async(redis_client, agent_id: str, name: str,
                            kind: str = "", is_open: bool = True) -> None:
     payload = build_door_payload(name, kind, is_open)
@@ -186,6 +194,6 @@ async def read_doors_async(redis_client, agent_id: str) -> list[dict[str, Any]]:
             if not door or not door["name"]:
                 continue
             prior = best.get(door["name"])
-            if prior is None or (door["age_s"] or 10**9) < (prior["age_s"] or 10**9):
+            if prior is None or door_age(door) < door_age(prior):
                 best[door["name"]] = door
     return sorted(best.values(), key=lambda d: d["name"])

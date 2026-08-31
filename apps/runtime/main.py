@@ -64,7 +64,7 @@ async def _redis_write_doors(node_id: str, capabilities: list) -> None:
         return
     try:
         import redis.asyncio as aioredis
-        from swarm_core.swarm_heartbeat import build_door_payload, door_redis_key
+        from swarm_core.swarm_heartbeat import write_door_async
 
         r = aioredis.from_url(REDIS_URL, decode_responses=True)
         for cap in capabilities:
@@ -74,8 +74,7 @@ async def _redis_write_doors(node_id: str, capabilities: list) -> None:
                 name, kind, is_open = cap, "", True
             if not name:
                 continue
-            payload = json.dumps(build_door_payload(str(name), str(kind), bool(is_open)))
-            await r.set(door_redis_key(node_id, str(name)), payload, ex=HEARTBEAT_TTL)
+            await write_door_async(r, node_id, str(name), str(kind), bool(is_open))
         await r.aclose()
     except Exception as e:
         logger.debug(f"[hb] redis door write failed for {node_id}: {e}")
