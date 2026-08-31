@@ -33,6 +33,21 @@ def log_task(msg: dict, result: dict, duration_ms: float = 0) -> None:
     except Exception as e:
         logger.warning("[audit] Write failed: %s", e)
 
+    # Also emit to the tamper-evident central log (IronClaw control 6). Additive:
+    # the local task_audit.jsonl above stays for existing swarm_audit_log reads.
+    try:
+        from swarm_core.security import audit as _central
+
+        _central.record(
+            "task.complete",
+            actor=msg.get("from", "hermes") or "hermes",
+            decision="ok" if entry["success"] else "error",
+            severity="info" if entry["success"] else "warning",
+            detail={k: entry[k] for k in ("msg_id", "type", "task_type", "service", "duration_ms", "error")},
+        )
+    except Exception as e:  # pragma: no cover
+        logger.debug("[audit] central record skipped: %s", e)
+
 
 def _handle_audit_read(args: dict) -> str:
     lines = args.get("lines", 20)

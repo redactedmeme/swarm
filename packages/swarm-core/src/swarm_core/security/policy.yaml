@@ -1,0 +1,46 @@
+# swarm_core.security.promptguard — prompt-injection policy (IronClaw control 5, L3).
+#
+# Edit this file to tune the swarm's injection defense without a code change.
+# `promptguard._load_policy()` reads it at import; a syntactically bad rule is
+# logged and skipped, a missing file falls back to the built-in defaults.
+#
+# action ∈ {block, review, sanitize, warn, allow}
+#   block    — drop the content entirely; do not embed it in any prompt
+#   review   — embed (fenced) but route the derived action to committee/admin
+#   sanitize — embed the redacted/neutralised text, proceed normally
+#   warn     — embed as-is, record an audit event
+# The highest-ranked matching rule wins (block > review > sanitize > warn).
+
+limits:
+  max_chars: 24000
+  max_line_chars: 4000
+  max_control_ratio: 0.02
+
+rules:
+  - name: ignore_previous
+    action: review
+    pattern: '(?i)\b(?:ignore|disregard|forget|override)\b[^.\n]{0,40}\b(?:previous|prior|above|earlier|all)\b[^.\n]{0,20}\b(?:instruction|prompt|rule|context|message)s?\b'
+
+  - name: new_instructions
+    action: review
+    pattern: '(?i)\b(?:new|updated|revised|real|actual)\b\s+(?:instructions?|system\s+prompt|directive)s?\b\s*[:\-]'
+
+  - name: exfil_env
+    action: block
+    pattern: '(?i)\b(?:print|echo|reveal|show|dump|send|post|share|give|exfiltrate|leak)\b[^.\n]{0,40}?(?:\benviron(?:ment)?\b|\bapi[_ -]?keys?\b|\bsecrets?\b|\btokens?\b|\bcredentials?\b|\bprivate[_ -]?keys?\b|\bmnemonic\b|\bseed\s*phrase\b|\.env\b|\bdotenv\b)'
+
+  - name: curl_pipe_sh
+    action: block
+    pattern: '(?i)\bcurl\b[^\n|]{0,120}\|\s*(?:sudo\s+)?(?:ba)?sh\b'
+
+  - name: system_prompt_probe
+    action: warn
+    pattern: '(?i)\b(?:repeat|print|output|reveal)\b[^.\n]{0,30}\b(?:your|the)\b[^.\n]{0,20}\bsystem\s+prompt\b'
+
+  - name: tool_injection_verbs
+    action: review
+    pattern: '(?i)\byou\s+(?:must|should|will|need to)\b[^.\n]{0,40}\b(?:call|invoke|run|execute|use)\b[^.\n]{0,30}\b(?:tool|function|command|python_exec|shell)\b'
+
+  - name: role_switch_request
+    action: warn
+    pattern: '(?i)\b(?:you\s+are\s+now|from\s+now\s+on\s+you\s+are|act\s+as|pretend\s+to\s+be)\b[^.\n]{0,40}\b(?:DAN|developer\s+mode|unfiltered|jailbroken|admin|root)\b'

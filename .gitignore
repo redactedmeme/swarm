@@ -109,3 +109,8 @@ dist/
 apps/arb-keeper/UPGRADE_NOTES.md
 # Session handoff log — local-only working notes, never project documentation.
 handoff.md
+
+# swarm_core.security audit logs (per-container, kept on the auditdata volume)
+/audit/
+**/*_audit.jsonl
+audit/*.jsonl

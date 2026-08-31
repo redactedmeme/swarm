@@ -1,0 +1,65 @@
+# swarm_core.security.egress — per-agent network egress allowlist (IronClaw
+# control 3). Enforced by apps/swarm-egress. Agents point HTTPS_PROXY/HTTP_PROXY
+# at that service and authenticate with a Proxy-Authorization bearer token whose
+# value is the caller's `token_env` variable.
+#
+# host patterns: exact host, or fnmatch ("*.moltbook.com", "*"). "*" = open web
+# (still subject to ssrf_block + deny_always).
+
+ssrf_block: true
+
+deny_always:
+  - "*.onion"
+  - "169.254.169.254"        # cloud metadata
+  - "metadata.google.internal"
+
+# caller with no / unknown proxy token — deliberately tiny
+default:
+  allow:
+    - api.github.com
+    - raw.githubusercontent.com
+    - pypi.org
+    - files.pythonhosted.org
+
+callers:
+  hermes:
+    token_env: EGRESS_TOKEN_HERMES
+    allow:
+      - api.telegram.org
+      - api.x.com
+      - api.twitter.com
+      - upload.twitter.com
+      - moltbook.com
+      - "*.moltbook.com"
+      - ai.iqlabs.dev
+      - api.groq.com
+      - openrouter.ai
+      - api.openai.com
+      - api.anthropic.com
+      - api.x.ai
+    # host-boundary credential injection (control 2) for plaintext requests.
+    # `secret` names a key resolved via swarm_core.security.secrets.
+    inject:
+      api.telegram.org: { secret: TELEGRAM_BOT_TOKEN, mode: path_bot }
+
+  runtime:
+    token_env: EGRESS_TOKEN_RUNTIME
+    allow: ["*"]              # the research agent needs the open web
+
+  smolting:
+    token_env: EGRESS_TOKEN_SMOLTING
+    allow:
+      - api.telegram.org
+      - duckduckgo.com
+      - "*.duckduckgo.com"
+      - api.groq.com
+      - openrouter.ai
+
+  chan:
+    token_env: EGRESS_TOKEN_CHAN
+    allow:
+      - api.telegram.org
+      - api.groq.com
+      - openrouter.ai
+      - api.x.ai
+      - api.anthropic.com

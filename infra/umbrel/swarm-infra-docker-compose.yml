@@ -20,13 +20,13 @@ services:
   redis:
     image: redis:7-alpine
     container_name: swarm-redis
-    command: redis-server --appendonly yes
+    command: redis-server --appendonly yes --requirepass ${REDIS_PASSWORD:-}
     volumes:
       - redisdata:/data
     ports:
-      - "6379:6379"
+      - "127.0.0.1:6379:6379"
     healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
+      test: ["CMD-SHELL", "redis-cli ${REDIS_PASSWORD:+-a $REDIS_PASSWORD} ping | grep -q PONG"]
       interval: 5s
       timeout: 3s
       retries: 5
@@ -53,12 +53,18 @@ services:
       dockerfile: apps/runtime/Dockerfile
     container_name: swarm-runtime
     environment:
-      REDIS_URL: redis://127.0.0.1:6379
+      REDIS_URL: redis://:${REDIS_PASSWORD}@127.0.0.1:6379
       PORT: "3000"
       SUB_AGENT_TOKEN: ${SUB_AGENT_TOKEN}
       GROQ_API_KEY: ${GROQ_API_KEY}
       DATA_PROXY_URL: http://127.0.0.1:8095
       DATA_PROXY_TOKEN: ${DATA_PROXY_TOKEN}
+      SWARM_AUDIT_LOG: /audit/runtime.jsonl
+      HTTPS_PROXY: http://swarm:${EGRESS_TOKEN_RUNTIME}@127.0.0.1:8891
+      HTTP_PROXY: http://swarm:${EGRESS_TOKEN_RUNTIME}@127.0.0.1:8891
+      NO_PROXY: 127.0.0.1,localhost,::1,redis,postgres,qdrant
+    volumes:
+      - auditdata:/audit
     ports:
       - "3000:3000"
     depends_on:
@@ -67,6 +73,55 @@ services:
     restart: always
     network_mode: host
 
+  # Outbound network chokepoint (IronClaw control 3). Agents set HTTPS_PROXY to
+  # this and authenticate with EGRESS_TOKEN_<agent>; hosts are checked against
+  # the per-caller allowlist in swarm_core.security.egress. Chains upstream to
+  # gluetun so all allowed egress still exits via Mullvad (no residential IP).
+  swarm-egress:
+    build:
+      context: /home/umbrel/swarm
+      dockerfile: apps/swarm-egress/Dockerfile
+    container_name: swarm-egress
+    environment:
+      EGRESS_BIND: 127.0.0.1
+      EGRESS_PORT: "8891"
+      EGRESS_UPSTREAM_PROXY: "http://127.0.0.1:8888"
+      EGRESS_TOKEN_HERMES: ${EGRESS_TOKEN_HERMES}
+      EGRESS_TOKEN_RUNTIME: ${EGRESS_TOKEN_RUNTIME}
+      EGRESS_TOKEN_SMOLTING: ${EGRESS_TOKEN_SMOLTING}
+      EGRESS_TOKEN_CHAN: ${EGRESS_TOKEN_CHAN}
+      REDIS_URL: redis://:${REDIS_PASSWORD}@127.0.0.1:6379
+      SWARM_AUDIT_LOG: /audit/egress.jsonl
+    volumes:
+      - auditdata:/audit
+    restart: always
+    network_mode: host
+
+  # Code-execution sandbox (IronClaw control 1). No env_file — this container
+  # holds NO secrets — and network_mode:none so a snippet can reach nothing.
+  # It talks to callers over a unix socket on the shared `execsock` volume.
+  exec-runner:
+    build:
+      context: /home/umbrel/swarm
+      dockerfile: apps/exec-runner/Dockerfile
+    container_name: swarm-exec-runner
+    environment:
+      EXEC_RUNNER_SOCK: /run/exec/exec.sock
+      EXEC_RUNNER_TOKEN: ${EXEC_RUNNER_TOKEN}
+    volumes:
+      - execsock:/run/exec
+    tmpfs:
+      - /tmp:size=64m,mode=1777
+    read_only: true
+    network_mode: none
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    pids_limit: 128
+    mem_limit: 512m
+    restart: always
+
   hermes-bot:
     build:
       context: /home/umbrel/swarm
@@ -74,8 +129,10 @@ services:
     container_name: swarm-hermes-bot
     volumes:
       - hermesdata:/data
+      - execsock:/run/exec
+      - auditdata:/audit
     environment:
-      REDIS_URL: redis://127.0.0.1:6379
+      REDIS_URL: redis://:${REDIS_PASSWORD}@127.0.0.1:6379
       SUB_AGENT_URL: http://127.0.0.1:3000
       SWARM_MESH_URL: http://127.0.0.1:3000
       PORT: "8080"
@@ -87,6 +144,15 @@ services:
       SWARM_THOUGHT_PEERS: redactedintern
       PATTERN_BLUE_REF: main
       EXEC_ENABLED: "true"
+      EXEC_RUNNER_SOCK: /run/exec/exec.sock
+      EXEC_RUNNER_TOKEN: ${EXEC_RUNNER_TOKEN}
+      SWARM_AUDIT_LOG: /audit/hermes.jsonl
+      SWARM_INBOX_HMAC_KEY: ${SWARM_INBOX_HMAC_KEY}
+      SWARM_INBOX_ENFORCE: ${SWARM_INBOX_ENFORCE:-warn}
+      # Credentials in the proxy URL => client libs emit Proxy-Authorization.
+      HTTPS_PROXY: http://swarm:${EGRESS_TOKEN_HERMES}@127.0.0.1:8891
+      HTTP_PROXY: http://swarm:${EGRESS_TOKEN_HERMES}@127.0.0.1:8891
+      NO_PROXY: 127.0.0.1,localhost,::1,redis,postgres,qdrant
       DISABLE_TWITTER: "false"
       DISABLE_TELEGRAM: "true"
       POST_INTERVAL_MIN: "60"
@@ -141,7 +207,7 @@ services:
     env_file:
       - .env
     environment:
-      REDIS_URL: redis://127.0.0.1:6379
+      REDIS_URL: redis://:${REDIS_PASSWORD}@127.0.0.1:6379
       POSTGRES_URL: postgresql://${POSTGRES_USER:-swarm}:${POSTGRES_PASSWORD:-swarm_secret}@127.0.0.1:5432/${POSTGRES_DB:-swarm}
       QDRANT_URL: http://127.0.0.1:6333
       QDRANT_COLLECTION: swarm_signals
@@ -200,7 +266,7 @@ services:
       - .env
     environment:
       PORT: "7080"
-      REDIS_URL: redis://127.0.0.1:6379
+      REDIS_URL: redis://:${REDIS_PASSWORD}@127.0.0.1:6379
       PRIVACY_MODE: anonymous
       UPSTREAM_PROXY: "http://127.0.0.1:8888"
       PYTHONUNBUFFERED: "1"
@@ -219,7 +285,7 @@ services:
     env_file:
       - .env.settler
     environment:
-      REDIS_URL: redis://127.0.0.1:6379
+      REDIS_URL: redis://:${REDIS_PASSWORD}@127.0.0.1:6379
       SETTLEMENT_EXECUTE: ${SETTLEMENT_EXECUTE:-false}
       PYTHONUNBUFFERED: "1"
     depends_on:
@@ -257,3 +323,5 @@ volumes:
   redisdata:
   qdrantdata:
   hermesdata:
+  auditdata:     # per-container audit JSONL chains (control 6); Redis stream aggregates
+  execsock:      # unix socket shared exec-runner <-> hermes (control 1)

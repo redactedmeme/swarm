@@ -239,6 +239,15 @@ def dispatch(cmd: str) -> Optional[str]:
 
     verb = parts[0].lower()
 
+    # IronClaw control 6 — every recognised tool invocation is audited.
+    try:
+        from swarm_core.security import audit as _audit
+
+        _audit.record("tool.dispatch", actor="terminal",
+                      detail={"verb": verb, "session": os.environ.get("_DISPATCH_SESSION_ID", "?")})
+    except Exception:
+        pass
+
     # ── MCP tools (clawnch-mcp-server) ───────────────────────────────────────
 
     if verb == '/validate':
@@ -779,6 +788,17 @@ def dispatch(cmd: str) -> Optional[str]:
             node_name = parts[2] if len(parts) > 2 else ''
             if not node_name:
                 return "[TOOL] Usage: /node summon <name>"
+            # Spawns a long-running agent process from a chat command. Gate it
+            # (IronClaw control 7): off unless an operator explicitly enables it.
+            if os.getenv("TOOL_DISPATCH_ALLOW_SPAWN", "false").lower() != "true":
+                try:
+                    from swarm_core.security import audit as _audit
+                    _audit.record("tool.spawn_blocked", actor="terminal", decision="deny",
+                                  severity="warning", detail={"node": node_name})
+                except Exception:
+                    pass
+                return ("[TOOL:node_summon] disabled — set TOOL_DISPATCH_ALLOW_SPAWN=true to permit "
+                        "spawning agent processes from the terminal.")
             candidates = [nf for nf in nodes_dir.glob('*.json') if node_name.lower() in nf.stem.lower()]
             if not candidates:
                 return f"[TOOL:node_summon] no node matching '{node_name}'"
