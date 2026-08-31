@@ -11,6 +11,11 @@ approval_ttl: 900        # seconds an approval token stays valid once granted
 
 # `code.exec` is NOT approval-gated: apps/exec-runner (no secrets, no network,
 # rlimited) is the containment. Everything below has no equivalent containment.
+#
+# `funds.refuel` is deliberately NOT approval-gated: auto-refuel cannot block on
+# a human. Its containment is code-enforced — RESERVE_EXECUTE off by default, a
+# per-agent daily cap + cooldown, a fixed small top-up amount, and every attempt
+# on the swarm:audit chain. Held only by `settler`.
 requires_approval:
   - funds.transfer       # wallet / Jupiter / Solana buys
   - infra.deploy         # railway/portainer/compose changes
@@ -29,5 +34,5 @@ grants:
   mandalaasettler:   [funds.transfer, inbox.send, llm.call]
   refinery:          [inbox.send, llm.call]
   degen:             [inbox.send, llm.call]
-  settler:           [inbox.send, llm.call]
+  settler:           [inbox.send, llm.call, funds.refuel]
   arb-keeper:        [inbox.send, llm.call]

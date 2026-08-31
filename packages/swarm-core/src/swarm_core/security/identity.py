@@ -38,6 +38,19 @@ def is_known_agent(name: str) -> bool:
     return isinstance(name, str) and name.strip().lower() in AGENTS
 
 
+def address_of(agent: str) -> str | None:
+    """The agent's Solana address from the wallet keystore, or ``None`` if it
+    has no wallet / the keystore is locked. Local import keeps this module's
+    import cost (it sits on the inbox hot path) unchanged for callers that
+    never ask for an address."""
+    try:
+        from swarm_core.solana import keystore
+
+        return keystore.get_address(str(AgentId(agent)))
+    except Exception:
+        return None
+
+
 class AgentId(str):
     """A validated agent name. ``AgentId(x)`` raises ``ValueError`` unless ``x``
     names a roster agent (case-insensitive; stored lowercase)."""

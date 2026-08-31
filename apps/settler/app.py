@@ -21,6 +21,7 @@ import sys
 import redis.asyncio as aioredis
 
 from swarm_core import tokens
+from swarm_core.solana import reserve as _reserve
 from swarm_core.x402.burn import load_keypair, run_worker
 
 logging.basicConfig(
@@ -31,6 +32,7 @@ log = logging.getLogger("swarm-settler")
 
 REDIS_URL = os.getenv("REDIS_URL", "redis://127.0.0.1:6379")
 EXECUTE = os.getenv("SETTLEMENT_EXECUTE", "").strip().lower() in ("1", "true", "yes")
+RESERVE_EXECUTE = os.getenv("RESERVE_EXECUTE", "").strip().lower() in ("1", "true", "yes")
 
 
 def _preflight() -> None:
@@ -58,11 +60,30 @@ def _preflight() -> None:
     log.info("treasury key verified — executing burns")
 
 
+def _reserve_preflight() -> None:
+    if not RESERVE_EXECUTE:
+        log.warning("RESERVE_EXECUTE off — SOL reserve runs in dry-run (logs intended top-ups)")
+        return
+    kp = _reserve.reserve_keypair()  # raises if no key material
+    dedicated = os.getenv("SWARM_RESERVE_PRIVATE_KEY", "").strip()
+    if not dedicated and str(kp.pubkey()) != tokens.treasury_address():
+        sys.exit(
+            f"RESERVE_EXECUTE=true with no SWARM_RESERVE_PRIVATE_KEY, and the "
+            f"treasury key is for {kp.pubkey()} != SWARM_TREASURY_ADDRESS "
+            f"{tokens.treasury_address()} — refusing to refuel from the wrong wallet"
+        )
+    log.info("reserve key verified — %s (auto-refuel armed)", kp.pubkey())
+
+
 async def _main() -> None:
     _preflight()
+    _reserve_preflight()
     redis = aioredis.from_url(REDIS_URL, decode_responses=True)
     try:
-        await run_worker(redis, execute=EXECUTE)
+        await asyncio.gather(
+            run_worker(redis, execute=EXECUTE),
+            _reserve.run_reserve_loop(redis),
+        )
     finally:
         await redis.aclose()
 
