@@ -44,8 +44,8 @@ These are **copies**. Editing them here changes nothing on the box. After changi
 one, copy it up and re-up the stack:
 
 ```bash
-scp -i secrets/ssh/<redacted-key> infra/umbrel/swarm-infra-docker-compose.yml \
-    umbrel@${UMBREL_HOST}:/home/umbrel/swarm-infra/docker-compose.yml
+scp -i "$SSH_KEY" infra/umbrel/swarm-infra-docker-compose.yml \
+    "umbrel@${UMBREL_HOST}:/home/umbrel/swarm-infra/docker-compose.yml"
 ```
 
 ## Redactions
