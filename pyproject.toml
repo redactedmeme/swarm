@@ -15,6 +15,15 @@ members = ["packages/*"]
 swarm-core = { workspace = true }
 swarm-tg = { workspace = true }
 
+[tool.pytest.ini_options]
+# Without this at the repo root, `pytest` run from here picks the repo root as
+# rootdir and never reads packages/swarm-core/pyproject.toml — so asyncio_mode
+# is lost and every async test errors with "async def not natively supported".
+# Only visible when the run spans both apps/ and packages/; a scoped run inside
+# packages/swarm-core/ still works off that package's own config.
+asyncio_mode = "auto"
+testpaths = ["packages/swarm-core/tests", "apps"]
+
 [tool.ruff]
 line-length = 110
 target-version = "py311"

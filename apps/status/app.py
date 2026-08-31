@@ -48,6 +48,7 @@ from swarm_core import tokens
 from swarm_core.swarm_heartbeat import (
     DOOR_KEY_PREFIX,
     HEARTBEAT_LOOKUP_KEYS,
+    door_age,
     heartbeat_redis_key,
     parse_door_value,
     parse_heartbeat_value,
@@ -280,7 +281,7 @@ async def _observe(redis_client, agent_ids: list[str]) -> dict[str, dict]:
             if not door or not door["name"]:
                 continue
             prior = doors.setdefault(aid, {}).get(door["name"])
-            if prior is None or (door["age_s"] or 10**9) < (prior["age_s"] or 10**9):
+            if prior is None or door_age(door) < door_age(prior):
                 doors[aid][door["name"]] = door
 
     return {

@@ -78,6 +78,13 @@ class FakeRedis:
     async def expire(self, key, ttl):
         return 1  # TTLs are a no-op in the fake
 
+    async def scan_iter(self, match=None):
+        import fnmatch
+        keys = set(self.kv) | set(self.h) | set(self.s) | set(self.z) | set(self.l)
+        for k in list(keys):
+            if match is None or fnmatch.fnmatchcase(k, match):
+                yield k
+
     # hash
     async def hincrby(self, key, field, amount):
         d = self.h.setdefault(key, {})
