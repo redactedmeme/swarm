@@ -10,6 +10,11 @@ import logging
 import aiohttp
 from config import GROQ_API_KEY, GROQ_BASE_URL, GROQ_MODELS
 
+try:
+    from config import LLM_VIA_PROXY
+except ImportError:  # pragma: no cover
+    LLM_VIA_PROXY = False
+
 logger = logging.getLogger(__name__)
 
 
@@ -26,9 +31,13 @@ async def call(
     If prefer_strong=True, starts from 70b instead of 20b.
     """
     if not GROQ_API_KEY:
-        raise RuntimeError("GROQ_API_KEY not set")
+        raise RuntimeError("GROQ_API_KEY / PROXY_TOKEN not set")
 
-    models = GROQ_MODELS if not prefer_strong else GROQ_MODELS[1:]
+    if LLM_VIA_PROXY:
+        # let the proxy's cost-first auto-router choose; it maps to real providers
+        models = ["auto"]
+    else:
+        models = GROQ_MODELS if not prefer_strong else GROQ_MODELS[1:]
     payload_base = {
         "messages": [
             {"role": "system", "content": system},

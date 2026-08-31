@@ -355,6 +355,31 @@ async def _process_message(msg: dict) -> None:
         inbox_tools._complete_message(msg_id, error="Empty instruction")
         return
 
+    # Defense-in-depth (IronClaw control 5): the inbox is signed, but a
+    # *legitimately* signed peer could still relay attacker text that reached it
+    # (a poisoned web page, a hostile DM). This loop can call python_exec, so
+    # refuse instructions that carry injection / tool-spoof / exfil markers.
+    try:
+        from swarm_core.security import promptguard as _pg
+
+        _verdict = _pg.guard(instruction, source=f"swarm-inbox:{from_agent}", wrap=False)
+        if _verdict.action in ("block", "review"):
+            logger.warning("[manager] REFUSED msg %s from %s — promptguard %s (%s)",
+                           msg_id, from_agent, _verdict.action, _verdict.hits)
+            try:
+                from swarm_core.security import audit as _audit
+                _audit.record("inbox.instruction_refused", actor="hermes", decision="deny",
+                              severity="warning",
+                              detail={"from": from_agent, "hits": _verdict.hits, "msg_id": msg_id})
+            except Exception:
+                pass
+            inbox_tools._complete_message(
+                msg_id, error=f"Instruction refused by promptguard ({', '.join(_verdict.hits)})")
+            return
+        instruction = _verdict.text
+    except Exception as _e:  # never let the guard itself break processing
+        logger.debug("[manager] promptguard unavailable: %s", _e)
+
     logger.info("[manager] Processing %s: %s (from=%s)", task_type, instruction[:100], from_agent)
 
     # Claim it first

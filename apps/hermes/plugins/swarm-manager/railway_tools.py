@@ -203,6 +203,24 @@ def _handle_railway_restart(args: dict) -> str:
             ),
         })
 
+    # IronClaw control 7 — infra.deploy is approval-gated. The caller must pass an
+    # approval token granted out of band (operator / Sevenfold Committee).
+    actor = os.getenv("SWARM_NODE_ID", "hermes")
+    try:
+        from swarm_core.security import authz as _authz
+
+        _authz.require(actor, "infra.deploy", approval=args.get("approval"))
+    except Exception as e:  # authz.Denied or import error
+        _audit_railway("deny", "railway_restart", service, {"reason": str(e)})
+        return json.dumps({
+            "status": "approval_required",
+            "service": service,
+            "message": (
+                f"Redeploying {service} needs an infra.deploy approval. "
+                f"Operator: grant one, then retry with the approval token. ({e})"
+            ),
+        })
+
     svc_id = SERVICE_MAP[service]
     try:
         token_backup = os.environ.get("RAILWAY_API_TOKEN", "")
@@ -214,10 +232,23 @@ def _handle_railway_restart(args: dict) -> str:
                 os.environ["RAILWAY_API_TOKEN"] = token_backup
             else:
                 os.environ.pop("RAILWAY_API_TOKEN", None)
+        _audit_railway("allow", "railway_restart", service, {"result": "redeploy triggered"})
         return json.dumps({"status": "ok", "service": service, "message": "Redeployment triggered"})
     except Exception as e:
         logger.error("[railway] Restart failed for %s: %s", service, e)
+        _audit_railway("error", "railway_restart", service, {"error": str(e)[:200]})
         return json.dumps({"status": "error", "error": str(e)})
+
+
+def _audit_railway(decision: str, tool: str, service: str, detail: dict) -> None:
+    try:
+        from swarm_core.security import audit as _audit
+
+        _audit.record("tool.infra", actor=os.getenv("SWARM_NODE_ID", "hermes"),
+                      decision=decision, severity="info" if decision == "allow" else "warning",
+                      detail={"tool": tool, "service": service, **detail})
+    except Exception:
+        pass
 
 
 # ── Deploy (approval gate) ────────────────────────────────────────────────────

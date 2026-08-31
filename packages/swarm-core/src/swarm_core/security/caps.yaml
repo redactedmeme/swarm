@@ -1,0 +1,33 @@
+# swarm_core.security.authz — capability grants (IronClaw control 7).
+#
+# `authz.require(agent, capability)` checks `grants` here. Capabilities listed
+# under `requires_approval` ALSO need a live approval token minted by the
+# Sevenfold Committee route or a Telegram admin — a static grant alone is not
+# enough for them.
+#
+# "*" in an agent's list = any capability (still subject to the approval gate).
+
+approval_ttl: 900        # seconds an approval token stays valid once granted
+
+# `code.exec` is NOT approval-gated: apps/exec-runner (no secrets, no network,
+# rlimited) is the containment. Everything below has no equivalent containment.
+requires_approval:
+  - funds.transfer       # wallet / Jupiter / Solana buys
+  - infra.deploy         # railway/portainer/compose changes
+  - secret.read          # pulling a raw secret value
+  - docker.control       # anything touching the docker socket
+  - inbox.broadcast_admin
+
+grants:
+  hermes:            [code.exec, infra.deploy, secret.read, web.fetch, inbox.send, llm.call]
+  redactedbuilder:   [funds.transfer, web.fetch, inbox.send, llm.call]
+  redactedintern:    [infra.deploy, inbox.send, llm.call]
+  redactedgovimprover: [inbox.send, llm.call]
+  smolting:          [web.fetch, inbox.send, llm.call]
+  runtime:           [web.fetch, inbox.send, llm.call]
+  redacted-chan:     [inbox.send, llm.call, web.fetch]
+  mandalaasettler:   [funds.transfer, inbox.send, llm.call]
+  refinery:          [inbox.send, llm.call]
+  degen:             [inbox.send, llm.call]
+  settler:           [inbox.send, llm.call]
+  arb-keeper:        [inbox.send, llm.call]

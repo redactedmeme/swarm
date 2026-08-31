@@ -1095,7 +1095,12 @@ async def _record_usage(client: str, provider: str, model: str,
 
 async def _auth_middleware(app, handler):
     async def middleware(request: web.Request):
-        if request.path in ("/health", "/v1/models", "/privacy", "/debug/egress"):
+        # Only an unauthenticated *liveness* probe — nothing that discloses
+        # config, provider-key presence, egress IP, or model lineup. `/health`,
+        # `/privacy`, `/debug/egress`, `/v1/models` now require the bearer token
+        # like every other route (IronClaw control 7: no info-disclosure endpoint
+        # left open).
+        if request.path == "/livez":
             return await handler(request)
         if PROXY_TOKEN or _TOKEN_MAP:
             auth = request.headers.get("Authorization", "")
@@ -1121,6 +1126,11 @@ async def _auth_middleware(app, handler):
 
 
 # ── Handlers ──────────────────────────────────────────────────────────────────
+
+async def handle_livez(request: web.Request) -> web.Response:
+    """Unauthenticated liveness only — no configuration is disclosed."""
+    return web.json_response({"ok": True})
+
 
 async def handle_health(request: web.Request) -> web.Response:
     providers_up = {p: bool(k) for p, k in _PROVIDER_KEYS.items()}
@@ -1722,6 +1732,7 @@ async def _heartbeat_loop() -> None:
 
 async def make_app() -> web.Application:
     app = web.Application(middlewares=[_auth_middleware])
+    app.router.add_get("/livez",                handle_livez)
     app.router.add_get("/health",               handle_health)
     app.router.add_get("/privacy",              handle_privacy)
     app.router.add_get("/debug/egress",         handle_egress)

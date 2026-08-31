@@ -802,7 +802,16 @@ def handle_command(data):
             )
             tool_result = None
         elif tool_result is not None:
-            user_message = f"{raw_cmd}\n\n[TOOL OUTPUT]\n{tool_result}"
+            # Tool output can carry external/attacker-influenced data (web
+            # lookups, stored memories, on-chain metadata). Scan + fence it
+            # (IronClaw control 5) before it enters the prompt.
+            try:
+                from swarm_core.security import promptguard as _pg
+                _v = _pg.guard(str(tool_result), source="tool:dispatch", wrap=False)
+                _safe = ("[tool output withheld: " + ", ".join(_v.hits) + "]") if _v.blocked else _v.text
+                user_message = f"{raw_cmd}\n\n" + _pg.wrap_untrusted(_safe, source="tool:dispatch")
+            except Exception:
+                user_message = f"{raw_cmd}\n\n[TOOL OUTPUT]\n{tool_result}"
         else:
             user_message = raw_cmd
 
