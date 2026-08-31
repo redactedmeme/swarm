@@ -24,7 +24,7 @@ no `sys.path` inserts reaching across the tree.
 
 | Path | What |
 |---|---|
-| `packages/swarm-core/` | Shared library: committee deliberation, BEAM-SCoT, {7,3} hyperbolic kernel, lore vault, agent registry, session store, schedulers. Was `python/` + `kernel/` + `core/` + `llm/`. |
+| `packages/swarm-core/` | Shared library: committee deliberation, BEAM-SCoT, {7,3} hyperbolic kernel, lore vault, agent registry, session store, schedulers, **`swarm_core.security`** (see below). Was `python/` + `kernel/` + `core/` + `llm/`. |
 | `packages/swarm-tg/` | Telegram formatting + swarm task client, shared by all four bots. Was `shared/`. |
 | `apps/<name>/` | One deployable each — see the table below. |
 | `agents/`, `nodes/` | `.character.json` agent/node definitions |
@@ -65,6 +65,29 @@ Getting this wrong is the repo's classic outage: a service that builds from the
 wrong root picks up the wrong entrypoint and crash-loops. Check
 `infra/umbrel/swarm-infra-docker-compose.yml` and the Railway `rootDirectory`
 before changing a build.
+
+## Security — `swarm_core.security` (IronClaw model)
+
+Defense-in-depth adopted from [nearai/ironclaw](https://github.com/nearai/ironclaw).
+Use these instead of ad-hoc equivalents:
+
+| Import | Use for |
+|---|---|
+| `leakscan.scan / redact` | catch secret-shaped strings in any outbound text |
+| `promptguard.guard / wrap_untrusted` | fence + scan untrusted content (web, chat, tool output, inbox payloads) before it hits a prompt |
+| `audit.record / verify_chain` | the tamper-evident audit log — hash-chained JSONL + `swarm:audit` Redis stream |
+| `authz.require / is_admin` | capability check before a privileged action; `is_admin` is fail-closed |
+| `identity.AgentId` | validate an agent name at a trust boundary |
+| `inbox` | signed SwarmInbox (HMAC + route table) — the consolidated replacement for the per-app `swarm_inbox.py` copies |
+| `secrets.get_secret` | resolve a secret (cache → tmpfs file → env → Vaultwarden) instead of `os.getenv` |
+
+Services: `apps/exec-runner` (no-secrets/no-network code sandbox, unix socket) and
+`apps/swarm-egress` (per-agent egress allowlist + outbound leak scan). `apps/secrets-init`
+is the one-shot Vaultwarden→tmpfs sidecar.
+
+Config: `packages/swarm-core/src/swarm_core/security/{policy,caps,egress}.yaml`.
+Rollout is staged via env — `SWARM_INBOX_ENFORCE`, `LLM_DIRECT_FALLBACK`,
+`TOOL_DISPATCH_ALLOW_SPAWN`. Remaining cutover steps are in `handoff.md`.
 
 ## Docs — pulled in only when relevant
 
