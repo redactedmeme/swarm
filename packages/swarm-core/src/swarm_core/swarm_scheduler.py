@@ -48,7 +48,7 @@ _FS       = _ROOT / "fs"
 _FS.mkdir(exist_ok=True)
 _STATE    = _FS / "kernel_state.json"
 _MANIFOLD = _ROOT / "spaces" / "ManifoldMemory.state.json"
-_BOT_DIR  = _ROOT / "smolting-telegram-bot"
+_BOT_DIR  = _ROOT / "apps" / "smolting"
 
 for _p in [str(_BOT_DIR)]:
     if _p not in sys.path:
@@ -258,8 +258,7 @@ def _make_moltbook_post_factory():
 def _make_gnosis_factory(dry_run: bool = False):
     async def run():
         try:
-            import subprocess
-            cmd = [sys.executable, str(_PY_DIR / "gnosis_accelerator.py")]
+            cmd = [sys.executable, "-m", "swarm_core.gnosis_accelerator"]
             if dry_run:
                 cmd.append("--dry-run")
             proc = await asyncio.create_subprocess_exec(

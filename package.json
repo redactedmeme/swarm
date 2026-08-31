@@ -3,7 +3,6 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "start:all": "node scripts/start_all.js",
     "validate-agents": "node scripts/validate_agents.js"
   }
 }
