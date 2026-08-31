@@ -58,7 +58,7 @@ def _inject_state(tiles: dict, saved: dict) -> int:
 
 
 def compute_phi() -> dict:
-    from hyperbolic_kernel import HyperbolicKernel
+    from swarm_core.kernel.hyperbolic_kernel import HyperbolicKernel
     kernel = HyperbolicKernel()
     org    = kernel.organism
     tiles  = kernel.tiles
