@@ -752,9 +752,9 @@ def dispatch(cmd: str) -> Optional[str]:
         proposal = ' '.join(parts[1:]) if len(parts) > 1 else ''
         if not proposal:
             return "[TOOL] Usage: /committee <proposal text>"
-        committee_path = _repo_root() / 'nodes' / 'SevenfoldCommittee.json'
+        committee_path = _repo_root() / 'agents' / 'nodes' / 'SevenfoldCommittee.character.json'
         if not committee_path.exists():
-            return "[TOOL ERROR] committee: SevenfoldCommittee.json not found"
+            return "[TOOL ERROR] committee: SevenfoldCommittee.character.json not found"
         try:
             from swarm_core.committee_engine import deliberate
             return deliberate(proposal)
@@ -764,7 +764,7 @@ def dispatch(cmd: str) -> Optional[str]:
     # ── Node discovery / launch ───────────────────────────────────────────────
 
     if verb == '/node':
-        nodes_dir = _repo_root() / 'nodes'
+        nodes_dir = _repo_root() / 'agents' / 'nodes'
         sub = parts[1].lower() if len(parts) > 1 else 'list'
 
         if sub == 'list':
@@ -938,11 +938,6 @@ def dispatch(cmd: str) -> Optional[str]:
     if verb == '/agents':
         sub = parts[1].lower() if len(parts) > 1 else 'list'
 
-        if sub == 'consolidate':
-            if not REGISTRY_AVAILABLE:
-                return "[TOOL ERROR] agents: agent_registry not available"
-            return _registry.consolidation_report()
-
         if sub == 'find':
             query = ' '.join(parts[2:]) if len(parts) > 2 else ''
             if not query:
@@ -969,7 +964,7 @@ def dispatch(cmd: str) -> Optional[str]:
                 tools_str = f" ({e['tool_count']} tools)" if e["tool_count"] else ""
                 lines.append(f"    {e['name']:<38} {e['description'][:55]}{tools_str}")
             lines.append("")
-            lines.append("  /agents find <query> | /agents consolidate | /summon <name>")
+            lines.append("  /agents find <query> | /summon <name>")
             return "\n".join(lines)
         # Fallback
         lines = ["[TOOL:agents] Available characters (basic mode)"]

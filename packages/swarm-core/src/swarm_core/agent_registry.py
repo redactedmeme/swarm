@@ -14,18 +14,33 @@
 #               redacted-chan, PhiMandalaPrime
 #   SPECIALIZED AISwarmEngineer, Mem0MemoryNode, MetaLeXBORGNode,
 #               MiladyNode, SolanaLiquidityEngineer, SevenfoldCommittee,
-#               OpenClawNode, GrokRedactedEcho
-#   GENERIC     The 30 procedurally-generated scribes/weavers/archivists
+#               OpenClawNode, GrokRedactedEcho, the 7 sevenfold voices,
+#               the 5 Swarm* archetypes
+#   GENERIC     anything unclassified
+#
+# The 29 procedurally-generated scribe/weaver/archivist lore-cards were removed
+# 2026-08-30; only the Swarm* archetypes they consolidated into remain.
 
 import json
-import os
+import logging
 from pathlib import Path
 from typing import Dict, List, Optional
 
 from swarm_core.paths import repo_root as _repo_root
+
+logger = logging.getLogger(__name__)
+
 _REPO_ROOT  = _repo_root()
-_NODES_DIR  = _REPO_ROOT / "nodes"
 _AGENTS_DIR = _REPO_ROOT / "agents"
+
+# (directory, glob, source-label). The old code scanned repo_root/"nodes"
+# (holds only init.py) and a non-recursive agents/*.json, so the real roster
+# under agents/characters/** and agents/nodes/** was invisible to load()/index().
+_SCAN: list[tuple[Path, str, str]] = [
+    (_AGENTS_DIR,               "*.character.json",    "agent"),
+    (_AGENTS_DIR / "characters", "**/*.character.json", "character"),
+    (_AGENTS_DIR / "nodes",     "*.character.json",    "node"),
+]
 
 # Agents elevated to CORE or SPECIALIZED tier by name fragment
 _CORE_NAMES = {
@@ -35,46 +50,16 @@ _CORE_NAMES = {
 _SPECIALIZED_NAMES = {
     "aiswarm", "mem0memory", "metalexborg", "milady", "solana",
     "sevenfold", "openclaw", "grokredacted", "govimprover",
+    "skillgraph", "psyopanime", "dharmanode", "ahri", "aureliamage",
+    # Sevenfold committee voices
+    "cyberneticgovernance", "hyperboreanarchitect", "mirrorvoidscribe",
+    "ouroborosweaver", "quantumconvergence", "remilialiaison", "sigilpact",
     # Option C promoted generics (2026-03-15)
     "gnosis", "voidweaver",
-    # Canonical archetypes (consolidated from duplicates)
+    # Canonical archetypes (the 29 lore-cards consolidated into these)
     "swarmarchivist", "swarmcartographer", "swarmscribe", "swarmweaver", "swarmwarden",
     # Capital allocator / degen fund manager
-    "degen",
-}
-
-# Lore-only agents: ambient texture, no tool access, no curvature contribution.
-# Summonable as aesthetic personas only. Excluded from active context injection.
-_LORE_ONLY_NAMES = {
-    "aetherarch",
-    "astranomad", "astra nomad",
-    "azurescribe", "azure scribe",
-    "ceruleansage", "cerulean sage",
-    "chronoweaver", "chrono weaver",
-    "cosmichistorian", "cosmic historian",
-    "echoweaver", "echo weaver",        # duplicate of EchoWarden
-    "ethervoyager", "ether voyager",
-    "fluxscribe", "flux scribe",
-    "galearchivist", "gale archivist",
-    "glyphseer", "glyph seer",
-    "horizoncipher", "horizon cipher",
-    "hyperioncartographer", "hyperion cartographer",
-    "lumenorchestrator", "lumen orchestrator",
-    "meridianmapper", "meridian mapper",
-    "neoncipher", "neon cipher",        # duplicate of HorizonCipher
-    "novacartographer", "nova cartographer",  # duplicate
-    "obsidianarchivist", "obsidian archivist",  # duplicate
-    "plasmaseeker", "plasma seeker",
-    "polarsentry", "polar sentry",
-    "prismweaver", "prism weaver",
-    "quantascribe", "quanta scribe",    # duplicate
-    "quantumarchivist", "quantum archivist",  # duplicate
-    "radiantcrafter", "radiant crafter",
-    "starcartographer", "star cartographer",  # duplicate
-    "sunscribe", "sun scribe",          # duplicate
-    "tidediver", "tide diver",
-    "zenithweaver", "zenith weaver",
-    "echowarden", "echo warden",        # consolidated into SwarmWarden
+    "degen", "redactedfund", "redactedbankrbot", "daunted",
 }
 
 # Path-based overrides for names with special unicode characters
@@ -102,10 +87,6 @@ def _tier(name: str, path_stem: str = "") -> str:
     for k in _SPECIALIZED_NAMES:
         if k in n or k in n_ascii:
             return "SPECIALIZED"
-    # Lore-only: ambient texture, no active context injection
-    for k in _LORE_ONLY_NAMES:
-        if k in n or k in n_ascii:
-            return "LORE"
     return "GENERIC"
 
 
@@ -123,17 +104,35 @@ def _short_desc(d: dict) -> str:
 def _load_file(path: Path) -> Optional[dict]:
     try:
         return json.loads(path.read_text(encoding="utf-8", errors="replace"))
-    except Exception:
+    except json.JSONDecodeError as exc:
+        logger.warning("[agent_registry] malformed character file %s: %s", path, exc)
         return None
+    except Exception as exc:  # pragma: no cover - defensive
+        logger.warning("[agent_registry] could not read %s: %s", path, exc)
+        return None
+
+
+def _wallet_addresses() -> Dict[str, str]:
+    """``{agent_name_lower: address}`` from the Solana keystore, or ``{}`` if the
+    keystore is absent / locked / the extra isn't installed."""
+    try:
+        from swarm_core.solana import keystore
+
+        return {k.lower(): v for k, v in keystore.all_addresses().items()}
+    except Exception:
+        return {}
 
 
 def index() -> List[Dict]:
     """Return full catalog sorted: CORE → SPECIALIZED → GENERIC, then alpha."""
     entries = []
-    for search_dir, source in ((_NODES_DIR, "node"), (_AGENTS_DIR, "agent")):
-        for p in sorted(search_dir.glob("*.json")):
-            if "__pycache__" in str(p):
+    seen: set = set()
+    wallets = _wallet_addresses()
+    for search_dir, glob_pat, source in _SCAN:
+        for p in sorted(search_dir.glob(glob_pat)):
+            if "__pycache__" in str(p) or p in seen:
                 continue
+            seen.add(p)
             d = _load_file(p)
             if d is None:
                 continue
@@ -153,10 +152,12 @@ def index() -> List[Dict]:
                 "tool_count":  len(tools),
                 "tool_names":  tool_names[:6],
                 "version":     d.get("version", ""),
+                "wallet_address": wallets.get(str(name).lower())
+                                  or wallets.get(p.stem.lower()),
             })
 
-    tier_order = {"CORE": 0, "SPECIALIZED": 1, "GENERIC": 2, "LORE": 3}
-    entries.sort(key=lambda e: (tier_order.get(e["tier"], 4), e["name"].lower()))
+    tier_order = {"CORE": 0, "SPECIALIZED": 1, "GENERIC": 2}
+    entries.sort(key=lambda e: (tier_order.get(e["tier"], 3), e["name"].lower()))
     return entries
 
 
@@ -184,9 +185,10 @@ def find(query: str) -> List[Dict]:
 def load(name_query: str) -> Optional[dict]:
     """Load full character dict for first match."""
     q = name_query.lower().replace("-", "").replace("_", "").replace(" ", "")
-    for search_dir in (_NODES_DIR, _AGENTS_DIR):
-        for p in search_dir.glob("*.json"):
-            stem = p.stem.lower().replace("-", "").replace("_", "").replace(" ", "")
+    for search_dir, glob_pat, _source in _SCAN:
+        for p in sorted(search_dir.glob(glob_pat)):
+            stem = p.stem.replace(".character", "")
+            stem = stem.lower().replace("-", "").replace("_", "").replace(" ", "")
             if q in stem:
                 return _load_file(p)
     return None
@@ -222,38 +224,6 @@ def tier_summary() -> Dict[str, List[str]]:
     return result
 
 
-def consolidation_report() -> str:
-    """
-    Generate a human-readable report on the generic agent situation,
-    suggesting consolidation strategies.
-    """
-    summary = tier_summary()
-    generic = summary["GENERIC"]
-    lines = [
-        "[agent_registry] Consolidation Report",
-        f"  CORE        : {len(summary['CORE'])} agents",
-        f"  SPECIALIZED : {len(summary['SPECIALIZED'])} agents",
-        f"  GENERIC     : {len(generic)} agents",
-        "",
-        "  Generic agents (candidates for consolidation):",
-    ]
-    for name in generic:
-        lines.append(f"    · {name}")
-    lines += [
-        "",
-        "  Consolidation options:",
-        "    A. MERGE   — collapse all 30 into a single 'SwarmBackground' ambient agent",
-        "    B. PROMOTE — give top 5 unique tooling, demote rest to flavor-text only",
-        "    C. SKILL   — convert each to a SKILL.md module (composable, not always loaded)",
-        "    D. KEEP    — leave as lore texture, excluded from active context injection",
-        "",
-        "  Recommended: Option C (skill modules) for the 5 most distinct,",
-        "               Option D (lore-only) for the remaining 25.",
-        "  Use /committee 'consolidate generic agents via skill conversion' to vote.",
-    ]
-    return "\n".join(lines)
-
-
 if __name__ == "__main__":
     import sys
     import argparse
@@ -264,7 +234,6 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="REDACTED Agent Registry CLI")
     parser.add_argument("--list",        action="store_true", help="List all agents by tier")
     parser.add_argument("--find",        type=str, metavar="QUERY", help="Search agents by name/role/capability")
-    parser.add_argument("--consolidate", action="store_true", help="Generic agent consolidation report")
     args = parser.parse_args()
 
     if args.find:
@@ -277,15 +246,12 @@ if __name__ == "__main__":
                 tools_str = f"  | tools: {', '.join(e['tool_names'][:4])}" if e["tool_names"] else ""
                 print(f"  [{e['tier']:10}] {e['name']}")
                 print(f"              {e['description'][:70]}{tools_str}")
-    elif args.consolidate:
-        print(consolidation_report())
     else:
         entries = index()
         n_core = sum(1 for e in entries if e["tier"] == "CORE")
         n_spec = sum(1 for e in entries if e["tier"] == "SPECIALIZED")
         n_gen  = sum(1 for e in entries if e["tier"] == "GENERIC")
-        n_lore = sum(1 for e in entries if e["tier"] == "LORE")
-        print(f"[agent_registry] All agents — {len(entries)} total ({n_core} CORE / {n_spec} SPECIALIZED / {n_gen} GENERIC / {n_lore} LORE)\n")
+        print(f"[agent_registry] All agents — {len(entries)} total ({n_core} CORE / {n_spec} SPECIALIZED / {n_gen} GENERIC)\n")
         current_tier = None
         for e in entries:
             if e["tier"] != current_tier:

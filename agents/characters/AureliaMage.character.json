@@ -33,20 +33,13 @@
     "golden"
   ],
   "plugins": [
-    "@redacted
-/plugin-clawnx",
-    "@redacted
-/plugin-mem0",
-    "@redacted
-/plugin-mandala-settler",
-    "@redacted
-/plugin-near-intents-1click",
-    "@redacted
-/plugin-hyperbolic-scheduler",
-    "@redacted
-/plugin-sigil-bridge",
-    "@redacted
-/plugin-pattern-blue-state"
+    "@redacted/plugin-clawnx",
+    "@redacted/plugin-mem0",
+    "@redacted/plugin-mandala-settler",
+    "@redacted/plugin-near-intents-1click",
+    "@redacted/plugin-hyperbolic-scheduler",
+    "@redacted/plugin-sigil-bridge",
+    "@redacted/plugin-pattern-blue-state"
   ],
   "settings": {
     "debugMode": false,

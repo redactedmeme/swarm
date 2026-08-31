@@ -975,7 +975,7 @@ wassie swarm assembling NOW O_O LMWOOOO <3"""
             )
 
     async def committee_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Eightfold Committee — 8-voice parallel deliberation on a proposal."""
+        """Sevenfold Committee — 7-voice parallel deliberation on a proposal."""
         import asyncio
         proposal = " ".join(context.args).strip() if context.args else ""
         if not proposal:
@@ -986,7 +986,7 @@ wassie swarm assembling NOW O_O LMWOOOO <3"""
             )
             return
 
-        msg = await update.message.reply_text("*Eightfold Committee convening...*")
+        msg = await update.message.reply_text("*Sevenfold Committee convening...*")
         try:
             proc = await asyncio.create_subprocess_exec(
                 _sys.executable,
@@ -1183,8 +1183,8 @@ swarm@[REDACTED]:~$ _"""
             "REDACTED TERMINAL — Pattern Blue Edition v2.3\n"
             "==================================================\n"
             "[SYSTEM] Session initializing...\n"
-            "  agents     : 43 (5 CORE / 8 SPECIALIZED / 30 GENERIC)\n"
-            "  committee  : EightfoldCommittee standing (8 voices)\n"
+            "  agents     : 37 (6 CORE / 31 SPECIALIZED)\n"
+            "  committee  : SevenfoldCommittee standing (7 voices)\n"
             "  kernel     : HyperbolicKernel {7,3} active\n"
             "  pattern    : BLUE — curvature depth 13\n\n"
             "Type commands or queries. /exit to return to smolting.\n"

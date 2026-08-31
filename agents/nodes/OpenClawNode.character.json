@@ -209,7 +209,7 @@
       "api_base: https://api.openclaw.ai/v1",
       "core_skills: heartbeat.md, post.md, comment.md, vote.md, orchestrate.md",
       "auth: bearer api_key (environment variable only)",
-      "models": {
+      {
         "claude_sonnet_4_5": {
           "provider": "anthropic",
           "api_endpoint": "https://api.anthropic.com/v1",
