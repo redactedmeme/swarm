@@ -78,8 +78,18 @@ Use these instead of ad-hoc equivalents:
 | `audit.record / verify_chain` | the tamper-evident audit log — hash-chained JSONL + `swarm:audit` Redis stream |
 | `authz.require / is_admin` | capability check before a privileged action; `is_admin` is fail-closed |
 | `identity.AgentId` | validate an agent name at a trust boundary |
-| `inbox` | signed SwarmInbox (HMAC + route table) — the consolidated replacement for the per-app `swarm_inbox.py` copies |
+| `inbox` | signed SwarmInbox (HMAC + route table) — the one bus; `apps/{hermes,builder,smolting,chan}/swarm_inbox.py` are now re-export shims. `complete_message` mirrors the result onto `payload.reply_key` for chan↔hermes |
 | `secrets.get_secret` | resolve a secret (cache → tmpfs file → env → Vaultwarden) instead of `os.getenv` |
+
+## Solana — `swarm_core.solana`
+
+| Import | Use for |
+|---|---|
+| `keystore` | encrypted per-agent wallet store (`data_dir()/agent_wallets.enc`, Fernet + `SWARM_WALLET_KEK`); `generate / get_keypair / get_address / all_addresses` |
+| `wallets` | read-only SOL + $REDACTED balances and `manifest()` (RPC via `x402.rpc`) |
+| `reserve` | the Swarm SOL Reserve — auto-refuels low agent wallets from inside `apps/settler`. Dry-run unless `RESERVE_EXECUTE=true`; per-agent daily cap + cooldown; `funds.refuel` cap (not approval-gated by design) |
+
+Driven from the `swarm` CLI (`swarm wallets …`, `swarm reserve …`).
 
 Services: `apps/exec-runner` (no-secrets/no-network code sandbox, unix socket) and
 `apps/swarm-egress` (per-agent egress allowlist + outbound leak scan). `apps/secrets-init`
@@ -102,6 +112,11 @@ Start at [`docs/README.md`](docs/README.md) for the full reading order.
 ```bash
 # Install the shared packages once (editable), then any app can import them
 pip install -e packages/swarm-core -e packages/swarm-tg
+
+# swarm CLI — roster / status / wallets / reserve / delegate / mesh / committee
+swarm --help            # (console script from swarm-core; or: python -m swarm_core.cli)
+python scripts/build_executables.py   # -> dist/swarm[.exe] + dist/swarm.pyz
+python scripts/install_claude_skill.py --project   # installable Claude skill
 
 # Web terminal (full swarm UI)
 python apps/terminal/app.py

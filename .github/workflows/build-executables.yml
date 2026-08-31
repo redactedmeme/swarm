@@ -1,0 +1,41 @@
+name: build-executables
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e packages/swarm-core[solana,build] -e packages/swarm-tg
+      - name: Smoke-test the CLI
+        run: python -m swarm_core.cli --help
+      - name: Build
+        run: python scripts/build_executables.py
+      - name: Verify binary
+        shell: bash
+        run: |
+          if [ -f dist/swarm.exe ]; then ./dist/swarm.exe --help; fi
+          if [ -f dist/swarm ]; then ./dist/swarm --help; fi
+          python dist/swarm.pyz --help
+      - uses: actions/upload-artifact@v4
+        with:
+          name: swarm-${{ matrix.os }}
+          path: |
+            dist/swarm
+            dist/swarm.exe
+            dist/swarm.pyz
+          if-no-files-found: warn

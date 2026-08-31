@@ -114,3 +114,6 @@ handoff.md
 /audit/
 **/*_audit.jsonl
 audit/*.jsonl
+
+# project-local installed Claude skills (source: packaging/claude-skill/)
+.claude/skills/
