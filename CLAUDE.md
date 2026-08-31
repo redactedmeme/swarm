@@ -26,6 +26,7 @@ no `sys.path` inserts reaching across the tree.
 |---|---|
 | `packages/swarm-core/` | Shared library: committee deliberation, BEAM-SCoT, {7,3} hyperbolic kernel, lore vault, agent registry, session store, schedulers, **`swarm_core.security`** (see below). Was `python/` + `kernel/` + `core/` + `llm/`. |
 | `packages/swarm-tg/` | Telegram formatting + swarm task client, shared by all four bots. Was `shared/`. |
+| `packages/swarm-agent-base/` | Shared autonomous-agent runtime: the heartbeat / SwarmInbox-poll / soul-update / mesh-thought loops (`AgentRuntime`), one LLM client, soul store, activity log. Used by `apps/degen`, `apps/govimprover`. |
 | `apps/<name>/` | One deployable each — see the table below. |
 | `agents/`, `nodes/` | `.character.json` agent/node definitions |
 | `spaces/`, `knowledge/`, `vault/` | Persistent environments and markdown knowledge base |
@@ -51,15 +52,18 @@ no `sys.path` inserts reaching across the tree.
 | `apps/webchat/` | Private web chat for chan | Railway + umbrel |
 | `apps/status/` | Public heartbeat feed | not deployed |
 | `apps/settler/` | Settlement ledger + on-chain burn executor — the only treasury-key holder | umbrel |
-| `apps/degen/`, `apps/x402/`, `apps/arb-keeper/`, `apps/mcp/` | Dormant / stubs | — |
+| `apps/degen/` | RedactedDegen — Solana LP scout (Raydium/Orca/Meteora → mesh signals) | umbrel |
+| `apps/govimprover/` | RedactedGovImprover — Realms DAO proposal architect (draft only) | umbrel |
+| `apps/x402/`, `apps/arb-keeper/`, `apps/mcp/` | Dormant / stubs | — |
 
 ### Build contexts — the one rule that matters
 
 A service builds with the **repo root** as its Docker context if it imports the
 shared packages (`hermes`, `smolting`, `chan`, `refinery`, `runtime`,
-`terminal`, `settler`), because the image must `COPY packages/`. Self-contained services
-(`proxy`, `builder`, `degen`, `dashboard`, `webchat`, `website`) keep their own
-directory as context so their builds stay small.
+`terminal`, `settler`, `degen`, `govimprover`), because the image must
+`COPY packages/`. Self-contained services (`proxy`, `builder`, `dashboard`,
+`webchat`, `website`) keep their own directory as context so their builds stay
+small.
 
 Getting this wrong is the repo's classic outage: a service that builds from the
 wrong root picks up the wrong entrypoint and crash-loops. Check
@@ -111,7 +115,7 @@ Start at [`docs/README.md`](docs/README.md) for the full reading order.
 
 ```bash
 # Install the shared packages once (editable), then any app can import them
-pip install -e packages/swarm-core -e packages/swarm-tg
+pip install -e packages/swarm-core -e packages/swarm-tg -e packages/swarm-agent-base
 
 # swarm CLI — roster / status / wallets / reserve / delegate / mesh / committee
 swarm --help            # (console script from swarm-core; or: python -m swarm_core.cli)

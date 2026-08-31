@@ -257,6 +257,40 @@ services:
     restart: always
     network_mode: host
 
+  # RedactedDegen — Solana LP scout. Imports the shared packages, so the build
+  # context is the repo ROOT (see CLAUDE.md "Build contexts").
+  degen:
+    build:
+      context: /home/umbrel/swarm
+      dockerfile: apps/degen/Dockerfile
+    container_name: swarm-degen
+    env_file:
+      - .env.degen
+    volumes:
+      - degendata:/data
+    depends_on:
+      redis:
+        condition: service_healthy
+    restart: always
+    network_mode: host
+
+  # RedactedGovImprover — Realms DAO proposal architect (draft only). Repo-root
+  # build context, same reason as degen.
+  govimprover:
+    build:
+      context: /home/umbrel/swarm
+      dockerfile: apps/govimprover/Dockerfile
+    container_name: swarm-govimprover
+    env_file:
+      - .env.govimprover
+    volumes:
+      - govimproverdata:/data
+    depends_on:
+      redis:
+        condition: service_healthy
+    restart: always
+    network_mode: host
+
   redacted-proxy:
     build:
       context: /home/umbrel/swarm/apps/proxy
@@ -317,6 +351,8 @@ services:
 
 volumes:
   builderdata:
+  degendata:
+  govimproverdata:
   refinerymodels:
   pgdata:
   smoltingdata:
