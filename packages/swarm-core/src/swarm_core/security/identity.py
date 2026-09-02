@@ -17,6 +17,10 @@ AGENTS: frozenset[str] = frozenset(
         "redactedintern",
         "redactedbuilder",
         "redactedgovimprover",
+        # Aliases the two agent-base runtimes also heartbeat under, so a
+        # peer addressing either spelling still validates at the boundary.
+        "govimprover",
+        "redacteddegen",
         "mandalaasettler",
         "redactedbankrbot",
         "hermes",
