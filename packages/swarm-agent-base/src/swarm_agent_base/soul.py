@@ -12,6 +12,7 @@ import logging
 import re
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import Callable
 
 logger = logging.getLogger(__name__)
 
@@ -35,8 +36,34 @@ _SYSTEM = (
 
 
 class SoulStore:
-    def __init__(self, agent: str, *, repo_soul: str | Path, data_dir: str | Path | None = None) -> None:
+    """The storage, versioning and section-editing mechanics of a SOUL.md.
+
+    Deliberately *not* the soul-evolution policy. ``update()`` below is the
+    plain activity-digest distillation the agent-base runtimes use; smolting and
+    chan each drive their own update from app-local modules
+    (``conversation_memory``, ``mesh_deliberation``, ``authenticity_vote``) and
+    keep that where it lives. They reuse the mechanics and the section helpers,
+    nothing more — which is the part that was actually duplicated four ways.
+
+    ``sanitize`` wraps soul text on its way into a prompt (smolting/chan pass
+    their ``sanitizer.text_for_llm``). ``context_provider`` is called by
+    ``for_prompt(context=...)`` and returns extra lines to append for that
+    context; it lets an app inject e.g. resonance facts without this module
+    knowing what those are.
+    """
+
+    def __init__(
+        self,
+        agent: str,
+        *,
+        repo_soul: str | Path,
+        data_dir: str | Path | None = None,
+        sanitize: Callable[[str], str] | None = None,
+        context_provider: Callable[[str], list[str]] | None = None,
+    ) -> None:
         self.agent = agent
+        self._sanitize = sanitize or (lambda t: t)
+        self._context_provider = context_provider
         self._repo_soul = Path(repo_soul)
         if data_dir is None:
             d = Path("/data") if Path("/data").exists() else self._repo_soul.parent / "fs"
@@ -64,7 +91,7 @@ class SoulStore:
         (self._history_dir() / "manifest.json").write_text(
             json.dumps(m, ensure_ascii=False, indent=2), encoding="utf-8")
 
-    def _snapshot(self, soul_text: str) -> int:
+    def _snapshot(self, soul_text: str, facts_absorbed: list[str] | None = None) -> int:
         m = self._load_manifest()
         v = m["current_version"] + 1
         try:
@@ -73,11 +100,16 @@ class SoulStore:
             logger.warning("[soul] snapshot write failed: %s", e)
             return v
         m["current_version"] = v
-        m["versions"].append({
+        entry = {
             "version": v,
             "snapshotted_at": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
             "word_count": len(soul_text.split()),
-        })
+        }
+        # Only the fact-driven agents record this. Leaving the key absent
+        # otherwise means an existing manifest is never rewritten with noise.
+        if facts_absorbed is not None:
+            entry["facts_absorbed"] = list(facts_absorbed)[:20]
+        m["versions"].append(entry)
         m["versions"] = m["versions"][-50:]
         self._save_manifest(m)
         return v
@@ -98,7 +130,12 @@ class SoulStore:
             logger.warning("[soul] read failed: %s", e)
         return ""
 
-    def for_prompt(self) -> str:
+    def for_prompt(self, context: str | None = None) -> str:
+        """The evolving sections, trimmed for system-prompt injection.
+
+        With ``context`` and a ``context_provider``, appends that context's
+        extra lines — how smolting/chan inject per-submolt resonance facts.
+        """
         soul = self.read()
         if not soul:
             return ""
@@ -109,8 +146,19 @@ class SoulStore:
                 continue
             content = m.group(1).strip()
             if content and content != "_Nothing yet._":
-                chunks.append(f"### {section}\n{content}")
-        return ("\n\n[SOUL]\n" + "\n\n".join(chunks)) if chunks else ""
+                chunks.append(f"### {section}\n{self._sanitize(content)}")
+        if not chunks and not context:
+            return ""
+        base = ("\n\n[SOUL]\n" + "\n\n".join(chunks)) if chunks else ""
+        if context and self._context_provider is not None:
+            try:
+                extra = self._context_provider(context)
+            except Exception as e:  # noqa: BLE001 — a prompt addendum is never worth a crash
+                logger.debug("[soul] context provider for %r failed: %s", context, e)
+                extra = []
+            if extra:
+                base += f"\n\n[SOUL — /{context} resonance]\n" + "\n".join(extra)
+        return base
 
     # -- timestamps --------------------------------------------------------
     @staticmethod
@@ -215,6 +263,45 @@ class SoulStore:
             logger.error("[soul] write failed: %s", e)
             return False
         return True
+
+    def record_notable_event(self, event: str) -> bool:
+        """Append a dated line to Notable Events straight away.
+
+        The code path for things that are significant by construction — a
+        deploy result, a swarm message, a milestone — bypassing the LLM gate
+        in ``update()``.
+        """
+        soul = self.read()
+        if not soul:
+            return False
+        date_str = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+        soul = self._append_to_section(soul, "Notable Events", [f"- {date_str}: {event.strip()}"])
+        soul = self._stamp(soul)
+        try:
+            self._file.write_text(soul, encoding="utf-8")
+            logger.info("[soul] notable event recorded: %s", event[:80])
+            return True
+        except Exception as e:  # noqa: BLE001
+            logger.error("[soul] record_notable_event write failed: %s", e)
+            return False
+
+    def drift_summary(self, versions: int = 3) -> str:
+        """Human-readable summary of the last N snapshots, for `/soul drift`."""
+        m = self._load_manifest()
+        recent = m.get("versions", [])[-versions:]
+        if not recent:
+            return "No soul history yet — first update will create a snapshot."
+        lines = [f"**Soul drift — last {len(recent)} version(s):**\n"]
+        for v in recent:
+            # facts_absorbed is only present for the fact-driven agents.
+            facts = v.get("facts_absorbed")
+            tail = f", {len(facts)} facts absorbed" if facts is not None else ""
+            lines.append(
+                f"• v{v['version']} @ {v['snapshotted_at'][:10]} "
+                f"({v['word_count']} words{tail})"
+            )
+        lines.append(f"\nCurrent: v{m['current_version']} — use `/soul diff` to compare two versions.")
+        return "\n".join(lines)
 
     def status_line(self) -> str:
         soul = self.read()
