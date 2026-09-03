@@ -113,7 +113,7 @@ async def fetch_raydium_pools() -> list[PoolData]:
                     return []
                 raw = await resp.json()
     except Exception as e:
-        logger.error(f"Raydium fetch error: {e}")
+        logger.error(f"Raydium fetch error: {type(e).__name__}: {e}")
         return []
 
     pools: list[PoolData] = []
@@ -158,7 +158,7 @@ async def fetch_orca_pools() -> list[PoolData]:
                     return []
                 body = await resp.json()
     except Exception as e:
-        logger.error(f"Orca fetch error: {e}")
+        logger.error(f"Orca fetch error: {type(e).__name__}: {e}")
         return []
 
     whirlpools = body.get("whirlpools", []) if isinstance(body, dict) else body
@@ -213,7 +213,7 @@ async def fetch_meteora_pools() -> list[PoolData]:
                     return []
                 raw = await resp.json()
     except Exception as e:
-        logger.error(f"Meteora fetch error: {e}")
+        logger.error(f"Meteora fetch error: {type(e).__name__}: {e}")
         return []
 
     pairs = raw if isinstance(raw, list) else raw.get("data", [])
