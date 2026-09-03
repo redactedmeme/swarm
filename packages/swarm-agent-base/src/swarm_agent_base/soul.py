@@ -45,11 +45,10 @@ class SoulStore:
     keep that where it lives. They reuse the mechanics and the section helpers,
     nothing more — which is the part that was actually duplicated four ways.
 
-    ``sanitize`` wraps soul text on its way into a prompt (smolting/chan pass
-    their ``sanitizer.text_for_llm``). ``context_provider`` is called by
-    ``for_prompt(context=...)`` and returns extra lines to append for that
-    context; it lets an app inject e.g. resonance facts without this module
-    knowing what those are.
+    ``context_provider`` is called by ``for_prompt(context=...)`` and returns
+    extra lines to append for that context; it lets an app inject e.g.
+    smolting's per-submolt resonance facts without this module knowing what a
+    submolt is.
     """
 
     def __init__(
@@ -58,13 +57,11 @@ class SoulStore:
         *,
         repo_soul: str | Path,
         data_dir: str | Path | None = None,
-        sanitize: Callable[[str], str] | None = None,
         context_provider: Callable[[str], list[str]] | None = None,
         sections: list[str] | None = None,
         prompt_header: str = "[SOUL]",
     ) -> None:
         self.agent = agent
-        self._sanitize = sanitize or (lambda t: t)
         self._context_provider = context_provider
         # Not every agent has the same soul shape — builder carries a fifth
         # "Build Log" section. Delegating without this would silently drop it
@@ -156,7 +153,7 @@ class SoulStore:
                 continue
             content = m.group(1).strip()
             if content and content != "_Nothing yet._":
-                chunks.append(f"### {section}\n{self._sanitize(content)}")
+                chunks.append(f"### {section}\n{content}")
         if not chunks and not context:
             return ""
         base = (f"\n\n{self.prompt_header}\n" + "\n\n".join(chunks)) if chunks else ""

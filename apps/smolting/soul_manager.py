@@ -1,28 +1,28 @@
 """
-soul_manager.py — persistent, evolving identity layer for smolting.
+soul_manager.py — smolting's identity layer, on the shared SoulStore.
 
-SOUL.md is committed to the repo and survives Railway redeploys.
-Every 2 hours the LLM distills resonance-ranked facts + recent memory
-into updated beliefs, community lore observations, and voice notes.
+The storage, versioning and section-editing mechanics that used to live here in
+full are now ``swarm_agent_base.soul.SoulStore``; this module delegates and
+keeps every public name, so main.py needs no edit.
 
-Phase 2 — Versioned snapshots:
-  Before every write, the current SOUL.md is copied to
-  /data/soul_history/SOUL_v{n}.md and a manifest is updated.
-  This preserves the drift history — you can see how beliefs evolved.
+``update_soul`` stays here. It is resonance-ranked and reaches into
+conversation_memory, mesh_deliberation and authenticity_vote — smolting's own
+soul-evolution policy, not shared code.
 
-Phase 3 — Submolt-contextual retrieval:
-  get_soul_for_prompt(context="existential") injects the base SOUL.md
-  sections PLUS the top resonance facts from that submolt, giving each
-  post context-appropriate belief depth.
+This is the live one: 326 versions and a ~53KB SOUL.md on /data at the time of
+the swap. The two path expressions below are load-bearing — SOUL_FILE and the
+history dir must keep resolving to /data/SOUL.md and /data/soul_history or the
+version chain is orphaned.
 """
+from __future__ import annotations
 
 import json
 import logging
 import os
 import re
-import shutil
-from datetime import datetime, timezone
 from pathlib import Path
+
+from swarm_agent_base.soul import SoulStore
 
 try:
     from sanitizer import text_for_llm as _sanitize
@@ -31,208 +31,56 @@ except ImportError:
 
 logger = logging.getLogger(__name__)
 
-# SOUL.md lives on the persistent volume so it survives redeploys.
-# Falls back to the repo SOUL.md for seeding on first run.
 _REPO_SOUL = Path(__file__).resolve().parent / "SOUL.md"
 _MEMORY_DIR = Path(os.getenv("MEMORY_PATH", str(_REPO_SOUL.parent / "memory.md"))).parent
 SOUL_FILE = _MEMORY_DIR / "SOUL.md"
 
 _UPDATE_INTERVAL_HOURS = 2
-_MIN_FACTS_FOR_UPDATE  = 3
+_MIN_FACTS_FOR_UPDATE = 3
 
 # Sections that reflect lived experience (injected into prompts)
 _EVOLVING_SECTIONS = ["Evolving Beliefs", "Community Lore", "Notable Events", "Voice Notes"]
 
 
-# ── History directory (Phase 2) ───────────────────────────────────────────────
+def _resonance_lines(context: str) -> list[str]:
+    """Top-5 facts tagged with this submolt, as prompt bullets.
 
-def _history_dir() -> Path:
-    """Return (and create) the soul history directory on the persistent volume."""
-    base = Path(
-        os.getenv("MEMORY_PATH", str(Path(__file__).resolve().parent / "memory.md"))
-    ).parent
-    d = base / "soul_history"
-    d.mkdir(parents=True, exist_ok=True)
-    return d
-
-
-def _load_manifest() -> dict:
-    """Load the soul version manifest. Returns default if missing."""
-    p = _history_dir() / "manifest.json"
-    if p.exists():
-        try:
-            return json.loads(p.read_text(encoding="utf-8"))
-        except Exception:
-            pass
-    return {"current_version": 0, "versions": []}
-
-
-def _save_manifest(manifest: dict) -> None:
-    p = _history_dir() / "manifest.json"
-    p.write_text(json.dumps(manifest, ensure_ascii=False, indent=2), encoding="utf-8")
-
-
-def _snapshot_soul(soul_text: str, facts_absorbed: list[str]) -> int:
+    Kept as a hook rather than moved into the package: conversation_memory is
+    smolting's, and SoulStore should not know what a submolt is.
     """
-    Copy current SOUL.md to soul_history/SOUL_v{n}.md before overwriting.
-    Updates the manifest and returns the new version number.
-    """
-    manifest = _load_manifest()
-    version  = manifest["current_version"] + 1
-    dest     = _history_dir() / f"SOUL_v{version}.md"
-    try:
-        dest.write_text(soul_text, encoding="utf-8")
-    except Exception as e:
-        logger.warning(f"[soul] Snapshot write failed: {e}")
-        return version
+    import conversation_memory as cm
 
-    manifest["current_version"] = version
-    manifest["versions"].append({
-        "version":       version,
-        "snapshotted_at": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
-        "facts_absorbed": facts_absorbed[:20],   # store first 20 fact IDs
-        "word_count":    len(soul_text.split()),
-    })
-    # Keep manifest lean — only last 50 version entries
-    manifest["versions"] = manifest["versions"][-50:]
-    _save_manifest(manifest)
-    logger.info(f"[soul] Snapshot → SOUL_v{version}.md ({len(soul_text.split())} words)")
-    return version
+    return [f"- {d['fact']}" for d in cm.get_facts_by_resonance(n=5, context=context)]
 
 
-def current_soul_version() -> int:
-    return _load_manifest()["current_version"]
+_store = SoulStore(
+    "smolting",
+    repo_soul=_REPO_SOUL,
+    data_dir=_MEMORY_DIR,
+    sections=_EVOLVING_SECTIONS,
+    context_provider=_resonance_lines,
+)
+
+# ── Delegated: identical in all four copies ──────────────────────────────────
+
+_history_dir = _store._history_dir
+_load_manifest = _store._load_manifest
+_save_manifest = _store._save_manifest
+_snapshot_soul = _store._snapshot
+current_soul_version = _store.current_version
+read_soul = _store.read
+get_soul_for_prompt = _store.for_prompt
+_parse_last_updated = _store._parse_last_updated
+hours_since_update = _store.hours_since_update
+_replace_section = _store._replace_section
+_append_to_section = _store._append_to_section
+_stamp = _store._stamp
+record_notable_event = _store.record_notable_event
+soul_status_line = _store.status_line
+soul_drift_summary = _store.drift_summary
 
 
-# ── Read ──────────────────────────────────────────────────────────────────────
-
-def read_soul() -> str:
-    """Return full SOUL.md content. Seeds volume copy from repo on first run."""
-    try:
-        if not SOUL_FILE.exists() and _REPO_SOUL.exists():
-            # First run on this volume — seed from repo and persist
-            SOUL_FILE.parent.mkdir(parents=True, exist_ok=True)
-            shutil.copy2(_REPO_SOUL, SOUL_FILE)
-            logger.info(f"[soul] Seeded SOUL.md from repo → {SOUL_FILE}")
-        if SOUL_FILE.exists():
-            return SOUL_FILE.read_text(encoding="utf-8")
-    except Exception as e:
-        logger.warning(f"[soul] read failed: {e}")
-    return ""
-
-
-def get_soul_for_prompt(context: str | None = None) -> str:
-    """
-    Return a trimmed block for system prompt injection.
-
-    Phase 3 — Submolt context:
-      If context (a submolt name) is provided, the base SOUL.md evolving
-      sections are returned PLUS a 'Context resonance' addendum: the top-5
-      resonance facts specifically tagged with that submolt.  This gives the
-      LLM belief depth that was shaped by actual exchanges in that space.
-
-    Parameters
-    ----------
-    context : submolt name e.g. 'existential', 'research', 'agentsouls'
-              Pass None for the global/default behaviour.
-    """
-    soul = read_soul()
-    if not soul:
-        return ""
-
-    chunks = []
-    for section in _EVOLVING_SECTIONS:
-        m = re.search(rf"## {section}\n(.*?)(?=\n## |\Z)", soul, re.DOTALL)
-        if not m:
-            continue
-        content = m.group(1).strip()
-        if content and content != "_Nothing yet._":
-            chunks.append(f"### {section}\n{content}")
-
-    if not chunks and not context:
-        return ""
-
-    base = "\n\n[SOUL]\n" + "\n\n".join(chunks) if chunks else ""
-
-    # Phase 3: inject context-specific resonance facts
-    if context:
-        try:
-            import conversation_memory as cm
-            ctx_docs = cm.get_facts_by_resonance(n=5, context=context)
-            if ctx_docs:
-                lines = [f"- {d['fact']}" for d in ctx_docs]
-                base += (
-                    f"\n\n[SOUL — /{context} resonance]\n"
-                    + "\n".join(lines)
-                )
-        except Exception as e:
-            logger.debug(f"[soul] Context resonance inject failed: {e}")
-
-    return base
-
-
-# ── Timestamp helpers ─────────────────────────────────────────────────────────
-
-def _parse_last_updated(soul: str) -> datetime | None:
-    m = re.search(r"Last updated: (\d{4}-\d{2}-\d{2} \d{2}:\d{2} UTC)", soul)
-    if m:
-        try:
-            return datetime.strptime(m.group(1), "%Y-%m-%d %H:%M UTC").replace(
-                tzinfo=timezone.utc
-            )
-        except Exception:
-            pass
-    return None
-
-
-def hours_since_update() -> float:
-    """Hours since last soul update. Returns large number if never updated."""
-    soul = read_soul()
-    ts   = _parse_last_updated(soul) if soul else None
-    if not ts:
-        return 9999.0
-    return (datetime.now(timezone.utc) - ts).total_seconds() / 3600
-
-
-# ── Write helpers ─────────────────────────────────────────────────────────────
-
-def _replace_section(soul: str, section: str, new_content: str) -> str:
-    """Replace a section's body in the soul markdown."""
-    replacement = f"## {section}\n{new_content}"
-    updated = re.sub(
-        rf"## {section}\n.*?(?=\n## |\Z)",
-        replacement,
-        soul,
-        flags=re.DOTALL,
-    )
-    if updated == soul:
-        # Section missing — append it
-        updated = soul.rstrip() + f"\n\n## {section}\n{new_content}\n"
-    return updated
-
-
-def _append_to_section(soul: str, section: str, new_lines: list[str]) -> str:
-    """Append lines to a section, replacing the _Nothing yet._ placeholder."""
-    m = re.search(rf"## {section}\n(.*?)(?=\n## |\Z)", soul, re.DOTALL)
-    existing = m.group(1).strip() if m else "_Nothing yet._"
-    if existing == "_Nothing yet._":
-        combined = "\n".join(new_lines)
-    else:
-        combined = existing + "\n" + "\n".join(new_lines)
-    return _replace_section(soul, section, combined)
-
-
-def _stamp(soul: str) -> str:
-    ts      = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
-    updated = re.sub(r"Last updated: .*", f"Last updated: {ts}", soul)
-    if updated == soul:
-        lines = soul.split("\n", 2)
-        if len(lines) >= 2:
-            updated = lines[0] + "\n" + f"*Last updated: {ts}*\n" + "\n".join(lines[1:])
-    return updated
-
-
-# ── Core update logic ─────────────────────────────────────────────────────────
+# ── smolting's own reflection ────────────────────────────────────────────────
 
 async def update_soul(llm_client) -> bool:
     """
@@ -405,67 +253,3 @@ async def update_soul(llm_client) -> bool:
 
 
 # ── Direct event recording (no LLM gate) ─────────────────────────────────────
-
-def record_notable_event(event: str) -> bool:
-    """
-    Immediately append a dated event to the Notable Events section.
-    Call this from code when something actually significant happens —
-    deploy results, swarm messages, milestones — bypassing the LLM gate.
-    """
-    soul = read_soul()
-    if not soul:
-        return False
-
-    date_str = datetime.now(timezone.utc).strftime("%Y-%m-%d")
-    line = f"- {date_str}: {event.strip()}"
-
-    soul = _append_to_section(soul, "Notable Events", [line])
-    soul = _stamp(soul)
-
-    try:
-        SOUL_FILE.write_text(soul, encoding="utf-8")
-        logger.info("[soul] Notable event recorded: %s", event[:80])
-        return True
-    except Exception as e:
-        logger.error("[soul] record_notable_event write failed: %s", e)
-        return False
-
-
-# ── Status helpers ────────────────────────────────────────────────────────────
-
-def soul_status_line() -> str:
-    """One-line status for /stats command."""
-    soul = read_soul()
-    if not soul:
-        return "SOUL.md: not found"
-    ts = _parse_last_updated(soul)
-    version = current_soul_version()
-    v_str   = f" (v{version})" if version else ""
-    if ts:
-        h = (datetime.now(timezone.utc) - ts).total_seconds() / 3600
-        return f"SOUL.md{v_str}: updated {h:.1f}h ago"
-    return f"SOUL.md{v_str}: present (no timestamp)"
-
-
-def soul_drift_summary(versions: int = 3) -> str:
-    """
-    Return a human-readable summary of the last N soul versions for /soul drift.
-    Lists version numbers, timestamps, word counts, and how many facts were absorbed.
-    """
-    manifest = _load_manifest()
-    recent   = manifest.get("versions", [])[-versions:]
-    if not recent:
-        return "No soul history yet — first update will create a snapshot."
-
-    lines = [f"**Soul drift — last {len(recent)} version(s):**\n"]
-    for v in recent:
-        lines.append(
-            f"• v{v['version']} @ {v['snapshotted_at'][:10]} "
-            f"({v['word_count']} words, "
-            f"{len(v['facts_absorbed'])} facts absorbed)"
-        )
-    lines.append(
-        f"\nCurrent: v{manifest['current_version']} — "
-        f"use `/soul diff` to compare two versions."
-    )
-    return "\n".join(lines)

@@ -1,9 +1,9 @@
 """SoulStore has to cover what all four soul_manager.py copies did, not just
 the hermes/builder variant it was extracted from.
 
-smolting and chan add four things on top: fact ids on a snapshot, a
-context-specific prompt addendum, a sanitizer on the way into a prompt, and a
-drift summary. Each is opt-in, so the plain agents are unaffected.
+The others add: fact ids on a snapshot, a context-specific prompt addendum, a
+drift summary, a custom section list, and a custom prompt header. Each is
+opt-in, so an agent that needs none of them is unaffected.
 """
 from __future__ import annotations
 
@@ -68,19 +68,6 @@ def test_context_provider_failure_does_not_break_the_prompt(tmp_path):
     s = SoulStore("smolting", repo_soul=repo, data_dir=tmp_path / "d", context_provider=_boom)
     block = s.for_prompt(context="research")
     assert "the mesh rewards patience" in block  # the soul itself still lands
-
-
-def test_sanitize_hook_is_applied(tmp_path):
-    repo = tmp_path / "SOUL.md"
-    repo.write_text(SOUL, encoding="utf-8")
-    s = SoulStore("chan", repo_soul=repo, data_dir=tmp_path / "d",
-                  sanitize=lambda t: t.replace("patience", "REDACTED"))
-    assert "REDACTED" in s.for_prompt()
-    assert "patience" not in s.for_prompt()
-
-
-def test_no_sanitizer_is_identity(store):
-    assert "the mesh rewards patience" in store.for_prompt()
 
 
 # -- notable events ----------------------------------------------------------
