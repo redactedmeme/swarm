@@ -1,5 +1,8 @@
 python-telegram-bot[webhooks,job-queue]==21.3
-aiohttp==3.9.1
+# >=3.10: the current `openai` vendors httpx_aiohttp, which needs
+# aiohttp.SocketTimeoutError. Pinning 3.9.1 downgrades what the shared
+# packages install and breaks their import — see fd36242.
+aiohttp>=3.10
 requests==2.31.0
 python-dotenv==1.0.0
 pyyaml>=6.0
