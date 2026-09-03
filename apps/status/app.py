@@ -70,6 +70,8 @@ AGENT_LABELS: dict[str, str] = {
     "redacted-chan": "redacted-chan",
     "hermes": "hermes",
     "builder": "RedactedBuilder",
+    "degen": "RedactedDegen",
+    "govimprover": "RedactedGovImprover",
 }
 
 

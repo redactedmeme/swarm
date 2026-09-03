@@ -1,7 +1,7 @@
 {
-  "updated": "2026-08-22",
+  "updated": "2026-09-03",
   "note": "Source of truth for the AI SWARM section on redacted.meme, the agent list in llms.txt, and the /api/swarm status feed. `state` is declared (active|asleep|retired) and is never inferred from liveness; `roster: false` keeps an entry out of the website cards but in the status feed. Regenerate llms.txt with `python build_llms.py` after editing.",
-  "summary": "37 registered agents. 6 live services on the mesh. Operating across seven Pattern Blue dimensions.",
+  "summary": "37 registered agents. 8 live services on the mesh. Operating across seven Pattern Blue dimensions.",
   "agents": [
     {
       "id": "smolting",
@@ -123,13 +123,25 @@
     {
       "id": "degen",
       "tier": "SPECIALIZED",
-      "name": "swarm-degen",
-      "desc": "Dormant stub — market-side experiment, not running.",
+      "name": "RedactedDegen",
+      "desc": "Solana LP scout — walks Raydium, Orca and Meteora for APR spikes and impermanent-loss exposure, and broadcasts what it finds to the mesh as signals. Reads pools and publishes takes; holds no wallet and moves no funds.",
       "dimension": "Causal Density Max",
-      "host": "not deployed",
-      "stack": "—",
-      "state": "asleep",
-      "roster": false,
+      "host": "umbrel mesh",
+      "stack": "Python · swarm-agent-base · Solana DeFi APIs",
+      "state": "active",
+      "lineage": {
+        "parent": "builder"
+      }
+    },
+    {
+      "id": "govimprover",
+      "tier": "SPECIALIZED",
+      "name": "RedactedGovImprover",
+      "desc": "Realms DAO proposal architect — digests governance sources and drafts structured proposals with compliance framing. Drafts only: it has no vote, no wallet and no authority to submit.",
+      "dimension": "Causal Density Max",
+      "host": "umbrel mesh",
+      "stack": "Python · swarm-agent-base · Realms",
+      "state": "active",
       "lineage": {
         "parent": "builder"
       }

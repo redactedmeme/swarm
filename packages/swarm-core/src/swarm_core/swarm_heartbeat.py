@@ -23,6 +23,10 @@ HEARTBEAT_LOOKUP_KEYS: dict[str, list[str]] = {
     "smolting": ["smolting", "redactedintern"],
     "builder": ["builder", "redactedbuilder"],
     "runtime": ["runtime"],
+    # The swarm-agent-base runtimes heartbeat under both spellings; a reader
+    # that knows only one half sees "no signal" half the time.
+    "degen": ["degen", "redacteddegen"],
+    "govimprover": ["govimprover", "redactedgovimprover"],
 }
 
 SWARM_AGENT_IDS = list(HEARTBEAT_LOOKUP_KEYS.keys())
