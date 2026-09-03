@@ -122,3 +122,23 @@ audit/*.jsonl
 
 # project-local installed Claude skills (source: packaging/claude-skill/)
 .claude/skills/
+
+# Vendored agent skills installed by `npx skills add` (cloudflare/skills, etc).
+# skills/ holds this repo's OWN skill modules and stays tracked — only the
+# vendored trees and the lockfile are ignored. Reinstall with:
+#   npx -y skills add cloudflare/skills --skill '*' --yes
+.agents/
+skills-lock.json
+skills/agents-sdk/
+skills/cloudflare/
+skills/cloudflare-email-service/
+skills/cloudflare-one/
+skills/cloudflare-one-migrations/
+skills/durable-objects/
+skills/sandbox-migrate-to-next/
+skills/sandbox-next/
+skills/sandbox-stable/
+skills/turnstile-spin/
+skills/web-perf/
+skills/workers-best-practices/
+skills/wrangler/
