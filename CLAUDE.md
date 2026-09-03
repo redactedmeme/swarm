@@ -60,10 +60,16 @@ no `sys.path` inserts reaching across the tree.
 
 A service builds with the **repo root** as its Docker context if it imports the
 shared packages (`hermes`, `smolting`, `chan`, `refinery`, `runtime`,
-`terminal`, `settler`, `degen`, `govimprover`), because the image must
-`COPY packages/`. Self-contained services (`proxy`, `builder`, `dashboard`,
+`terminal`, `settler`, `degen`, `govimprover`, `builder`), because the image
+must `COPY packages/`. Self-contained services (`proxy`, `dashboard`,
 `webchat`, `website`) keep their own directory as context so their builds stay
 small.
+
+`builder` moved onto the repo root on 2026-09-03. It was self-contained until
+`3a56377` turned its `swarm_inbox.py` / `task_client.py` into re-export shims
+over `swarm_core` / `swarm_tg` — after which the *next* rebuild of the old
+context would have died at `main.py:46` with `ModuleNotFoundError`. The running
+container predated the shims, so the breakage stayed latent for two days.
 
 Getting this wrong is the repo's classic outage: a service that builds from the
 wrong root picks up the wrong entrypoint and crash-loops. Check

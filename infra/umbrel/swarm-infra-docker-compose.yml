@@ -242,10 +242,12 @@ services:
     restart: always
     network_mode: host
 
+  # Repo-root context since 2026-09-03: swarm_inbox.py / task_client.py are
+  # re-export shims over swarm_core / swarm_tg, so the image must COPY packages/.
   builder:
     build:
-      context: /home/umbrel/swarm/apps/builder
-      dockerfile: Dockerfile
+      context: /home/umbrel/swarm
+      dockerfile: apps/builder/Dockerfile
     container_name: swarm-builder
     env_file:
       - .env.builder

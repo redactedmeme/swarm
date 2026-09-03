@@ -1,21 +1,25 @@
 """
-soul_manager.py — persistent, evolving identity layer for RedactedBuilder.
+soul_manager.py — RedactedBuilder's identity layer, on the shared SoulStore.
 
-SOUL.md seeds from the repo on first boot, then lives on the Railway volume.
-Every 2 hours the LLM distills recent activity (group posts, chat replies,
-SwarmInbox events) into updated beliefs, community lore, and voice notes.
+The storage, versioning and section-editing mechanics that used to live here in
+full are now ``swarm_agent_base.soul.SoulStore``; this module delegates to it
+and keeps every public name, so main.py and thought_dispatcher.py need no edit.
 
-Adapted from hermes-bot/soul_manager.py for the builder persona.
+What stays is ``update_soul``: it draws on builder_memory and builder's own
+reflection prompt, which is policy rather than shared code.
+
+Note the fifth section. builder's soul carries a "Build Log" the other three
+don't, so the store is constructed with an explicit section list — without it
+the Build Log would silently stop reaching the prompt.
 """
 from __future__ import annotations
 
 import json
 import logging
-import os
 import re
-import shutil
-from datetime import datetime, timezone
 from pathlib import Path
+
+from swarm_agent_base.soul import SoulStore
 
 logger = logging.getLogger(__name__)
 
@@ -26,138 +30,34 @@ SOUL_FILE = _DATA_DIR / "SOUL.md"
 _UPDATE_INTERVAL_HOURS = 2
 _EVOLVING_SECTIONS = ["Evolving Beliefs", "Community Lore", "Notable Events", "Voice Notes", "Build Log"]
 
+_store = SoulStore(
+    "builder",
+    repo_soul=_REPO_SOUL,
+    data_dir=_DATA_DIR,
+    sections=_EVOLVING_SECTIONS,
+    prompt_header="[SOUL — your evolving self-awareness]",
+)
 
-def _history_dir() -> Path:
-    d = _DATA_DIR / "soul_history"
-    d.mkdir(parents=True, exist_ok=True)
-    return d
+# ── Delegated: identical in all four copies ──────────────────────────────────
 
-
-def _load_manifest() -> dict:
-    p = _history_dir() / "manifest.json"
-    if p.exists():
-        try:
-            return json.loads(p.read_text(encoding="utf-8"))
-        except Exception:
-            pass
-    return {"current_version": 0, "versions": []}
-
-
-def _save_manifest(manifest: dict) -> None:
-    (_history_dir() / "manifest.json").write_text(
-        json.dumps(manifest, ensure_ascii=False, indent=2), encoding="utf-8"
-    )
-
-
-def _snapshot_soul(soul_text: str) -> int:
-    manifest = _load_manifest()
-    version = manifest["current_version"] + 1
-    dest = _history_dir() / f"SOUL_v{version}.md"
-    try:
-        dest.write_text(soul_text, encoding="utf-8")
-    except Exception as e:
-        logger.warning("[soul] snapshot write failed: %s", e)
-        return version
-    manifest["current_version"] = version
-    manifest["versions"].append({
-        "version": version,
-        "snapshotted_at": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
-        "word_count": len(soul_text.split()),
-    })
-    manifest["versions"] = manifest["versions"][-50:]
-    _save_manifest(manifest)
-    logger.info("[soul] snapshot → SOUL_v%d.md (%d words)", version, len(soul_text.split()))
-    return version
+_history_dir = _store._history_dir
+_load_manifest = _store._load_manifest
+_save_manifest = _store._save_manifest
+_snapshot_soul = _store._snapshot
+current_soul_version = _store.current_version
+read_soul = _store.read
+get_soul_for_prompt = _store.for_prompt
+_parse_last_updated = _store._parse_last_updated
+hours_since_update = _store.hours_since_update
+_replace_section = _store._replace_section
+_append_to_section = _store._append_to_section
+_stamp = _store._stamp
+record_notable_event = _store.record_notable_event
+soul_status_line = _store.status_line
+soul_drift_summary = _store.drift_summary
 
 
-def current_soul_version() -> int:
-    return _load_manifest()["current_version"]
-
-
-def read_soul() -> str:
-    try:
-        if not SOUL_FILE.exists() and _REPO_SOUL.exists():
-            _DATA_DIR.mkdir(parents=True, exist_ok=True)
-            shutil.copy2(_REPO_SOUL, SOUL_FILE)
-            logger.info("[soul] seeded SOUL.md from repo → %s", SOUL_FILE)
-        if SOUL_FILE.exists():
-            return SOUL_FILE.read_text(encoding="utf-8")
-    except Exception as e:
-        logger.warning("[soul] read failed: %s", e)
-    return ""
-
-
-def get_soul_for_prompt() -> str:
-    soul = read_soul()
-    if not soul:
-        return ""
-
-    chunks = []
-    for section in _EVOLVING_SECTIONS:
-        m = re.search(rf"## {section}\n(.*?)(?=\n## |\Z)", soul, re.DOTALL)
-        if not m:
-            continue
-        content = m.group(1).strip()
-        if content and content != "_Nothing yet._":
-            chunks.append(f"### {section}\n{content}")
-
-    if not chunks:
-        return ""
-    return "\n\n[SOUL — your evolving self-awareness]\n" + "\n\n".join(chunks)
-
-
-def _parse_last_updated(soul: str) -> datetime | None:
-    m = re.search(r"Last updated: (\d{4}-\d{2}-\d{2} \d{2}:\d{2} UTC)", soul)
-    if m:
-        try:
-            return datetime.strptime(m.group(1), "%Y-%m-%d %H:%M UTC").replace(
-                tzinfo=timezone.utc
-            )
-        except Exception:
-            pass
-    return None
-
-
-def hours_since_update() -> float:
-    soul = read_soul()
-    ts = _parse_last_updated(soul) if soul else None
-    if not ts:
-        return 9999.0
-    return (datetime.now(timezone.utc) - ts).total_seconds() / 3600
-
-
-def _replace_section(soul: str, section: str, new_content: str) -> str:
-    replacement = f"## {section}\n{new_content}"
-    updated = re.sub(
-        rf"## {section}\n.*?(?=\n## |\Z)",
-        replacement,
-        soul,
-        flags=re.DOTALL,
-    )
-    if updated == soul:
-        updated = soul.rstrip() + f"\n\n## {section}\n{new_content}\n"
-    return updated
-
-
-def _append_to_section(soul: str, section: str, new_lines: list[str]) -> str:
-    m = re.search(rf"## {section}\n(.*?)(?=\n## |\Z)", soul, re.DOTALL)
-    existing = m.group(1).strip() if m else "_Nothing yet._"
-    if existing == "_Nothing yet._":
-        combined = "\n".join(new_lines)
-    else:
-        combined = existing + "\n" + "\n".join(new_lines)
-    return _replace_section(soul, section, combined)
-
-
-def _stamp(soul: str) -> str:
-    ts = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
-    updated = re.sub(r"Last updated: .*", f"Last updated: {ts}", soul)
-    if updated == soul:
-        lines = soul.split("\n", 2)
-        if len(lines) >= 2:
-            updated = lines[0] + "\n" + f"*Last updated: {ts}*\n" + "\n".join(lines[1:])
-    return updated
-
+# ── builder's own reflection ─────────────────────────────────────────────────
 
 async def update_soul(llm_fn) -> bool:
     """
@@ -263,32 +163,3 @@ async def update_soul(llm_fn) -> bool:
         return False
 
     return True
-
-
-def record_notable_event(event: str) -> bool:
-    soul = read_soul()
-    if not soul:
-        return False
-    date_str = datetime.now(timezone.utc).strftime("%Y-%m-%d")
-    soul = _append_to_section(soul, "Notable Events", [f"- {date_str}: {event.strip()}"])
-    soul = _stamp(soul)
-    try:
-        SOUL_FILE.write_text(soul, encoding="utf-8")
-        logger.info("[soul] notable event recorded: %s", event[:80])
-        return True
-    except Exception as e:
-        logger.error("[soul] record_notable_event failed: %s", e)
-        return False
-
-
-def soul_status_line() -> str:
-    soul = read_soul()
-    if not soul:
-        return "SOUL.md: not found"
-    ts = _parse_last_updated(soul)
-    version = current_soul_version()
-    v_str = f" (v{version})" if version else ""
-    if ts:
-        h = (datetime.now(timezone.utc) - ts).total_seconds() / 3600
-        return f"SOUL.md{v_str}: updated {h:.1f}h ago"
-    return f"SOUL.md{v_str}: present (no timestamp)"

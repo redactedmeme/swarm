@@ -119,3 +119,35 @@ def test_drift_summary_without_facts_omits_that_clause(store):
     out = store.drift_summary()
     assert "facts absorbed" not in out
     assert "v1 @" in out
+
+
+# -- per-agent soul shape ----------------------------------------------------
+
+def test_custom_sections_are_honoured(tmp_path):
+    """builder's soul carries a fifth 'Build Log' section. Delegating with the
+    package's four-section default would silently drop it from the prompt."""
+    repo = tmp_path / "SOUL.md"
+    repo.write_text(SOUL + "\n## Build Log\n- shipped the shim\n", encoding="utf-8")
+
+    default = SoulStore("hermes", repo_soul=repo, data_dir=tmp_path / "a")
+    assert "shipped the shim" not in default.for_prompt()
+
+    builder = SoulStore(
+        "builder", repo_soul=repo, data_dir=tmp_path / "b",
+        sections=["Evolving Beliefs", "Community Lore", "Notable Events",
+                  "Voice Notes", "Build Log"],
+    )
+    assert "shipped the shim" in builder.for_prompt()
+
+
+def test_prompt_header_is_overridable(tmp_path):
+    """builder's header reads '[SOUL — your evolving self-awareness]'.
+    Normalising it would change that agent's system prompt, not refactor it."""
+    repo = tmp_path / "SOUL.md"
+    repo.write_text(SOUL, encoding="utf-8")
+
+    assert SoulStore("hermes", repo_soul=repo, data_dir=tmp_path / "a").for_prompt().startswith("\n\n[SOUL]\n")
+
+    s = SoulStore("builder", repo_soul=repo, data_dir=tmp_path / "b",
+                  prompt_header="[SOUL — your evolving self-awareness]")
+    assert s.for_prompt().startswith("\n\n[SOUL — your evolving self-awareness]\n")

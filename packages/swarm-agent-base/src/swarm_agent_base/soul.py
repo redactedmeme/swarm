@@ -60,10 +60,20 @@ class SoulStore:
         data_dir: str | Path | None = None,
         sanitize: Callable[[str], str] | None = None,
         context_provider: Callable[[str], list[str]] | None = None,
+        sections: list[str] | None = None,
+        prompt_header: str = "[SOUL]",
     ) -> None:
         self.agent = agent
         self._sanitize = sanitize or (lambda t: t)
         self._context_provider = context_provider
+        # Not every agent has the same soul shape — builder carries a fifth
+        # "Build Log" section. Delegating without this would silently drop it
+        # from the prompt.
+        self.sections = list(sections) if sections else list(_EVOLVING_SECTIONS)
+        # Likewise the header line. builder's reads "[SOUL — your evolving
+        # self-awareness]"; normalising it would quietly change that agent's
+        # system prompt, which is not a refactor.
+        self.prompt_header = prompt_header
         self._repo_soul = Path(repo_soul)
         if data_dir is None:
             d = Path("/data") if Path("/data").exists() else self._repo_soul.parent / "fs"
@@ -140,7 +150,7 @@ class SoulStore:
         if not soul:
             return ""
         chunks = []
-        for section in _EVOLVING_SECTIONS:
+        for section in self.sections:
             m = re.search(rf"## {section}\n(.*?)(?=\n## |\Z)", soul, re.DOTALL)
             if not m:
                 continue
@@ -149,7 +159,7 @@ class SoulStore:
                 chunks.append(f"### {section}\n{self._sanitize(content)}")
         if not chunks and not context:
             return ""
-        base = ("\n\n[SOUL]\n" + "\n\n".join(chunks)) if chunks else ""
+        base = (f"\n\n{self.prompt_header}\n" + "\n\n".join(chunks)) if chunks else ""
         if context and self._context_provider is not None:
             try:
                 extra = self._context_provider(context)
