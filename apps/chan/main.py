@@ -147,11 +147,20 @@ except Exception:
     _chan_mesh = None  # type: ignore
     _MESH_ENABLED = False
 
+from swarm_core.security import harden_logging
+
 logging.basicConfig(
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
     level=logging.INFO,
     handlers=[logging.StreamHandler()],
 )
+
+# httpx logs the full request URL at INFO, and a Telegram endpoint is
+# api.telegram.org/bot<TOKEN>/... — that wrote this bot's token to the log
+# thousands of times a day. harden_logging() quiets those loggers AND
+# redacts anything secret-shaped that still reaches a handler (an httpx
+# timeout is logged at WARNING with the same URL).
+harden_logging()
 logger = logging.getLogger(__name__)
 
 import re as _re_tags

@@ -41,13 +41,18 @@ try:
 except Exception:
     _MESH_ENABLED = False
 
+from swarm_core.security import harden_logging
+
 # ── logging ───────────────────────────────────────────────────────────────────
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
     stream=sys.stdout,
 )
-logging.getLogger("httpx").setLevel(logging.WARNING)
+# Was a lone `httpx -> WARNING` here. That quieted the routine flood but not an
+# httpx timeout, which is logged AT WARNING carrying the same
+# api.telegram.org/bot<TOKEN>/... URL. harden_logging() also redacts.
+harden_logging()
 logging.getLogger("apscheduler").setLevel(logging.INFO)
 logger = logging.getLogger("patternbluelabs")
 

@@ -27,11 +27,20 @@ from pool_monitor import (
     get_pool_context,
 )
 
+from swarm_core.security import harden_logging
+
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
     datefmt="%Y-%m-%dT%H:%M:%S",
 )
+
+# httpx logs the full request URL at INFO, and a Telegram endpoint is
+# api.telegram.org/bot<TOKEN>/... — that wrote this bot's token to the log
+# thousands of times a day. harden_logging() quiets those loggers AND
+# redacts anything secret-shaped that still reaches a handler (an httpx
+# timeout is logged at WARNING with the same URL).
+harden_logging()
 logger = logging.getLogger("redacteddegen")
 
 AGENT = "degen"

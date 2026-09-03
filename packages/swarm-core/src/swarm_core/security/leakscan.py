@@ -56,7 +56,15 @@ _RULES: tuple[_Rule, ...] = (
     _Rule("aws_access_key", re.compile(r"\b(?:AKIA|ASIA)[A-Z0-9]{16}\b"), "block"),
     _Rule("slack_token", re.compile(r"\bxox[baprs]-[A-Za-z0-9-]{10,}"), "block"),
     _Rule("google_api_key", re.compile(r"\bAIza[A-Za-z0-9_-]{35}\b"), "block"),
-    _Rule("telegram_bot_token", re.compile(r"\b\d{8,10}:[A-Za-z0-9_-]{35}\b"), "block"),
+    # No leading \b: the token's usual home is api.telegram.org/bot<TOKEN>/…,
+    # and "t" followed by a digit is not a word boundary — so \b made this rule
+    # miss the one place the token actually appears. (?<!\d) still stops it
+    # matching the tail of a longer digit run.
+    _Rule(
+        "telegram_bot_token",
+        re.compile(r"(?<!\d)\d{8,10}:[A-Za-z0-9_-]{35}(?![A-Za-z0-9_-])"),
+        "block",
+    ),
     _Rule(
         "pem_private_key",
         re.compile(r"-----BEGIN (?:RSA |EC |OPENSSH |PGP )?PRIVATE KEY-----"),

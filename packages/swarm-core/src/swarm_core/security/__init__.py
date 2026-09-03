@@ -4,6 +4,7 @@ Adopted from https://github.com/nearai/ironclaw (Apache-2.0 / MIT), reimplemente
 in Python for the swarm's agent runtime. Seven controls, one import surface:
 
     leakscan     — scan text for exfiltrated secrets (control 4)
+    logsafe      — keep those secrets out of the log surface too (control 4)
     promptguard  — 5-layer prompt-injection defense (control 5)
     audit        — append-only, hash-chained audit log (control 6)
     authz        — capability model + staged authorization (control 7)
@@ -18,6 +19,7 @@ from __future__ import annotations
 
 from .identity import AGENTS, AgentId, is_known_agent
 from .leakscan import LeakMatch, redact, scan
+from .logsafe import harden_logging, install_log_redaction, quiet_http_loggers
 
 __all__ = [
     "AGENTS",
@@ -26,4 +28,7 @@ __all__ = [
     "LeakMatch",
     "scan",
     "redact",
+    "harden_logging",
+    "quiet_http_loggers",
+    "install_log_redaction",
 ]
