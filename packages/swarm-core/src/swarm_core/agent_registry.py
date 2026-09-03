@@ -95,6 +95,17 @@ def _short_desc(d: dict) -> str:
         v = d.get(key, "")
         if v and isinstance(v, str):
             return v[:80]
+    # The newer character schema (RedactedDegen and 4 others) nests the bio
+    # under core_identity; without this they render with a blank description.
+    core = d.get("core_identity")
+    if isinstance(core, dict):
+        for key in ("bio", "philosophy"):
+            v = core.get(key, "")
+            if v and isinstance(v, str):
+                return v[:80]
+    role = d.get("swarm_role", "")
+    if role and isinstance(role, str):
+        return role[:80]
     persona = d.get("persona", "")
     if isinstance(persona, dict):
         persona = persona.get("role", persona.get("objective", ""))

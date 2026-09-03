@@ -17,7 +17,7 @@ jobs:
           python-version: '3.11'
 
       - name: Install shared packages
-        run: pip install -e packages/swarm-core -e packages/swarm-tg
+        run: pip install -e packages/swarm-core -e packages/swarm-tg -e packages/swarm-agent-base
 
       # The check that would have caught every layout outage this repo has had:
       # a moved directory used to break imports at runtime, in production,
@@ -26,7 +26,7 @@ jobs:
         run: |
           python - <<'PY'
           import importlib, pkgutil, sys
-          import swarm_core, swarm_tg
+          import swarm_core, swarm_tg, swarm_agent_base
 
           # Modules whose import needs a third-party client or external CLI that
           # is deliberately not installed in CI. Failures here are environmental,
@@ -39,7 +39,7 @@ jobs:
           }
 
           failed = []
-          for pkg in (swarm_core, swarm_tg):
+          for pkg in (swarm_core, swarm_tg, swarm_agent_base):
               for m in pkgutil.walk_packages(pkg.__path__, pkg.__name__ + "."):
                   try:
                       importlib.import_module(m.name)
@@ -102,7 +102,7 @@ jobs:
           fail=0
           for df in apps/*/Dockerfile; do
             app=$(basename "$(dirname "$df")")
-            if grep -rqE '(^|[^.])\b(swarm_core|swarm_tg)\b' --include=*.py "apps/$app" 2>/dev/null; then
+            if grep -rqE '(^|[^.])\b(swarm_core|swarm_tg|swarm_agent_base)\b' --include=*.py "apps/$app" 2>/dev/null; then
               grep -q 'COPY packages/' "$df" || { echo "$df: apps/$app imports the shared packages but never COPYs packages/"; fail=1; }
             fi
           done

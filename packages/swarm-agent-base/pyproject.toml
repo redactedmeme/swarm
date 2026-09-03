@@ -1,0 +1,22 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "swarm-agent-base"
+version = "0.1.0"
+description = "Shared autonomous-agent runtime for the REDACTED swarm: the heartbeat / SwarmInbox-poll / soul-update / mesh-thought loops every bot re-implements, plus one LLM client, soul store, and activity log."
+requires-python = ">=3.11"
+dependencies = [
+    "swarm-core",
+    "swarm-tg",
+    "openai>=1.40",
+    "aiohttp>=3.9",
+    "redis>=5.0",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8.3", "pytest-asyncio>=0.21"]
+
+[tool.setuptools.packages.find]
+where = ["src"]

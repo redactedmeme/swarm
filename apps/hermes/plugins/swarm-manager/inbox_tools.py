@@ -41,6 +41,7 @@ def _get_redis():
 AGENTS = {
     "redactedintern", "redactedbuilder", "redactedgovimprover",
     "mandalaasettler", "redactedbankrbot", "hermes", "redacted-chan",
+    "smolting", "degen",
 }
 
 ALLOWED_TASK_SENDERS = {"redacted-chan"}

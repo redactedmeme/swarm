@@ -57,6 +57,12 @@ async def rpc(
             body = await resp.json()
     except aiohttp.ClientError as exc:
         raise RpcError(f"{method}: {exc}") from exc
+    finally:
+        # A session we opened is ours to close. Without this a caller that makes
+        # many one-off calls (settler's boot reconcile) leaks a connector per
+        # call and aiohttp logs "Unclosed client session" for each.
+        if owned:
+            await session.close()
     if "error" in body:
         raise RpcError(f"{method}: {body['error']}")
     return body.get("result")

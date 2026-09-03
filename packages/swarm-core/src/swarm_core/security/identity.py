@@ -17,6 +17,14 @@ AGENTS: frozenset[str] = frozenset(
         "redactedintern",
         "redactedbuilder",
         "redactedgovimprover",
+        # Aliases services also heartbeat / send under, so a peer addressing
+        # either spelling still validates at the boundary. Each pair is one
+        # runtime writing under two names; omitting a half makes the *sender*
+        # raise ValueError on its own boot heartbeat.
+        "govimprover",
+        "redacteddegen",
+        "builder",           # pairs with "redactedbuilder"
+        "redacted-proxy",
         "mandalaasettler",
         "redactedbankrbot",
         "hermes",

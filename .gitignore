@@ -53,6 +53,11 @@ apps/smolting/fs/kernel_state.json
 apps/smolting/fs/*.db
 apps/smolting/fs/*.jsonl
 
+# swarm-agent-base runtime state (activity log + seeded SOUL.md copies)
+apps/degen/fs/
+apps/govimprover/fs/
+fs/*_memory.jsonl
+
 # Runtime logs (contain internal hostnames / operational data — not for public repo)
 fs/logs/
 fs/manifold_submissions.log

@@ -100,6 +100,9 @@ _ENFORCE = os.getenv(
 # (status/claimed_at/result/…) are intentionally excluded so they can mutate.
 _SIGNED_FIELDS = ("id", "ts", "nonce", "from", "to", "type", "payload", "reply_to")
 
+# Senders we have already logged a missing-key warning for (once per process).
+_warned_no_key: set[str] = set()
+
 # (from, type) -> allowed recipients. "*" = any roster agent or "all".
 # A message failing this is dropped even with a valid signature.
 _ROUTES: dict[tuple[str, str], set[str]] = {
@@ -143,8 +146,15 @@ def _route_ok(frm: str, typ: str, to: str) -> bool:
 
 
 def _reject(reason: str, doc: dict) -> None:
-    logger.warning("[inbox] REJECT %s from=%s to=%s type=%s id=%s",
-                   reason, doc.get("from"), doc.get("to"), doc.get("type"), doc.get("id"))
+    # In `warn` the message is still returned to the caller (see verify_doc), so
+    # logging every one at WARNING buries the failures that do matter. The audit
+    # record below stays at `warning` severity either way — staged enforcement
+    # must not thin out the audit trail.
+    logger.log(
+        logging.WARNING if _ENFORCE == "strict" else logging.INFO,
+        "[inbox] REJECT %s from=%s to=%s type=%s id=%s",
+        reason, doc.get("from"), doc.get("to"), doc.get("type"), doc.get("id"),
+    )
     if _audit is not None:
         try:
             _audit.record(
@@ -297,10 +307,15 @@ def write_message(
         "error": None,
     }
     doc["sig"] = _sign(doc)
-    if not doc["sig"] and _ENFORCE != "off":
-        logger.error(
-            "[inbox] no signing key for %s — set SWARM_INBOX_KEY_%s or SWARM_INBOX_HMAC_KEY",
-            frm, frm.upper().replace("-", "_"),
+    if not doc["sig"] and _ENFORCE != "off" and frm not in _warned_no_key:
+        # Once per sender per process. This fires on every heartbeat otherwise,
+        # and in `warn` it describes a configuration state, not a failure.
+        _warned_no_key.add(frm)
+        logger.warning(
+            "[inbox] no signing key for %s — set SWARM_INBOX_KEY_%s or "
+            "SWARM_INBOX_HMAC_KEY (enforce=%s; messages are still %s)",
+            frm, frm.upper().replace("-", "_"), _ENFORCE,
+            "delivered unsigned" if _ENFORCE == "warn" else "rejected by peers",
         )
 
     epoch = _epoch()
@@ -325,22 +340,42 @@ def write_message(
 # ── Read ───────────────────────────────────────────────────────────────────
 
 def _redis_load_pending(r, agent: str) -> list[dict]:
+    """Pending messages for ``agent`` (+ broadcasts), reaping on read.
+
+    Self-healing: an indexed id whose doc has expired (orphan), is unparseable,
+    or is no longer pending (claimed/done) is ``zrem``'d here. Without this the
+    pending zsets grow unbounded — a broadcast fan-out writes one entry per
+    recipient and only the recipient that claims it ever removes it. A doc that
+    fails signature verification is skipped but *kept*: it is a security signal,
+    not garbage.
+    """
     msgs = []
     keys = [f"swarm:pending:{agent}"]
     if agent != "all":
         keys.append("swarm:pending:all")
     for key in keys:
         msg_ids = r.zrange(key, 0, -1)
+        stale = []
         for mid in msg_ids:
             raw = r.get(f"swarm:msg:{mid}")
             if not raw:
+                stale.append(mid)            # doc expired -> dead index entry
                 continue
             try:
                 doc = json.loads(raw)
-                if doc.get("status") == STATUS_PENDING and verify_doc(doc):
-                    msgs.append(doc)
             except Exception:
-                pass
+                stale.append(mid)
+                continue
+            if doc.get("status") != STATUS_PENDING:
+                stale.append(mid)            # claimed/done -> no longer pending
+                continue
+            if verify_doc(doc):
+                msgs.append(doc)
+        if stale:
+            try:
+                r.zrem(key, *stale)
+            except Exception as e:  # noqa: BLE001 - reaping is best-effort
+                logger.debug("[inbox] reap failed on %s: %s", key, e)
     return sorted(msgs, key=lambda m: m.get("ts", ""))
 
 
