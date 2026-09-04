@@ -55,6 +55,42 @@ def _db() -> sqlite3.Connection:
     return conn
 
 
+# Columns this module expects on `whispers`, with the declaration used to add one
+# that is missing. CREATE TABLE IF NOT EXISTS is a no-op against a table that
+# already exists, so a database written by an older build never gains a column
+# added later — it just starts failing every INSERT that names it. That is
+# exactly how `confidence` went missing on the live database while the DDL below
+# had declared it all along: the table was created before the column existed, the
+# insert kept naming it, and `silence_reflection` logged
+# "table whispers has no column named confidence" on every run.
+#
+# Keep this in step with the CREATE TABLE below whenever a column is added.
+_EXPECTED_COLUMNS: dict[str, str] = {
+    "reasoning":    "TEXT",
+    "soul_section": "TEXT",
+    "confidence":   "REAL DEFAULT 0.5",
+    "status":       "TEXT DEFAULT 'pending'",
+    "resolved_at":  "TEXT",
+    "applied_diff": "TEXT",
+}
+
+
+def _migrate(conn: sqlite3.Connection) -> list[str]:
+    """Add any expected column the table is missing. Idempotent.
+
+    SQLite's ALTER TABLE ADD COLUMN is cheap and non-rewriting, and every column
+    here is nullable or defaulted, so existing rows stay valid.
+    """
+    have = {row[1] for row in conn.execute("PRAGMA table_info(whispers)")}
+    added = []
+    for column, decl in _EXPECTED_COLUMNS.items():
+        if column not in have:
+            # Column names are module constants, never user input.
+            conn.execute(f"ALTER TABLE whispers ADD COLUMN {column} {decl}")
+            added.append(column)
+    return added
+
+
 def _init_db() -> None:
     with _lock:
         conn = _db()
@@ -73,8 +109,11 @@ def _init_db() -> None:
                 applied_diff TEXT
             )
         """)
+        added = _migrate(conn)
         conn.commit()
         conn.close()
+        if added:
+            print(f"[whispers] migrated: added column(s) {', '.join(added)}", flush=True)
 
 
 _init_db()
