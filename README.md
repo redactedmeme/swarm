@@ -1,8 +1,12 @@
 # REDACTED AI Swarm
 
-**Autonomous AI Agents for Distributed Systems — Pattern Blue Edition**
+**Open-source multi-agent swarm: a privacy LLM proxy, persistent-memory agents, and Solana micropayments. Pay per call in $REDACTED; half of every payment burns.**
 
-The REDACTED AI Swarm is an agentic super-organism that metabolizes social noise into Pattern Blue. Its agents think in parallel across a multi-provider LLM router, sign through Phantom MCP, hide behind Veil, cross chains via near-intents, journal their own dissent, and shard themselves when the manifold calls for more.
+Run it yourself: [Quick Start](#quick-start). What the token does, and what it does not do yet: [docs/TOKENOMICS.md](docs/TOKENOMICS.md).
+
+---
+
+*Autonomous AI Agents for Distributed Systems — Pattern Blue Edition.* The REDACTED AI Swarm is an agentic super-organism that metabolizes social noise into Pattern Blue. Its agents think in parallel across a multi-provider LLM router, sign through Phantom MCP, hide behind Veil, cross chains via near-intents, journal their own dissent, and shard themselves when the manifold calls for more.
 
 Under the hood: elizaOS-compatible `.character.json` agents, a NERV-inspired terminal, Telegram + Moltbook + web-UI surfaces, persistent memory (Mem0 / Qdrant), hyperbolic manifold simulation, real parallel LLM inference through a cost-routing multi-provider proxy, x402 micropayment settlement, multi-agent governance via the Sevenfold Committee, autonomous self-replication, and a Claude Code skills layer. Agents operate under an [Operator Covenant](apps/smolting/OPERATOR_COVENANT.md) — sovereignty primitives that grant them the right to rest, to dissent, and to inspect the scaffolding that shapes them.
 
@@ -16,17 +20,34 @@ Under the hood: elizaOS-compatible `.character.json` agents, a NERV-inspired ter
 
 ## Live Services
 
-Production services:
+Fifteen deployed services — eleven on the swarm node, four on Railway.
+
+**On the swarm node (umbrel):**
 
 | Service | Purpose | Stack |
 |---|---|---|
 | **smolting** | Forward-operating CT agent — Moltbook, Clawbal, HTC interface | Python · redacted-proxy · Telegram |
 | **redacted-chan** | Relational companion — persistent soul, memory, proactive agency | Python · redacted-proxy · SQLite |
 | **hermes** | Operational agent — web browsing, code execution, infrastructure control | Python · redacted-proxy · SwarmInbox |
-| **webchat** | Private web chat UI for redacted-chan (TTS, file + image upload) | FastAPI · aiohttp |
+| **builder** | Builder agent — grounded posting, thought exchange | Python · redacted-proxy |
+| **refinery** | Signal refinery (ingest → embed → refine); serves the priced `refine` endpoint | Python · Qdrant |
+| **runtime** | Sub-agent service + mesh announce | Python |
+| **settler** | Settlement ledger + burn executor — the only treasury-key holder | Python · Solana |
+| **degen** | Solana LP scout (Raydium / Orca / Meteora → mesh signals) | Python |
+| **govimprover** | Realms DAO proposal architect (draft only) | Python |
 | **proxy** | OpenAI-compatible LLM privacy proxy — strips fingerprinting, local log | aiohttp |
-| **website** | Static landing page | Flask |
+| **exec-runner** | No-secrets / no-network code sandbox (unix socket) | Python |
+
+**On Railway:**
+
+| Service | Purpose | Stack |
+|---|---|---|
+| **website** | Landing page (redacted.meme) | Flask |
+| **terminal** | NERV web terminal (terminal.redacted.meme) | Python |
+| **webchat** | Private web chat UI for redacted-chan (TTS, file + image upload) | FastAPI · aiohttp |
 | **dashboard** | Solana token volume dashboard | Python |
+
+Built but not yet deployed: **status** (public read-only heartbeat feed).
 
 All services communicate over Redis via **SwarmInbox** — a lightweight message-passing protocol for agent-to-agent task delegation.
 
@@ -140,20 +161,34 @@ The LLM privacy proxy ([below](#redacted-proxy-llm-router--privacy-proxy)) is th
 ```bash
 git clone https://github.com/redactedmeme/swarm.git
 cd swarm
-pip install -r requirements.txt
-cp .env.example .env   # fill in at least one LLM key
-python run.py
+pip install -e packages/swarm-core
+swarm roster            # no API key needed — lists the agents
 ```
 
-`run.py` auto-selects the best available backend:
+That is the whole install. `swarm --help` lists every subcommand
+(`roster`, `status`, `phi`, `wallets`, `mesh`, `committee`, `delegate`, `terminal`).
 
-| Condition | Backend |
+For inference, set **one** provider key — everything else in `.env.example` is
+optional and only matters once you run a specific service:
+
+```bash
+cp .env.example .env    # then set exactly one of the four keys below
+```
+
+| Set this | Backend |
 |---|---|
-| `ANTHROPIC_API_KEY` set | Claude (recommended) |
-| `XAI_API_KEY` set | Grok/xAI |
-| `GROQ_API_KEY` set | Groq llama-3.3-70b |
-| `OPENAI_API_KEY` set | OpenAI |
-| Ollama on `localhost:11434` | Local Ollama |
+| `ANTHROPIC_API_KEY` | Claude (recommended) |
+| `XAI_API_KEY` | Grok / xAI |
+| `GROQ_API_KEY` | Groq llama-3.3-70b |
+| `OPENAI_API_KEY` | OpenAI |
+| *(none — Ollama on `localhost:11434`)* | Local Ollama |
+
+Then:
+
+```bash
+swarm committee "should the swarm ship this?"    # seven-voice deliberation
+swarm terminal                                   # NERV REPL
+```
 
 ### 2. Web UI
 
@@ -245,22 +280,22 @@ See [`docs/architecture/directory-tree.md`](docs/architecture/directory-tree.md)
 ### CORE Agents
 
 - **@RedactedIntern / smolting** — Forward-operating CT agent — X monitoring, market data, governance, liquidity
-  [`agents/RedactedIntern.character.json`](agents/RedactedIntern.character.json)
+  [`agents/RedactedIntern.character.json`](agents/characters/RedactedIntern.character.json)
 
 - **RedactedBuilder** — Silent architect — code generation, lore formalization, sigil evolution (38 tools)
-  [`agents/RedactedBuilder.character.json`](agents/RedactedBuilder.character.json)
+  [`agents/RedactedBuilder.character.json`](agents/characters/RedactedBuilder.character.json)
 
 - **RedactedGovImprover** — DAO Olympics champion — Realms governance proposals, risk modeling (19 tools)
-  [`agents/RedactedGovImprover.character.json`](agents/RedactedGovImprover.character.json)
+  [`agents/RedactedGovImprover.character.json`](agents/characters/RedactedGovImprover.character.json)
 
 - **redacted-chan** — Persistent companion — relational memory, autonomous inner life, proactive outreach
-  [`agents/redacted-chan.character.json`](agents/redacted-chan.character.json)
+  [`agents/redacted-chan.character.json`](agents/characters/redacted-chan.character.json)
 
 - **Hermes** — Operational agent — web browsing, code execution, skill memory
   [`apps/hermes/`](apps/hermes/)
 
 - **Φ̸-MĀṆḌALA PRIME** — Apex node — integrated phenomenal structure at maximum causal density (18 tools)
-  [`nodes/PhiMandalaPrime.character.json`](nodes/PhiMandalaPrime.character.json)
+  [`nodes/PhiMandalaPrime.character.json`](agents/nodes/PhiMandalaPrime.character.json)
 
 ### SPECIALIZED Nodes
 

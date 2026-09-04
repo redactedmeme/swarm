@@ -1,7 +1,7 @@
 {
   "updated": "2026-09-03",
   "note": "Source of truth for the AI SWARM section on redacted.meme, the agent list in llms.txt, and the /api/swarm status feed. `state` is declared (active|asleep|retired) and is never inferred from liveness; `roster: false` keeps an entry out of the website cards but in the status feed. Regenerate llms.txt with `python build_llms.py` after editing.",
-  "summary": "37 registered agents. 8 live services on the mesh. Operating across seven Pattern Blue dimensions.",
+  "summary": "37 agent definitions in the repository. 14 in the public roster, 8 active. 15 deployed services — 11 on the swarm node, 4 on Railway.",
   "agents": [
     {
       "id": "smolting",

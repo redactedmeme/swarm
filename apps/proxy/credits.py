@@ -52,6 +52,32 @@ SPEND_QUEUE_KEY = "credits:spend:queue"
 _warn_seen: dict[str, float] = {}
 
 
+def log_config() -> None:
+    """Announce the effective credit settings at startup.
+
+    Two things are worth an operator's eyes before enforcement is turned on:
+
+    * `RATE` is shared with `swarm_core.tokens` by env-var *name*, not by
+      import — this build cannot see the settler's value. Logging it on both
+      sides is the only way to catch a mismatch where the proxy charges one
+      rate and the settler settles another.
+    * Enforcing with an empty `CREDITS_EXEMPT` blocks the swarm's own bots,
+      which share this proxy for all their inference. That is a total mesh
+      outage, so it is worth shouting about rather than discovering live.
+    """
+    logger.info(
+        "[credits] rate=%d $REDACTED/1k tokens (CREDITS_PER_1K_TOKENS) "
+        "decimals=%d enforce=%s exempt=%s",
+        RATE, _DECIMALS, ENFORCE, ",".join(sorted(EXEMPT)) or "(none)",
+    )
+    if ENFORCE and not EXEMPT:
+        logger.error(
+            "[credits] CREDITS_ENFORCE is on with an empty CREDITS_EXEMPT — "
+            "every swarm bot sharing this proxy will be refused once its "
+            "balance runs out. Set CREDITS_EXEMPT before relying on this."
+        )
+
+
 def _to_base_units(whole: float) -> int:
     return int(round(whole * _UNIT))
 

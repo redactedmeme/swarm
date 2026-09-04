@@ -1748,6 +1748,7 @@ async def make_app() -> web.Application:
         asyncio.create_task(_heartbeat_loop())
         asyncio.create_task(_ring_purge_loop())
         logger.info("[heartbeat] started redis liveness pulse")
+        credits.log_config()
         if RING_TTL() > 0:
             logger.info("[ring] TTL purge loop started (TTL=%ds)", RING_TTL())
 

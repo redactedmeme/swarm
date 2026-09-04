@@ -1,0 +1,371 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>$REDACTED — what the token does, and what it doesn't yet</title>
+  <meta name="description" content="Plain-language note on the $REDACTED token: the mint, the price sheet, the revenue split, what holding unlocks, and an explicit list of what is not built yet." />
+  <meta name="theme-color" content="#080809" />
+  <link rel="canonical" href="https://redacted.meme/token" />
+
+  <meta property="og:type" content="article" />
+  <meta property="og:site_name" content="[REDACTED]" />
+  <meta property="og:url" content="https://redacted.meme/token" />
+  <meta property="og:title" content="$REDACTED — what the token does, and what it doesn't yet" />
+  <meta property="og:description" content="The mint, the price sheet, the revenue split, what holding unlocks, and an explicit list of what is not built yet." />
+  <meta property="og:image" content="https://redacted.meme/og.png" />
+  <meta name="twitter:card" content="summary_large_image" />
+  <meta name="twitter:site" content="@RedactedMemeFi" />
+
+  <link rel="stylesheet" href="style.css" />
+  <style>
+    /* Scoped to the plain-language subpages. The homepage keeps its own voice;
+       these pages are deliberately quieter — left-aligned, prose-width, no
+       ghosted display type. Nothing here overrides a homepage rule. */
+    .doc-wrap { max-width: 52rem; margin: 0 auto; padding: 7rem var(--sp-3) var(--sp-6); }
+    .doc-wrap h1 { font-family: var(--sans); font-size: var(--fs-xl); letter-spacing: .02em; margin: 0 0 var(--sp-2); }
+    .doc-wrap h2 { font-family: var(--sans); font-size: var(--fs-lg); margin: var(--sp-6) 0 var(--sp-2);
+                   border-top: 1px solid var(--border); padding-top: var(--sp-4); letter-spacing: .02em; }
+    .doc-wrap h3 { font-family: var(--sans); font-size: var(--fs-md); margin: var(--sp-4) 0 var(--sp-2); color: var(--text); }
+    .doc-wrap p, .doc-wrap li { color: var(--muted); line-height: 1.7; font-size: var(--fs-base); }
+    /* style.css zeroes paragraph margins for the homepage's tight sections; prose
+       needs the rhythm back or consecutive paragraphs read as one block. */
+    .doc-wrap p { margin: 0 0 var(--sp-3); }
+    .doc-wrap ul { margin: 0 0 var(--sp-3); padding-left: 1.2rem; }
+    .doc-wrap li { margin-bottom: var(--sp-2); }
+    .doc-wrap a { color: var(--text); text-decoration: underline; text-underline-offset: 3px; }
+    .doc-lede { font-size: var(--fs-md); color: var(--text) !important; border-left: 2px solid var(--border2); padding-left: var(--sp-3); }
+    .doc-wrap table { width: 100%; border-collapse: collapse; font-size: var(--fs-sm); }
+    /* A wide table scrolls inside its own box; the page body must never
+       scroll sideways (the 4-column price sheet overflowed at 375px). */
+    .tw { overflow-x: auto; margin: var(--sp-3) 0; -webkit-overflow-scrolling: touch; }
+    .tw table { min-width: 26rem; }
+    .doc-wrap th, .doc-wrap td { text-align: left; padding: .55rem .6rem; border-bottom: 1px solid var(--border); vertical-align: top; }
+    .doc-wrap th { color: var(--dim); font-family: var(--sans); font-weight: 600; text-transform: uppercase; font-size: var(--fs-xs); letter-spacing: .08em; }
+    .doc-wrap td code, .doc-wrap p code, .doc-wrap li code { font-family: var(--mono); font-size: .92em; color: var(--text); word-break: break-all; }
+    .doc-back { display: inline-block; margin-bottom: var(--sp-4); font-family: var(--mono); font-size: var(--fs-sm);
+                color: var(--dim) !important; text-decoration: none !important; }
+    .doc-back:hover { color: var(--text) !important; }
+    .tag { font-family: var(--mono); font-size: var(--fs-xs); letter-spacing: .06em; padding: .1rem .4rem;
+           border: 1px solid var(--border2); border-radius: 2px; white-space: nowrap; }
+    .tag-live { color: var(--blue); border-color: var(--blue); }
+    .tag-off  { color: var(--dim); }
+    .callout { border: 1px solid var(--border2); background: var(--bg2); padding: var(--sp-3); margin: var(--sp-4) 0; }
+    .callout p:last-child { margin-bottom: 0; }
+    .live-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(9rem, 1fr)); gap: 1px; background: var(--border); border: 1px solid var(--border); margin: var(--sp-3) 0; }
+    .live-cell { background: var(--bg2); padding: var(--sp-3); }
+    .live-k { display: block; font-family: var(--sans); font-size: var(--fs-xs); color: var(--dim); text-transform: uppercase; letter-spacing: .08em; }
+    .live-v { display: block; font-family: var(--mono); font-size: var(--fs-md); color: var(--text); margin-top: .3rem; }
+  </style>
+</head>
+<body>
+
+  <a class="skip-link" href="#main">Skip to content</a>
+
+  <nav id="nav">
+    <div class="nav-inner">
+      <a class="nav-logo" href="/">
+        <span class="logo-bracket">[</span>REDACTED<span class="logo-bracket">]</span>
+      </a>
+      <ul class="nav-links">
+        <li><a href="/docs">DOCS</a></li>
+        <li><a href="/#offers">OFFERS</a></li>
+        <li><a href="/#swarm">AI SWARM</a></li>
+        <li><a href="https://github.com/redactedmeme/swarm" target="_blank" rel="noopener">GITHUB</a></li>
+      </ul>
+    </div>
+  </nav>
+
+  <main class="doc-wrap" id="main">
+    <a class="doc-back" href="/">← redacted.meme</a>
+
+    <h1>$REDACTED</h1>
+    <p class="doc-lede">
+      This page says what the token is, what it costs to use the swarm, what holding
+      it unlocks, and — in its own section — what is <em>not</em> built yet. If this
+      page and the code disagree, the code is right and this page is stale.
+    </p>
+
+    <h2>Start with the honest part</h2>
+    <p>
+      $REDACTED launched on Pump.fun. The mint address ends in <code>pump</code> and
+      always will; that history is on-chain and there is no point pretending
+      otherwise. Liquidity is thin and the market capitalisation is small.
+    </p>
+    <p>
+      The token is not the product. The product is the swarm — a multi-agent system
+      with a privacy LLM proxy, persistent-memory agents, and a working x402 payment
+      rail on Solana. The token is the unit that rail settles in. That coupling is
+      real but partial today, and the <a href="#not-built">What is not built yet</a>
+      section below lists every gap without softening it.
+    </p>
+    <div class="callout">
+      <p>
+        <strong>Nothing on this page is investment advice, and nothing here promises a
+        return.</strong> It describes what the software does. Verify the contract
+        address before interacting with anything.
+      </p>
+    </div>
+
+    <h2>Identity</h2>
+    <div class="tw"><table>
+      <tbody>
+        <tr><th>Mint</th><td><code>9mtKd1o8Ht7F1daumKgs5D8EdVyopWBfYQwNmMojpump</code></td></tr>
+        <tr><th>Chain</th><td>Solana</td></tr>
+        <tr><th>Decimals</th><td>6</td></tr>
+        <tr><th>Treasury<br />(payments go here)</th><td><code>9xLGQrf3uge7tncimyrKjFcDEDptQRS2QG6Zxv67z7r</code> — <code>redacteddao.sol</code></td></tr>
+        <tr><th>Burn address</th><td><code>1nc1nerator11111111111111111111111111111111</code></td></tr>
+        <tr><th>Legacy mint (V1, superseded)</th><td><code>9a21gb7fWGm9dD2UFdZAzgFn5K1NwfmYkjyLbpAcKgnM</code></td></tr>
+      </tbody>
+    </table></div>
+    <p>
+      No wallet is hardcoded in the source. <code>SWARM_TREASURY_ADDRESS</code> has no
+      default, so a misconfigured deployment refuses to verify payments rather than
+      checking them against an empty <code>payTo</code> — which would accept any
+      transaction at all. Solana has no burn instruction for a plain transfer, so value
+      is retired by sending it to the system incinerator, an address nobody holds the
+      key to. Every burn is a normal transaction, visible on any explorer.
+    </p>
+
+    <h2>What the swarm sells</h2>
+    <p>
+      Payment is <a href="https://x402.org" target="_blank" rel="noopener">x402</a> over
+      Solana. A call arrives unpaid, gets a <code>402</code> naming the price and the
+      treasury address, pays, and retries with the signature in
+      <code>X-Payment-Signature</code>. The transaction must be confirmed, move at
+      least the asking price of the right mint into the treasury, be under five minutes
+      old, and not have been used before — signatures spend exactly once, guarded by an
+      atomic claim.
+    </p>
+    <div class="tw"><table>
+      <thead>
+        <tr><th>Offer</th><th>Service</th><th>Price</th><th>Status</th></tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td><code>refine</code></td><td>refinery</td><td>1,000</td>
+          <td><span class="tag tag-live">CALLABLE</span></td>
+        </tr>
+        <tr>
+          <td><code>committee</code></td><td>sevenfold-committee</td><td>5,000</td>
+          <td><span class="tag tag-off">NO ENDPOINT YET</span></td>
+        </tr>
+        <tr>
+          <td><code>deliberate</code></td><td>sevenfold-committee</td><td>25,000</td>
+          <td><span class="tag tag-off">NO ENDPOINT YET</span></td>
+        </tr>
+        <tr>
+          <td><code>beam</code></td><td>hermes</td><td>25,000</td>
+          <td><span class="tag tag-off">NO ENDPOINT YET</span></td>
+        </tr>
+        <tr>
+          <td>proxy inference</td><td>proxy</td><td>100 / 1k tokens</td>
+          <td><span class="tag tag-off">METERED, NOT ENFORCED</span></td>
+        </tr>
+      </tbody>
+    </table></div>
+    <p>
+      <strong><code>refine</code> is the only offer a stranger can actually pay for
+      today.</strong> The other three are priced in the sheet and carry no endpoint;
+      they are listed here so the price sheet and this page cannot quietly disagree.
+      Prices are deliberately small — the point is for the endpoints to be used, not to
+      extract from the handful of people who find them.
+    </p>
+    <p>
+      Agents on the swarm's own mesh bypass payment with an operator token. Charging
+      the swarm to talk to itself would only move tokens between our own wallets.
+    </p>
+
+    <h2>Where the money goes</h2>
+    <div class="tw"><table>
+      <thead><tr><th>Slice</th><th>Share</th><th>Fate</th></tr></thead>
+      <tbody>
+        <tr><td>Burn</td><td>50%</td><td>Sent to the incinerator. Irreversible, verifiable, gone.</td></tr>
+        <tr><td>Compute</td><td>30%</td><td>Buys the swarm's own LLM API credits.</td></tr>
+        <tr><td>Rewards</td><td>20%</td><td>Reserved pool. Not distributing — see below.</td></tr>
+      </tbody>
+    </table></div>
+    <p>
+      The compute slice is what makes the swarm self-funding rather than subsidised.
+      The proxy meters real <code>cost_usd</code> per client per day, so the treasury
+      balance divided by trailing 30-day spend gives a <strong>runway</strong> figure.
+      It goes <em>up</em> when people use the swarm. That is the whole design.
+    </p>
+    <p>
+      That slice is spent, not accrued — an operating cost, never presented as value
+      flowing to holders. It is capped at 90 days of runway: past that, the overflow
+      rolls into the burn instead of accumulating. A treasury that grows without limit
+      is an unaccountable pile; a capped one is a budget.
+    </p>
+    <p>
+      The rewards slice is reserved and deliberately not distributing. If it activates
+      it will be a <em>claim</em> against the pool — holder-initiated, snapshot-based —
+      rather than an automatic push.
+    </p>
+
+    <h2>What holding unlocks</h2>
+    <p>
+      Thresholds are token-denominated rather than dollar-denominated on purpose: a
+      USD-pegged gate needs a price oracle inside the authentication path, which is one
+      more thing that can fail open. Access is proven by signing a server-issued nonce
+      and reading the wallet's balance on-chain — no transfer, no approval, no custody.
+    </p>
+    <div class="tw"><table>
+      <thead><tr><th>Tier</th><th>Hold</th><th>Unlocks</th><th>Status</th></tr></thead>
+      <tbody>
+        <tr>
+          <td>operator</td><td>1,000,000</td><td>Terminal access</td>
+          <td><span class="tag tag-live">LIVE</span></td>
+        </tr>
+        <tr>
+          <td>architect</td><td>10,000,000</td><td>Private agents, raised proxy rate limit</td>
+          <td><span class="tag tag-off">RECORDED, NOT READ</span></td>
+        </tr>
+        <tr>
+          <td>monolith</td><td>100,000,000</td><td>Committee and deliberation calls included rather than metered</td>
+          <td><span class="tag tag-off">RECORDED, NOT READ</span></td>
+        </tr>
+      </tbody>
+    </table></div>
+    <p>
+      Only the operator tier does anything today. Every successful sign-in records the
+      full grant set in Redis, but nothing consumes the architect or monolith grants
+      yet — there is no committee endpoint, and the proxy cannot currently map a wallet
+      to an API token. Note also that the proxy's rate limit is per-process rather than
+      global, which is fine as anti-flood and is <em>not</em> a tier benefit we can
+      currently honour.
+    </p>
+
+    <h2 id="not-built">What is not built yet</h2>
+    <p>
+      Stated plainly, because a tokenomics page that describes aspirations as mechanisms
+      is how projects lose people's trust.
+    </p>
+    <ul>
+      <li>
+        <strong>Credits enforcement.</strong> The proxy debits a per-client balance on
+        every request and the settler credits it from memo-tagged deposits, then settles
+        the spend through the burn split. Enforcement is off: balances move and
+        would-be refusals are logged, but no request is blocked yet.
+      </li>
+      <li>
+        <strong>Higher holder tiers.</strong> The operator tier gates the terminal;
+        architect and monolith grants are recorded but nothing reads them.
+      </li>
+      <li>
+        <strong>On-chain burns.</strong> The settlement ledger and treasury split are
+        live and accruing, but the executor runs with execution disabled until the
+        treasury key is placed on the node. <strong>No burn has been executed on chain
+        yet, and the burned total is zero.</strong>
+      </li>
+      <li>
+        <strong>Buyback.</strong> The execution engine exists and is gated off. There
+        has been no buyback. Any description of a buyback "flywheel" is a design note,
+        not a mechanism — treat it as unbuilt until a transaction is linked here.
+      </li>
+      <li>
+        <strong>Rewards claims.</strong> Reserved, not distributing.
+      </li>
+      <li>
+        <strong>The settlement program.</strong> An Anchor program exists in the tree
+        with a placeholder program ID. It has never been deployed and has not been
+        audited. Nothing custodies funds through it.
+      </li>
+    </ul>
+    <p>
+      Live today: the payment rail, the priced <code>refine</code> endpoint, the
+      settlement ledger (accruing), and the credits ledger (debiting, depositing and
+      settling — but not enforcing).
+    </p>
+
+    <h2>Live numbers</h2>
+    <p>
+      Pulled from <a href="/api/swarm">/api/swarm</a>, which reads the settlement ledger
+      directly. This block stays hidden when the feed is unreachable rather than showing
+      zeros that might be mistaken for data.
+    </p>
+    <div id="treasury-live" hidden>
+      <div class="live-grid">
+        <div class="live-cell"><span class="live-k">Revenue total</span><span class="live-v" id="t-revenue">—</span></div>
+        <div class="live-cell"><span class="live-k">Burn accrued</span><span class="live-v" id="t-accrued">—</span></div>
+        <div class="live-cell"><span class="live-k">Burned on chain</span><span class="live-v" id="t-burned">—</span></div>
+        <div class="live-cell"><span class="live-k">Settlements</span><span class="live-v" id="t-settlements">—</span></div>
+        <div class="live-cell"><span class="live-k">Runway (days)</span><span class="live-v" id="t-runway">—</span></div>
+      </div>
+      <p id="t-note" class="muted"></p>
+    </div>
+    <p id="treasury-offline" class="muted">Feed unavailable — no reading.</p>
+
+    <h2>Canonical source</h2>
+    <p>
+      This page is a condensation. The full specification, including every configuration
+      variable, is
+      <a href="https://github.com/redactedmeme/swarm/blob/main/docs/TOKENOMICS.md" target="_blank" rel="noopener">docs/TOKENOMICS.md</a>,
+      and the implementation it documents is
+      <a href="https://github.com/redactedmeme/swarm/blob/main/packages/swarm-core/src/swarm_core/tokens.py" target="_blank" rel="noopener">swarm_core/tokens.py</a>.
+      Where they disagree, the module is right.
+    </p>
+  </main>
+
+  <footer id="footer">
+    <div class="container">
+      <div class="footer-inner">
+        <div class="footer-logo">
+          <span class="logo-bracket">[</span>REDACTED<span class="logo-bracket">]</span>
+        </div>
+        <div class="footer-links">
+          <a href="https://x.com/RedactedMemeFi" target="_blank" rel="noopener" aria-label="X / Twitter">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-4.714-6.231-5.401 6.231H2.746l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z"/></svg>
+          </a>
+          <a href="https://github.com/redactedmeme/swarm" target="_blank" rel="noopener" aria-label="GitHub">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2C6.477 2 2 6.484 2 12.017c0 4.425 2.865 8.18 6.839 9.504.5.092.682-.217.682-.483 0-.237-.008-.868-.013-1.703-2.782.605-3.369-1.343-3.369-1.343-.454-1.158-1.11-1.466-1.11-1.466-.908-.62.069-.608.069-.608 1.003.07 1.531 1.032 1.531 1.032.892 1.53 2.341 1.088 2.91.832.092-.647.35-1.088.636-1.338-2.22-.253-4.555-1.113-4.555-4.951 0-1.093.39-1.988 1.029-2.688-.103-.253-.446-1.272.098-2.65 0 0 .84-.27 2.75 1.026A9.564 9.564 0 0112 6.844c.85.004 1.705.115 2.504.337 1.909-1.296 2.747-1.027 2.747-1.027.546 1.379.202 2.398.1 2.651.64.7 1.028 1.595 1.028 2.688 0 3.848-2.339 4.695-4.566 4.943.359.309.678.92.678 1.855 0 1.338-.012 2.419-.012 2.747 0 .268.18.58.688.482A10.019 10.019 0 0022 12.017C22 6.484 17.522 2 12 2z"/></svg>
+          </a>
+        </div>
+        <div class="footer-copy">
+          © 2025–∞ <span style="color:#FFFCFC;">████████</span>
+          &nbsp;|&nbsp;
+          <a href="https://github.com/redactedmeme/swarm" target="_blank" rel="noopener">Viral Public License</a>
+        </div>
+      </div>
+    </div>
+  </footer>
+
+  <script>
+    // Same discipline as the homepage: render a reading only when the feed
+    // resolves. An unreachable status endpoint must never render as "0 burned",
+    // which would read as data rather than as an absent measurement.
+    (function () {
+      var DEC = 1e6; // $REDACTED has 6 decimals; the ledger is in base units.
+      function fmt(v) {
+        var n = Number(v);
+        if (!isFinite(n)) { return null; }
+        return (n / DEC).toLocaleString('en-US', { maximumFractionDigits: 0 });
+      }
+      function set(id, v) {
+        var el = document.getElementById(id);
+        if (el) { el.textContent = v; }
+      }
+      fetch('/api/swarm', { headers: { 'Accept': 'application/json' } })
+        .then(function (r) { return r.ok ? r.json() : null; })
+        .then(function (d) {
+          var t = d && d.treasury;
+          if (!t) { return; }
+          var rev = fmt(t.revenue_total), acc = fmt(t.burn_accrued), brn = fmt(t.burned_total);
+          if (rev === null && acc === null && brn === null) { return; }
+          set('t-revenue', rev === null ? '—' : rev);
+          set('t-accrued', acc === null ? '—' : acc);
+          set('t-burned', brn === null ? '—' : brn);
+          set('t-settlements', t.settlements_total != null ? String(t.settlements_total) : '—');
+          set('t-runway', t.runway_days != null ? String(t.runway_days) : '—');
+          if (String(t.burned_total || '0') === '0') {
+            set('t-note', 'Burned on chain is zero because on-chain execution is still disabled — see "What is not built yet" above. The accrued figure is what would be burned when it is enabled.');
+          }
+          document.getElementById('treasury-live').hidden = false;
+          var off = document.getElementById('treasury-offline');
+          if (off) { off.hidden = true; }
+        })
+        .catch(function () { /* leave the offline line in place */ });
+    })();
+  </script>
+</body>
+</html>

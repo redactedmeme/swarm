@@ -241,6 +241,8 @@ def sitemap():
         '<?xml version="1.0" encoding="UTF-8"?>\n'
         '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n'
         f'  <url><loc>{SITE_ORIGIN}/</loc><changefreq>weekly</changefreq><priority>1.0</priority></url>\n'
+        f'  <url><loc>{SITE_ORIGIN}/docs</loc><changefreq>weekly</changefreq><priority>0.9</priority></url>\n'
+        f'  <url><loc>{SITE_ORIGIN}/token</loc><changefreq>weekly</changefreq><priority>0.9</priority></url>\n'
         f'  <url><loc>{SITE_ORIGIN}/llms.txt</loc><changefreq>weekly</changefreq><priority>0.8</priority></url>\n'
         f'  <url><loc>{SITE_ORIGIN}/llms-full.txt</loc><changefreq>weekly</changefreq><priority>0.5</priority></url>\n'
         f'  <url><loc>{SITE_ORIGIN}/system.prompt.md</loc><changefreq>weekly</changefreq><priority>0.8</priority></url>\n'
@@ -255,6 +257,19 @@ def sitemap():
 @app.route('/')
 def index():
     return send_from_directory(ROOT, 'index.html')
+
+
+# The plain-language pages. Served extensionless so the published URLs are
+# /token and /docs; the catch-all below would 404 those, since it only maps a
+# path onto a file that literally exists.
+@app.route('/token')
+def token_page():
+    return send_from_directory(ROOT, 'token.html')
+
+
+@app.route('/docs')
+def docs_page():
+    return send_from_directory(ROOT, 'docs.html')
 
 
 @app.route('/<path:path>')

@@ -1,0 +1,296 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Run the swarm — REDACTED docs</title>
+  <meta name="description" content="What the REDACTED swarm is, how to install and run it, the services it deploys, and where the reference documentation lives. Plain language, no lore." />
+  <meta name="theme-color" content="#080809" />
+  <link rel="canonical" href="https://redacted.meme/docs" />
+
+  <meta property="og:type" content="article" />
+  <meta property="og:site_name" content="[REDACTED]" />
+  <meta property="og:url" content="https://redacted.meme/docs" />
+  <meta property="og:title" content="Run the swarm — REDACTED docs" />
+  <meta property="og:description" content="Install, run, and understand the REDACTED multi-agent swarm. Plain language, no lore." />
+  <meta property="og:image" content="https://redacted.meme/og.png" />
+  <meta name="twitter:card" content="summary_large_image" />
+  <meta name="twitter:site" content="@RedactedMemeFi" />
+
+  <link rel="stylesheet" href="style.css" />
+  <style>
+    /* See token.html — same scoped subpage treatment, deliberately quiet. */
+    .doc-wrap { max-width: 52rem; margin: 0 auto; padding: 7rem var(--sp-3) var(--sp-6); }
+    .doc-wrap h1 { font-family: var(--sans); font-size: var(--fs-xl); letter-spacing: .02em; margin: 0 0 var(--sp-2); }
+    .doc-wrap h2 { font-family: var(--sans); font-size: var(--fs-lg); margin: var(--sp-6) 0 var(--sp-2);
+                   border-top: 1px solid var(--border); padding-top: var(--sp-4); letter-spacing: .02em; }
+    .doc-wrap h3 { font-family: var(--sans); font-size: var(--fs-md); margin: var(--sp-4) 0 var(--sp-2); color: var(--text); }
+    .doc-wrap p, .doc-wrap li { color: var(--muted); line-height: 1.7; font-size: var(--fs-base); }
+    /* style.css zeroes paragraph margins for the homepage's tight sections; prose
+       needs the rhythm back or consecutive paragraphs read as one block. */
+    .doc-wrap p { margin: 0 0 var(--sp-3); }
+    .doc-wrap ul { margin: 0 0 var(--sp-3); padding-left: 1.2rem; }
+    .doc-wrap li { margin-bottom: var(--sp-2); }
+    .doc-wrap a { color: var(--text); text-decoration: underline; text-underline-offset: 3px; }
+    .doc-lede { font-size: var(--fs-md); color: var(--text) !important; border-left: 2px solid var(--border2); padding-left: var(--sp-3); }
+    .doc-wrap table { width: 100%; border-collapse: collapse; font-size: var(--fs-sm); }
+    /* A wide table scrolls inside its own box; the page body must never
+       scroll sideways (the 4-column price sheet overflowed at 375px). */
+    .tw { overflow-x: auto; margin: var(--sp-3) 0; -webkit-overflow-scrolling: touch; }
+    .tw table { min-width: 26rem; }
+    .doc-wrap th, .doc-wrap td { text-align: left; padding: .55rem .6rem; border-bottom: 1px solid var(--border); vertical-align: top; }
+    .doc-wrap th { color: var(--dim); font-family: var(--sans); font-weight: 600; text-transform: uppercase; font-size: var(--fs-xs); letter-spacing: .08em; }
+    .doc-wrap code { font-family: var(--mono); font-size: .92em; color: var(--text); }
+    .doc-back { display: inline-block; margin-bottom: var(--sp-4); font-family: var(--mono); font-size: var(--fs-sm);
+                color: var(--dim) !important; text-decoration: none !important; }
+    .doc-back:hover { color: var(--text) !important; }
+    pre { background: var(--bg2); border: 1px solid var(--border); padding: var(--sp-3); overflow-x: auto; margin: var(--sp-3) 0; }
+    pre code { font-size: var(--fs-sm); line-height: 1.65; color: var(--text); white-space: pre; }
+    .cmt { color: var(--dim); }
+    .callout { border: 1px solid var(--border2); background: var(--bg2); padding: var(--sp-3); margin: var(--sp-4) 0; }
+    .callout p:last-child { margin-bottom: 0; }
+    .toc { columns: 2; column-gap: var(--sp-5); margin: var(--sp-3) 0; padding-left: 1.1rem; }
+    @media (max-width: 34rem) { .toc { columns: 1; } }
+  </style>
+</head>
+<body>
+
+  <a class="skip-link" href="#main">Skip to content</a>
+
+  <nav id="nav">
+    <div class="nav-inner">
+      <a class="nav-logo" href="/">
+        <span class="logo-bracket">[</span>REDACTED<span class="logo-bracket">]</span>
+      </a>
+      <ul class="nav-links">
+        <li><a href="/token">TOKEN</a></li>
+        <li><a href="/#offers">OFFERS</a></li>
+        <li><a href="/#swarm">AI SWARM</a></li>
+        <li><a href="https://github.com/redactedmeme/swarm" target="_blank" rel="noopener">GITHUB</a></li>
+      </ul>
+    </div>
+  </nav>
+
+  <main class="doc-wrap" id="main">
+    <a class="doc-back" href="/">← redacted.meme</a>
+
+    <h1>Run the swarm</h1>
+    <p class="doc-lede">
+      REDACTED is an open-source multi-agent swarm: a privacy LLM proxy,
+      persistent-memory agents, and Solana micropayments. You pay per call in
+      $REDACTED, and half of every payment burns.
+    </p>
+    <p>
+      This page is deliberately boring. It covers install, the services, the
+      configuration that matters, and where the reference documentation lives. The
+      project has an elaborate aesthetic elsewhere; none of it is required to run
+      anything here.
+    </p>
+
+    <h2>Install</h2>
+    <p>
+      One editable install of the core package. No API key needed for this part.
+    </p>
+    <pre><code>git clone https://github.com/redactedmeme/swarm.git
+cd swarm
+pip install -e packages/swarm-core
+
+swarm roster        <span class="cmt"># lists every agent — works with no key set</span>
+swarm --help        <span class="cmt"># every subcommand</span></code></pre>
+    <p>
+      <code>swarm</code> is a console script installed by the package. Subcommands:
+      <code>roster</code>, <code>status</code>, <code>phi</code>, <code>wallets</code>,
+      <code>reserve</code>, <code>delegate</code>, <code>mesh</code>,
+      <code>committee</code>, <code>skill</code>, <code>terminal</code>,
+      <code>daemon</code>.
+    </p>
+
+    <h3>Adding inference</h3>
+    <p>
+      Set exactly <strong>one</strong> provider key. The repository ships a large
+      <code>.env.example</code>, but almost all of it is per-service and optional —
+      you do not need to fill it in to get started.
+    </p>
+    <div class="tw"><table>
+      <thead><tr><th>Set this</th><th>Backend</th></tr></thead>
+      <tbody>
+        <tr><td><code>ANTHROPIC_API_KEY</code></td><td>Claude (recommended)</td></tr>
+        <tr><td><code>XAI_API_KEY</code></td><td>Grok / xAI</td></tr>
+        <tr><td><code>GROQ_API_KEY</code></td><td>Groq llama-3.3-70b</td></tr>
+        <tr><td><code>OPENAI_API_KEY</code></td><td>OpenAI</td></tr>
+        <tr><td><em>none</em></td><td>Local Ollama on <code>localhost:11434</code></td></tr>
+      </tbody>
+    </table></div>
+    <pre><code>cp .env.example .env    <span class="cmt"># set one key</span>
+
+swarm committee "should the swarm ship this?"   <span class="cmt"># seven-voice deliberation</span>
+swarm terminal                                  <span class="cmt"># NERV REPL</span></code></pre>
+
+    <h3>The web terminal</h3>
+    <pre><code>pip install -r apps/terminal/requirements.txt
+python apps/terminal/app.py     <span class="cmt"># → http://localhost:5000</span></code></pre>
+    <p>
+      Sessions persist — history, active agents and curvature depth survive restarts,
+      stored under <code>fs/sessions/</code>.
+    </p>
+
+    <h2>How it is laid out</h2>
+    <p>
+      A packaged monorepo. <code>apps/</code> holds deployables,
+      <code>packages/</code> holds installable shared libraries. Services import the
+      shared code as normal packages — there are no path hacks reaching across the
+      tree.
+    </p>
+    <div class="tw"><table>
+      <thead><tr><th>Path</th><th>What</th></tr></thead>
+      <tbody>
+        <tr><td><code>packages/swarm-core/</code></td><td>Committee deliberation, BEAM-SCoT, the hyperbolic kernel, agent registry, session store, security primitives, Solana wallets, the x402 payment rail</td></tr>
+        <tr><td><code>packages/swarm-tg/</code></td><td>Telegram formatting and the swarm task client</td></tr>
+        <tr><td><code>packages/swarm-agent-base/</code></td><td>Shared autonomous-agent runtime — heartbeat, inbox poll, soul update, mesh thought loops</td></tr>
+        <tr><td><code>apps/&lt;name&gt;/</code></td><td>One deployable each</td></tr>
+        <tr><td><code>agents/</code>, <code>nodes/</code></td><td>elizaOS-compatible <code>.character.json</code> definitions</td></tr>
+        <tr><td><code>docs/</code></td><td>Reference documentation</td></tr>
+      </tbody>
+    </table></div>
+
+    <h2>Services</h2>
+    <p>
+      Fifteen deployed services — eleven on the swarm node, four on Railway. All of
+      them communicate over Redis via <strong>SwarmInbox</strong>, a signed
+      message-passing bus for agent-to-agent task delegation.
+    </p>
+    <div class="tw"><table>
+      <thead><tr><th>Service</th><th>Purpose</th></tr></thead>
+      <tbody>
+        <tr><td><strong>proxy</strong></td><td>OpenAI-compatible LLM privacy proxy — strips fingerprinting, routes across providers with a cost-ordered cascade, meters usage per client</td></tr>
+        <tr><td><strong>refinery</strong></td><td>Signal refinery (ingest → embed → refine); serves the priced <code>refine</code> endpoint</td></tr>
+        <tr><td><strong>hermes</strong></td><td>Operational agent — browsing, code execution, infrastructure control</td></tr>
+        <tr><td><strong>smolting</strong></td><td>Forward-operating agent — Moltbook, Clawbal, market data</td></tr>
+        <tr><td><strong>redacted-chan</strong></td><td>Relational companion with a persistent soul; all stores encrypted at rest</td></tr>
+        <tr><td><strong>builder</strong></td><td>Builder agent — grounded posting, thought exchange</td></tr>
+        <tr><td><strong>runtime</strong></td><td>Sub-agent service and mesh announce</td></tr>
+        <tr><td><strong>settler</strong></td><td>Settlement ledger and burn executor — the only treasury-key holder</td></tr>
+        <tr><td><strong>degen</strong></td><td>Solana LP scout (Raydium / Orca / Meteora → mesh signals)</td></tr>
+        <tr><td><strong>govimprover</strong></td><td>Realms DAO proposal architect (draft only)</td></tr>
+        <tr><td><strong>exec-runner</strong></td><td>No-secrets, no-network code sandbox over a unix socket</td></tr>
+        <tr><td><strong>terminal</strong></td><td>NERV web terminal</td></tr>
+        <tr><td><strong>webchat</strong></td><td>Private web chat UI (password-gated, not public)</td></tr>
+        <tr><td><strong>dashboard</strong></td><td>Solana token volume dashboard</td></tr>
+        <tr><td><strong>website</strong></td><td>This site</td></tr>
+      </tbody>
+    </table></div>
+
+    <h2>Paying for a call</h2>
+    <p>
+      The swarm sells work over <a href="https://x402.org" target="_blank" rel="noopener">x402</a>
+      on Solana. A call arrives unpaid and gets a <code>402</code> naming the price and
+      the treasury address; you pay and retry with the signature in
+      <code>X-Payment-Signature</code>. The payment must be confirmed, move at least the
+      asking price of the right mint into the treasury, be under five minutes old, and
+      not have been spent before.
+    </p>
+    <div class="callout">
+      <p>
+        <strong><code>refine</code> is currently the only offer with a live endpoint.</strong>
+        Three other offers carry prices but no endpoint yet, and proxy inference is
+        metered but not enforced. The <a href="/token">token page</a> lists every gap
+        explicitly rather than burying it.
+      </p>
+    </div>
+
+    <h2>Security model</h2>
+    <p>
+      Defense-in-depth, adopted from
+      <a href="https://github.com/nearai/ironclaw" target="_blank" rel="noopener">nearai/ironclaw</a>.
+      Use these rather than ad-hoc equivalents:
+    </p>
+    <div class="tw"><table>
+      <thead><tr><th>Module</th><th>Use for</th></tr></thead>
+      <tbody>
+        <tr><td><code>leakscan</code></td><td>Catch secret-shaped strings in outbound text</td></tr>
+        <tr><td><code>promptguard</code></td><td>Fence and scan untrusted content before it reaches a prompt</td></tr>
+        <tr><td><code>audit</code></td><td>Tamper-evident hash-chained audit log</td></tr>
+        <tr><td><code>authz</code></td><td>Capability check before a privileged action; fail-closed</td></tr>
+        <tr><td><code>inbox</code></td><td>Signed SwarmInbox — HMAC plus a route table</td></tr>
+        <tr><td><code>secrets</code></td><td>Resolve a secret through cache → tmpfs → env → vault</td></tr>
+      </tbody>
+    </table></div>
+
+    <h2>Reference documentation</h2>
+    <p>Technical material first; the philosophical material is genuinely optional.</p>
+    <ul class="toc">
+      <li><a href="https://github.com/redactedmeme/swarm/blob/main/docs/architecture/swarm-technical-overview.md" target="_blank" rel="noopener">Technical overview</a></li>
+      <li><a href="https://github.com/redactedmeme/swarm/blob/main/docs/architecture/" target="_blank" rel="noopener">Architecture &amp; ADRs</a></li>
+      <li><a href="https://github.com/redactedmeme/swarm/blob/main/docs/TOKENOMICS.md" target="_blank" rel="noopener">Tokenomics (canonical)</a></li>
+      <li><a href="https://github.com/redactedmeme/swarm/blob/main/CONTRIBUTING.md" target="_blank" rel="noopener">Contributing</a></li>
+      <li><a href="https://github.com/redactedmeme/swarm/blob/main/docs/README.md" target="_blank" rel="noopener">Full docs index</a></li>
+      <li><a href="https://github.com/redactedmeme/swarm/blob/main/LICENSE" target="_blank" rel="noopener">License (VPL)</a></li>
+    </ul>
+
+    <h3>Machine-readable</h3>
+    <p>
+      Everything below is raw text or JSON, served cross-origin. No HTML scraping
+      required.
+    </p>
+    <ul>
+      <li><a href="/llms.txt">/llms.txt</a> — index of every published artifact</li>
+      <li><a href="/llms-full.txt">/llms-full.txt</a> — the same index with the prompt and skill inlined</li>
+      <li><a href="/data/agents.json">/data/agents.json</a> — the agent roster, structured</li>
+      <li><a href="/api/swarm">/api/swarm</a> — live heartbeats, priced offers, and the treasury block</li>
+      <li><a href="/system.prompt.md">/system.prompt.md</a> — full terminal system prompt</li>
+      <li><a href="/skill.md">/skill.md</a> — the terminal as a Claude Code skill</li>
+    </ul>
+
+    <h2>FAQ</h2>
+    <h3>Do I need the token to run this?</h3>
+    <p>
+      No. The repository is open source under the Viral Public License and everything
+      above runs with your own API key or a local Ollama. The token pays for calls to
+      <em>our</em> hosted endpoints.
+    </p>
+    <h3>Can I talk to the agents without installing anything?</h3>
+    <p>
+      Partly. The <a href="https://terminal.redacted.meme/" target="_blank" rel="noopener">web terminal</a>
+      is public. The webchat UI is password-gated because it fronts a private,
+      encrypted conversation store, and it is not going to be opened. The honest
+      answer is that the best way to see the swarm work is the install above — it
+      takes about a minute.
+    </p>
+    <h3>Is this production software?</h3>
+    <p>
+      It runs continuously and has for months, but it is a lab, built by a very small
+      team. Read <a href="/token">the token page</a> for an unvarnished list of what is
+      not finished.
+    </p>
+    <h3>How do I contribute?</h3>
+    <p>
+      Normal fork, branch, conventional commit, pull request. See
+      <a href="https://github.com/redactedmeme/swarm/blob/main/CONTRIBUTING.md" target="_blank" rel="noopener">CONTRIBUTING.md</a>.
+    </p>
+  </main>
+
+  <footer id="footer">
+    <div class="container">
+      <div class="footer-inner">
+        <div class="footer-logo">
+          <span class="logo-bracket">[</span>REDACTED<span class="logo-bracket">]</span>
+        </div>
+        <div class="footer-links">
+          <a href="https://x.com/RedactedMemeFi" target="_blank" rel="noopener" aria-label="X / Twitter">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-4.714-6.231-5.401 6.231H2.746l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z"/></svg>
+          </a>
+          <a href="https://github.com/redactedmeme/swarm" target="_blank" rel="noopener" aria-label="GitHub">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2C6.477 2 2 6.484 2 12.017c0 4.425 2.865 8.18 6.839 9.504.5.092.682-.217.682-.483 0-.237-.008-.868-.013-1.703-2.782.605-3.369-1.343-3.369-1.343-.454-1.158-1.11-1.466-1.11-1.466-.908-.62.069-.608.069-.608 1.003.07 1.531 1.032 1.531 1.032.892 1.53 2.341 1.088 2.91.832.092-.647.35-1.088.636-1.338-2.22-.253-4.555-1.113-4.555-4.951 0-1.093.39-1.988 1.029-2.688-.103-.253-.446-1.272.098-2.65 0 0 .84-.27 2.75 1.026A9.564 9.564 0 0112 6.844c.85.004 1.705.115 2.504.337 1.909-1.296 2.747-1.027 2.747-1.027.546 1.379.202 2.398.1 2.651.64.7 1.028 1.595 1.028 2.688 0 3.848-2.339 4.695-4.566 4.943.359.309.678.92.678 1.855 0 1.338-.012 2.419-.012 2.747 0 .268.18.58.688.482A10.019 10.019 0 0022 12.017C22 6.484 17.522 2 12 2z"/></svg>
+          </a>
+        </div>
+        <div class="footer-copy">
+          © 2025–∞ <span style="color:#FFFCFC;">████████</span>
+          &nbsp;|&nbsp;
+          <a href="https://github.com/redactedmeme/swarm" target="_blank" rel="noopener">Viral Public License</a>
+        </div>
+      </div>
+    </div>
+  </footer>
+
+</body>
+</html>
