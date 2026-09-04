@@ -13,6 +13,7 @@ services:
       - .env
     networks:
       - default
+      - swarm
     logging:
       driver: json-file
       options:
@@ -32,7 +33,7 @@ services:
       - DATA_PROXY_TOKEN=${DATA_PROXY_TOKEN:-}
       - PROXY_INTERNAL_URL=
       - PROXY_TOKEN=
-      - REDIS_URL=redis://172.17.0.1:6379
+      - REDIS_URL=redis://:${REDIS_PASSWORD}@swarm-redis:6379
       - CONFIG_API_URL=http://redacted-chan-config:8100
     depends_on:
       - redacted-chan
@@ -40,6 +41,7 @@ services:
       - redis
     networks:
       - default
+      - swarm
     logging:
       driver: json-file
       options:
@@ -73,6 +75,17 @@ services:
     command: redis-server --appendonly yes
     networks:
       - default
+
+networks:
+  default:
+  # The swarm mesh bus. chan reaches swarm-redis by service name here;
+  # the old 172.17.0.1 hop timed out from this user-defined bridge and
+  # silently demoted SwarmInbox to its file transport. Only the two
+  # services that use the bus join it -- the local redis must stay off,
+  # since it would collide with swarm-redis on the alias `redis`.
+  swarm:
+    external: true
+    name: swarm-infra_default
 
 volumes:
   redis-data:
