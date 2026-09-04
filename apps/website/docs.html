@@ -172,7 +172,7 @@ python apps/terminal/app.py     <span class="cmt"># → http://localhost:5000</s
         <tr><td><strong>settler</strong></td><td>Settlement ledger and burn executor — the only treasury-key holder</td></tr>
         <tr><td><strong>degen</strong></td><td>Solana LP scout (Raydium / Orca / Meteora → mesh signals)</td></tr>
         <tr><td><strong>govimprover</strong></td><td>Realms DAO proposal architect (draft only)</td></tr>
-        <tr><td><strong>exec-runner</strong></td><td>No-secrets, no-network code sandbox over a unix socket</td></tr>
+        <tr><td><strong>status</strong></td><td>Public read-only feed — coarse mesh liveness, the price sheet, and the treasury ledger</td></tr>
         <tr><td><strong>terminal</strong></td><td>NERV web terminal</td></tr>
         <tr><td><strong>webchat</strong></td><td>Private web chat UI (password-gated, not public)</td></tr>
         <tr><td><strong>dashboard</strong></td><td>Solana token volume dashboard</td></tr>
@@ -191,10 +191,12 @@ python apps/terminal/app.py     <span class="cmt"># → http://localhost:5000</s
     </p>
     <div class="callout">
       <p>
-        <strong><code>refine</code> is currently the only offer with a live endpoint.</strong>
-        Three other offers carry prices but no endpoint yet, and proxy inference is
-        metered but not enforced. The <a href="/token">token page</a> lists every gap
-        explicitly rather than burying it.
+        <strong>No priced endpoint is reachable from the open internet yet.</strong>
+        <code>refine</code> is the only one where payment is enforced in code, and the
+        refinery publishes no port; the other three offers have no endpoint at all, and
+        proxy inference is metered but not enforced. The
+        <a href="/token">token page</a> lists every gap explicitly rather than burying
+        it.
       </p>
     </div>
 

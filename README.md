@@ -36,7 +36,7 @@ Fifteen deployed services — eleven on the swarm node, four on Railway.
 | **degen** | Solana LP scout (Raydium / Orca / Meteora → mesh signals) | Python |
 | **govimprover** | Realms DAO proposal architect (draft only) | Python |
 | **proxy** | OpenAI-compatible LLM privacy proxy — strips fingerprinting, local log | aiohttp |
-| **exec-runner** | No-secrets / no-network code sandbox (unix socket) | Python |
+| **status** | Public read-only heartbeat, price-sheet and treasury feed | aiohttp |
 
 **On Railway:**
 
@@ -47,7 +47,7 @@ Fifteen deployed services — eleven on the swarm node, four on Railway.
 | **webchat** | Private web chat UI for redacted-chan (TTS, file + image upload) | FastAPI · aiohttp |
 | **dashboard** | Solana token volume dashboard | Python |
 
-Built but not yet deployed: **status** (public read-only heartbeat feed).
+In the tree but not currently deployed: **exec-runner** (code sandbox), **swarm-egress** (egress allowlist), **x402**, **arb-keeper**, **mcp**.
 
 All services communicate over Redis via **SwarmInbox** — a lightweight message-passing protocol for agent-to-agent task delegation.
 

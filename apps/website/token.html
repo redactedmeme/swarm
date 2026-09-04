@@ -144,7 +144,7 @@
       <tbody>
         <tr>
           <td><code>refine</code></td><td>refinery</td><td>1,000</td>
-          <td><span class="tag tag-live">CALLABLE</span></td>
+          <td><span class="tag tag-off">PRICED, NOT PUBLIC</span></td>
         </tr>
         <tr>
           <td><code>committee</code></td><td>sevenfold-committee</td><td>5,000</td>
@@ -165,11 +165,14 @@
       </tbody>
     </table></div>
     <p>
-      <strong><code>refine</code> is the only offer a stranger can actually pay for
-      today.</strong> The other three are priced in the sheet and carry no endpoint;
-      they are listed here so the price sheet and this page cannot quietly disagree.
-      Prices are deliberately small — the point is for the endpoints to be used, not to
-      extract from the handful of people who find them.
+      <strong>None of these is reachable from the open internet today.</strong>
+      <code>refine</code> is the only one where payment is actually enforced in code —
+      the middleware guards the refinery's query endpoint — but the refinery listens on
+      the swarm node only and publishes no port, so no stranger can call it yet. The
+      other three have no endpoint at all. They are listed here so the price sheet and
+      this page cannot quietly disagree. Prices are deliberately small: the point is
+      for the endpoints to be used, not to extract from the handful of people who find
+      them.
     </p>
     <p>
       Agents on the swarm's own mesh bypass payment with an operator token. Charging
