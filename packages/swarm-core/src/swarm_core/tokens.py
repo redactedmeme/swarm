@@ -223,12 +223,13 @@ TIERS: tuple[Tier, ...] = (
     Tier(
         name="architect",
         threshold=10_000_000,
-        grants=("terminal", "private-agents", "proxy-rpm-boost"),
+        grants=("terminal", "alpha-feed", "private-agents", "proxy-rpm-boost"),
     ),
     Tier(
         name="monolith",
         threshold=100_000_000,
-        grants=("terminal", "private-agents", "proxy-rpm-boost", "committee-included"),
+        grants=("terminal", "alpha-feed", "private-agents", "proxy-rpm-boost",
+                "committee-included"),
     ),
 )
 
@@ -243,3 +244,15 @@ def grants_for(balance: int | Decimal) -> frozenset[str]:
     """Capability set a balance unlocks. Empty for a wallet below the gate."""
     tier = tier_for(balance)
     return frozenset(tier.grants) if tier else frozenset()
+
+
+def threshold_for_grant(grant: str) -> int | None:
+    """Lowest balance that actually confers `grant`, or None if nothing does.
+
+    A caller gating on something above the bottom rung needs the real number to
+    quote back — telling an `alpha-feed` visitor they need 1,000,000 because
+    that is `TIERS[0]` would be wrong, and wrong in the direction that wastes
+    someone's money.
+    """
+    holders = [t.threshold for t in TIERS if grant in t.grants]
+    return min(holders) if holders else None

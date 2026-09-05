@@ -130,13 +130,18 @@ async def token_balance(owner: str, *, mint: str | None = None, session=None) ->
     return total
 
 
-async def authorize(redis, wallet: str, message: str, signature_b64: str) -> dict:
+async def authorize(redis, wallet: str, message: str, signature_b64: str,
+                    *, required_grant: str = "terminal") -> dict:
     """Consume the nonce, verify the signature, read the balance, resolve the tier.
 
-    Returns `{ok, wallet, balance, tier, grants, min_required}`. `ok` is True
-    only when the balance clears the `operator` threshold (the `terminal`
-    grant). Raises GateError for anything that isn't a clean allow/deny —
-    a missing/mismatched nonce, a bad signature, an unreachable RPC — so the
+    Returns `{ok, wallet, balance, tier, grants, required_grant, min_required}`.
+    `ok` is True when the wallet holds `required_grant` — `terminal` by default,
+    so existing callers keep the operator-tier behaviour they had. `min_required`
+    is the lowest threshold that actually confers that grant, so a caller can
+    tell the user the real number to hold rather than the bottom of the ladder.
+
+    Raises GateError for anything that isn't a clean allow/deny — a
+    missing/mismatched nonce, a bad signature, an unreachable RPC — so the
     caller can 4xx precisely and the nonce is only spent on a real decision.
     """
     _pubkey_bytes(wallet)
@@ -172,10 +177,11 @@ async def authorize(redis, wallet: str, message: str, signature_b64: str) -> dic
     await redis.expire(f"{GRANTS_KEY}{wallet}", GRANTS_TTL)
 
     return {
-        "ok": "terminal" in grants,
+        "ok": required_grant in grants,
         "wallet": wallet,
         "balance": str(bal),
         "tier": tier.name if tier else None,
         "grants": grants,
-        "min_required": tokens.TIERS[0].threshold,
+        "required_grant": required_grant,
+        "min_required": tokens.threshold_for_grant(required_grant),
     }

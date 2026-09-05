@@ -169,6 +169,69 @@ async def test_authorize_rpc_down_keeps_nonce(redis, kp, wallet, monkeypatch):
 
 # ── import invariant ─────────────────────────────────────────────────────
 
+# ── required_grant ───────────────────────────────────────────────────────
+#
+# The gate used to hardcode `ok = "terminal" in grants`. Anything gated above
+# the bottom rung — the alpha feed at the architect tier — needs the caller to
+# say which grant it means, and needs `min_required` to quote that grant's real
+# threshold rather than TIERS[0].
+
+
+async def test_authorize_defaults_to_terminal_grant(redis, kp, wallet, monkeypatch):
+    """The pre-existing caller (apps/terminal) passes no grant and must not change."""
+    monkeypatch.setattr(G, "token_balance", lambda o, **k: _ret(Decimal(1_500_000)))
+    msg, sig = await _challenge(redis, kp, wallet)
+    res = await G.authorize(redis, wallet, msg, sig)
+    assert res["ok"] is True
+    assert res["required_grant"] == "terminal"
+    assert res["min_required"] == 1_000_000
+
+
+async def test_operator_balance_denied_alpha_feed(redis, kp, wallet, monkeypatch):
+    """Clearing the terminal gate must not carry you into the alpha feed."""
+    monkeypatch.setattr(G, "token_balance", lambda o, **k: _ret(Decimal(1_500_000)))
+    msg, sig = await _challenge(redis, kp, wallet)
+    res = await G.authorize(redis, wallet, msg, sig, required_grant="alpha-feed")
+    assert res["ok"] is False
+    assert res["tier"] == "operator"          # they are a holder, just not enough
+    assert res["min_required"] == 10_000_000  # the number to quote them
+
+
+async def test_architect_balance_allowed_alpha_feed(redis, kp, wallet, monkeypatch):
+    monkeypatch.setattr(G, "token_balance", lambda o, **k: _ret(Decimal(10_000_000)))
+    msg, sig = await _challenge(redis, kp, wallet)
+    res = await G.authorize(redis, wallet, msg, sig, required_grant="alpha-feed")
+    assert res["ok"] is True
+    assert res["tier"] == "architect"
+    assert "alpha-feed" in res["grants"]
+
+
+async def test_alpha_feed_boundary_is_exact(redis, kp, wallet, monkeypatch):
+    """One token short is out; exactly on the threshold is in."""
+    monkeypatch.setattr(G, "token_balance", lambda o, **k: _ret(Decimal(9_999_999)))
+    msg, sig = await _challenge(redis, kp, wallet)
+    assert (await G.authorize(redis, wallet, msg, sig,
+                              required_grant="alpha-feed"))["ok"] is False
+
+
+async def test_unknown_grant_is_denied_not_crashed(redis, kp, wallet, monkeypatch):
+    """A typo'd grant name must fail closed, with no threshold to quote."""
+    monkeypatch.setattr(G, "token_balance", lambda o, **k: _ret(Decimal(100_000_000)))
+    msg, sig = await _challenge(redis, kp, wallet)
+    res = await G.authorize(redis, wallet, msg, sig, required_grant="nope")
+    assert res["ok"] is False
+    assert res["min_required"] is None
+
+
+def test_alpha_feed_is_reachable_and_above_terminal():
+    """Guards the tier table itself: the grant must exist and cost more."""
+    assert tokens.threshold_for_grant("alpha-feed") == 10_000_000
+    assert tokens.threshold_for_grant("alpha-feed") > tokens.threshold_for_grant("terminal")
+    assert "alpha-feed" in tokens.grants_for(10_000_000)
+    assert "alpha-feed" not in tokens.grants_for(1_000_000)
+    assert tokens.threshold_for_grant("does-not-exist") is None
+
+
 def test_gate_has_no_toplevel_solana_import():
     tree = ast.parse(pathlib.Path(G.__file__).read_text(encoding="utf-8"))
     banned = {"solders", "solana", "anchorpy"}
