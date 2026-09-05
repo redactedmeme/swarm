@@ -5,20 +5,34 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>REDACTED // SWARM TERMINAL</title>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
-  <link href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=VT323&family=Orbitron:wght@400;700;900&display=swap" rel="stylesheet" />
+  <link href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;600;700;900&family=Inconsolata:wght@300;400;700&display=swap" rel="stylesheet" />
   <script src="https://cdn.jsdelivr.net/npm/socket.io-client@4.7.5/dist/socket.io.min.js"></script>
   <style>
+    /* Palette shared with redacted.meme — same values, same meanings, so the
+       terminal reads as part of the product rather than a separate tool.
+       See apps/website/style.css. */
     :root {
+      --bg:     #080809;
+      --bg2:    #0d0d0e;
+      --bg3:    #111112;
+      --text:   #FFFCFC;
+      --muted:  #C4C4C4;
+      --dim:    #8b8b8b;
+      --border: #2a2b2d;
+      --border2:#3d3e40;
       --red:    #ff2200;
+
+      /* Pattern Blue — LIVENESS ONLY, exactly as on the site: the heartbeat
+         dot, the ONLINE state, the per-agent live marker. This replaced a
+         matrix green that meant the same thing in a different language. */
+      --blue:   #4da6ff;
+
+      /* The one signal the site has no token for: a degraded-but-not-failed
+         state. Kept distinct from --red so "warn" and "error" stay readable
+         as different things. */
       --amber:  #ffaa00;
-      --green:  #00ff41;
-      --dim:    #111111;
-      --bg:     #000000;
-      --bg2:    #060606;
-      --border: #252525;
-      --text:   #f0f0f0;
-      --muted:  #585858;
-      --panel:  rgba(0,0,0,0.96);
+
+      --panel:  rgba(8,8,9,0.96);
     }
 
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
@@ -27,7 +41,7 @@
       width: 100%; height: 100%;
       background: var(--bg);
       color: var(--text);
-      font-family: 'Share Tech Mono', monospace;
+      font-family: 'Inconsolata', 'Space Mono', monospace;
       overflow: hidden;
     }
 
@@ -85,7 +99,7 @@
     @keyframes scanH { 0%{ transform:translateX(-100%) } 100%{ transform:translateX(100%) } }
 
     #logo {
-      font-family: 'Orbitron', monospace; font-weight: 900; font-size: 15px;
+      font-family: 'Archivo', sans-serif; font-weight: 900; font-size: 15px;
       letter-spacing: 4px; color: var(--red);
       text-shadow: 0 0 12px var(--red), 0 0 30px rgba(255,34,0,0.4); flex-shrink: 0;
     }
@@ -93,10 +107,10 @@
     #topbar-sep { flex: 1; }
     .tb-item { font-size: 10px; letter-spacing: 1px; color: var(--muted); display: flex; align-items: center; gap: 6px; }
     .tb-item .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--muted); }
-    .tb-item.active .dot { background: var(--green); box-shadow: 0 0 6px var(--green); }
+    .tb-item.active .dot { background: var(--blue); box-shadow: 0 0 6px var(--blue); }
     .tb-item.warn   .dot { background: var(--amber); box-shadow: 0 0 6px var(--amber); }
     .tb-item.crit   .dot { background: var(--red);   box-shadow: 0 0 6px var(--red);   }
-    #clock { font-family:'VT323',monospace; font-size:20px; color:var(--amber); letter-spacing:2px; min-width:88px; text-align:right; }
+    #clock { font-family:'Inconsolata','Space Mono',monospace; font-size:20px; color:var(--amber); letter-spacing:2px; min-width:88px; text-align:right; }
 
     /* LEFT PANEL */
     #left-panel {
@@ -112,14 +126,14 @@
       display: flex; align-items: center; gap: 8px;
     }
     .agent-entry:hover { color:var(--text); background:rgba(255,255,255,0.04); }
-    .agent-entry.active { color:var(--green); border-left-color:var(--green); background:rgba(0,255,65,0.06); text-shadow:0 0 8px rgba(0,255,65,0.4); }
+    .agent-entry.active { color:var(--blue); border-left-color:var(--blue); background:rgba(77,166,255,0.08); text-shadow:0 0 8px rgba(77,166,255,0.4); }
     .agent-entry .status-pip { width:5px; height:5px; border-radius:50%; flex-shrink:0; background:var(--muted); }
-    .agent-entry.active .status-pip { background:var(--green); box-shadow:0 0 5px var(--green); animation:pip-pulse 1.8s ease-in-out infinite; }
+    .agent-entry.active .status-pip { background:var(--blue); box-shadow:0 0 5px var(--blue); animation:pip-pulse 1.8s ease-in-out infinite; }
     @keyframes pip-pulse { 0%,100%{opacity:1} 50%{opacity:0.3} }
 
     #curvature-block { margin:auto 0 0; padding:10px 12px; border-top:1px solid var(--border); }
     .curv-label { font-size:9px; letter-spacing:2px; color:var(--muted); margin-bottom:6px; text-transform:uppercase; }
-    .curv-val { font-family:'VT323',monospace; font-size:32px; color:var(--text); line-height:1; text-shadow:0 0 10px rgba(255,255,255,0.2); }
+    .curv-val { font-family:'Inconsolata','Space Mono',monospace; font-size:32px; color:var(--text); line-height:1; text-shadow:0 0 10px rgba(255,255,255,0.2); }
     .curv-bar { margin-top:6px; height:3px; background:var(--border); position:relative; overflow:hidden; }
     .curv-fill { height:100%; background:linear-gradient(90deg,#444,#fff); width:52%; transition:width 1s ease; }
     .curv-bar::after { content:''; position:absolute; inset:0; background:linear-gradient(90deg,transparent 60%,rgba(255,170,0,0.4) 100%); animation:shimmer 2s linear infinite; }
@@ -129,7 +143,7 @@
     .int-rows { display:flex; flex-direction:column; gap:4px; margin-top:6px; }
     .int-row { display:flex; justify-content:space-between; font-size:10px; }
     .int-row .lbl { color:var(--muted); }
-    .int-row .val { color:var(--green); }
+    .int-row .val { color:var(--blue); }
     .int-row .val.warn { color:var(--amber); }
 
     /* TERMINAL */
@@ -156,9 +170,9 @@
     /* INPUT */
     #input-row { display:flex; align-items:center; padding:8px 18px; border-top:1px solid var(--border); background:rgba(0,0,0,0.6); gap:8px; flex-shrink:0; position:relative; }
     #prompt-label { color:var(--text); font-size:13px; white-space:nowrap; flex-shrink:0; text-shadow:0 0 6px rgba(255,255,255,0.2); }
-    #cmd-input { flex:1; background:transparent; border:none; outline:none; color:var(--text); font-family:'Share Tech Mono',monospace; font-size:13px; caret-color:var(--green); letter-spacing:0.3px; }
+    #cmd-input { flex:1; background:transparent; border:none; outline:none; color:var(--text); font-family:'Inconsolata','Space Mono',monospace; font-size:13px; caret-color:var(--blue); letter-spacing:0.3px; }
     #cmd-input::placeholder { color:var(--muted); }
-    #send-btn { background:none; border:1px solid var(--border); color:var(--muted); font-family:'Share Tech Mono',monospace; font-size:10px; letter-spacing:2px; padding:4px 10px; cursor:pointer; transition:all 0.15s; text-transform:uppercase; }
+    #send-btn { background:none; border:1px solid var(--border); color:var(--muted); font-family:'Inconsolata','Space Mono',monospace; font-size:10px; letter-spacing:2px; padding:4px 10px; cursor:pointer; transition:all 0.15s; text-transform:uppercase; }
     #send-btn:hover { border-color:var(--text); color:var(--text); box-shadow:0 0 8px rgba(255,255,255,0.15); }
 
     /* SUGGESTIONS */
@@ -201,7 +215,7 @@
     /* BOOT */
     #boot-screen { position:fixed; inset:0; z-index:10000; background:#000; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:8px; }
     #boot-screen.done { display:none; }
-    #boot-logo { font-family:'Orbitron',monospace; font-weight:900; font-size:clamp(24px,5vw,52px); color:var(--red); letter-spacing:12px; text-shadow:0 0 30px var(--red),0 0 60px rgba(255,34,0,0.3); animation:logoFlicker 2s ease-in-out; }
+    #boot-logo { font-family:'Archivo',sans-serif; font-weight:900; font-size:clamp(24px,5vw,52px); color:var(--red); letter-spacing:12px; text-shadow:0 0 30px var(--red),0 0 60px rgba(255,34,0,0.3); animation:logoFlicker 2s ease-in-out; }
     @keyframes logoFlicker { 0%{opacity:0} 20%{opacity:1} 22%{opacity:0.3} 24%{opacity:1} 60%{opacity:1} 62%{opacity:0.5} 64%{opacity:1} 100%{opacity:1} }
     #boot-sub { font-size:11px; letter-spacing:4px; color:var(--muted); margin-top:8px; }
     #boot-progress { margin-top:24px; width:min(400px,80vw); height:2px; background:#111; position:relative; overflow:hidden; }
@@ -212,11 +226,11 @@
     #auth-modal { position:fixed; inset:0; z-index:20000; background:rgba(0,0,0,0.92); display:none; align-items:center; justify-content:center; }
     #auth-modal.show { display:flex; }
     #auth-box { background:#0a0a0a; border:1px solid var(--red); padding:32px 40px; display:flex; flex-direction:column; gap:14px; min-width:320px; }
-    #auth-box h2 { font-family:'Orbitron',monospace; font-size:13px; letter-spacing:3px; color:var(--red); }
+    #auth-box h2 { font-family:'Archivo',sans-serif; font-size:13px; letter-spacing:3px; color:var(--red); }
     #auth-box p { font-size:11px; color:var(--muted); }
-    #auth-token { background:#000; border:1px solid var(--border); color:var(--text); font-family:'Share Tech Mono',monospace; font-size:13px; padding:8px 12px; width:100%; outline:none; }
+    #auth-token { background:#000; border:1px solid var(--border); color:var(--text); font-family:'Inconsolata','Space Mono',monospace; font-size:13px; padding:8px 12px; width:100%; outline:none; }
     #auth-token:focus { border-color:var(--red); }
-    #auth-btn { background:none; border:1px solid var(--red); color:var(--red); font-family:'Share Tech Mono',monospace; font-size:11px; letter-spacing:2px; padding:8px 20px; cursor:pointer; text-transform:uppercase; }
+    #auth-btn { background:none; border:1px solid var(--red); color:var(--red); font-family:'Inconsolata','Space Mono',monospace; font-size:11px; letter-spacing:2px; padding:8px 20px; cursor:pointer; text-transform:uppercase; }
     #auth-btn:hover { background:var(--red); color:#000; }
     #auth-err { color:var(--red); font-size:11px; display:none; }
   </style>
@@ -582,6 +596,45 @@ async function gateSignIn() {
   }
 }
 
+// ══ HOLDER-GATED ALPHA ══
+// smolting publishes the daily report to /api/alpha/publish from the swarm
+// node; this reads it back for wallets holding `alpha-feed`. The balance was
+// checked when the session was created, so selling costs you the feed on the
+// next sign-in — there is no membership list to fall out of sync.
+async function showAlpha() {
+  try {
+    const r = await fetch('/api/alpha', { headers: { 'Accept': 'application/json' } });
+    const body = await r.json();
+
+    if (r.status === 403) {
+      const need = body.min_required ? body.min_required.toLocaleString() : 'more';
+      appendLine('── ALPHA FEED // LOCKED ──', 'sys');
+      appendLine(body.authenticated
+        ? `this wallet is ${body.tier || 'unverified'}. the feed needs ${need} $REDACTED.`
+        : `holders only. connect a wallet holding ${need} $REDACTED, then /alpha.`, 'sys');
+      scrollOutput();
+      return;
+    }
+    if (r.status === 404) {
+      appendLine('no alpha published yet. smolting posts daily.', 'sys');
+      scrollOutput();
+      return;
+    }
+    if (!r.ok) {
+      appendLine('alpha unavailable: ' + (body.error || r.status), 'err');
+      scrollOutput();
+      return;
+    }
+
+    appendLine(`── ALPHA // ${body.published_at || ''} ──`, 'sys');
+    appendLines(body.report || '');
+    scrollOutput();
+  } catch (e) {
+    appendLine('alpha fetch failed: ' + (e.message || e), 'err');
+    scrollOutput();
+  }
+}
+
 // ══ OUTPUT ══
 function appendLines(raw) {
   const lines = raw.split('\n');
@@ -657,6 +710,15 @@ function sendCmd() {
   appendLine(`swarm@[REDACTED]:~$ ${cmd}`, 'input-echo');
   logEvent(cmd.slice(0,36), 'ok');
   hideSuggestions();
+
+  // /alpha is served over HTTP rather than the socket: it is gated on the
+  // session's grants, not on terminal access, so a wallet that clears the
+  // operator tier still gets a refusal here unless it holds alpha-feed.
+  if (/^\/alpha/i.test(cmd)) {
+    input.value = '';
+    showAlpha();
+    return;
+  }
 
   if (socket && socket.connected) {
     isProcessing = true;
