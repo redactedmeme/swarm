@@ -15,7 +15,9 @@ COPY apps/terminal/ .
 # Data the terminal reads at runtime and that lives outside the service dir.
 COPY agents/ ./agents/
 COPY spaces/ ./spaces/
-COPY nodes/ ./nodes/
+# NB: no top-level `nodes/` — the monorepo reorg moved it to agents/nodes/,
+# which arrives with COPY agents/ above. Copying it separately is what made
+# this image un-buildable, and is why the service sat on an August build.
 COPY skills/ ./skills/
 COPY terminal/ ./terminal/
 COPY plugins/ ./plugins/
