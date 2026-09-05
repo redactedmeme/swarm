@@ -116,11 +116,18 @@ Access is proven by signing a server-issued nonce with the wallet, then reading
 its balance on-chain. No transfer, no approval, no custody — the swarm never
 touches held tokens.
 
-Live today: the **operator** tier gates the NERV terminal
-(`swarm_core.gate`, `apps/terminal` with `HOLDER_GATE=true`). Every successful
-sign-in records the full grant set at `gate:grants:<wallet>` in Redis; the
-`architect` / `monolith` grants (private agents, raised proxy RPM, included
-committee calls) are recorded there but not yet read by any consumer.
+**Not live in production.** The gate is written and tested
+(`swarm_core.gate`, consumed by `apps/terminal` behind `HOLDER_GATE=true`), and
+a successful sign-in records the full grant set at `gate:grants:<wallet>` in
+Redis. But the deployed terminal is an older build whose `/api/gate/*` routes
+return 404 — verified 2026-09-04 against `terminal.redacted.meme`, where
+`/health` and `/api/wallet/status` answer and every gate route does not. Until
+that service is redeployed, no tier grants anything.
+
+Beyond deployment, the `architect` / `monolith` grants have no consumer:
+`alpha-feed` is wired (a holder-gated daily report served by `apps/terminal`),
+while private agents, raised proxy RPM and included committee calls are recorded
+and unread.
 
 ## On-chain settlement
 

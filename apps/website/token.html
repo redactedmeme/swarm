@@ -218,7 +218,7 @@
       <tbody>
         <tr>
           <td>operator</td><td>1,000,000</td><td>Terminal access</td>
-          <td><span class="tag tag-live">LIVE</span></td>
+          <td><span class="tag tag-off">BUILT, NOT DEPLOYED</span></td>
         </tr>
         <tr>
           <td>architect</td><td>10,000,000</td><td>Private agents, raised proxy rate limit</td>
@@ -231,12 +231,17 @@
       </tbody>
     </table></div>
     <p>
-      Only the operator tier does anything today. Every successful sign-in records the
-      full grant set in Redis, but nothing consumes the architect or monolith grants
-      yet — there is no committee endpoint, and the proxy cannot currently map a wallet
-      to an API token. Note also that the proxy's rate limit is per-process rather than
-      global, which is fine as anti-flood and is <em>not</em> a tier benefit we can
-      currently honour.
+      <strong>No tier does anything in production today.</strong> The gate is written,
+      tested and merged, but the deployed terminal predates it — its
+      <code>/api/gate/*</code> routes return 404 — so nothing is currently checking a
+      balance anywhere. Holding $REDACTED unlocks nothing until that service is
+      redeployed.
+    </p>
+    <p>
+      Beyond that, the architect and monolith grants have no consumer even once it is:
+      there is no committee endpoint, and the proxy cannot map a wallet to an API
+      token. The proxy's rate limit is also per-process rather than global, which is
+      fine as anti-flood and is <em>not</em> a tier benefit we could honour.
     </p>
 
     <h2 id="not-built">What is not built yet</h2>
@@ -252,8 +257,9 @@
         would-be refusals are logged, but no request is blocked yet.
       </li>
       <li>
-        <strong>Higher holder tiers.</strong> The operator tier gates the terminal;
-        architect and monolith grants are recorded but nothing reads them.
+        <strong>Holder tiers, all of them.</strong> The gate is complete in the
+        repository but is not running in production: the deployed terminal is an
+        older build with no gate routes. Nothing reads a balance today, at any tier.
       </li>
       <li>
         <strong>On-chain burns.</strong> The settlement ledger and treasury split are

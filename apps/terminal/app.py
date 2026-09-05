@@ -18,7 +18,7 @@ import hmac
 import json
 import requests
 from pathlib import Path
-from datetime import datetime
+from datetime import datetime, timezone
 from collections import defaultdict, deque
 from functools import wraps
 from swarm_core.paths import (
@@ -495,6 +495,105 @@ def api_gate_status():
         'tier':          session.get('tier'),
         'grants':        session.get('grants', []),
     })
+
+# ── Holder-gated alpha feed ───────────────────────────────────────────────────
+#
+# smolting generates the daily alpha on the swarm node, which has no inbound
+# route from the internet. So the node pushes: it POSTs the report here behind a
+# shared secret, and this service serves it to wallets holding `alpha-feed`
+# (architect tier, 10,000,000 $REDACTED). The public Telegram group gets only a
+# teaser pointing at this page.
+#
+# The gate is re-evaluated per request against the session's grants, which are
+# written by /api/gate/verify from an on-chain balance read. A holder who sells
+# loses the feed on their next session — there is no membership list to
+# reconcile, which is the whole reason this lives on the web rather than in a
+# private Telegram channel.
+
+ALPHA_KEY            = 'swarm:alpha:latest'
+ALPHA_PUBLISH_TOKEN  = os.environ.get('ALPHA_PUBLISH_TOKEN', '')
+ALPHA_GRANT          = 'alpha-feed'
+#: Last-resort store so a Redis outage degrades to "this instance forgets on
+#: restart" rather than "publishing 500s". Never the primary path.
+_alpha_fallback: dict = {}
+
+
+def _alpha_store(payload: dict) -> None:
+    global _alpha_fallback
+    _alpha_fallback = payload
+    if not _GATE_AVAILABLE:
+        return
+    try:
+        _run_gate(lambda r: r.set(ALPHA_KEY, json.dumps(payload)))
+    except Exception as e:  # noqa: BLE001
+        logger.warning(f"alpha: redis store failed, kept in memory only: {e}")
+
+
+def _alpha_load() -> dict:
+    if _GATE_AVAILABLE:
+        try:
+            raw = _run_gate(lambda r: r.get(ALPHA_KEY))
+            if raw:
+                return json.loads(raw)
+        except Exception as e:  # noqa: BLE001
+            logger.warning(f"alpha: redis read failed, serving in-memory copy: {e}")
+    return _alpha_fallback
+
+
+@app.route('/api/alpha/publish', methods=['POST'])
+def api_alpha_publish():
+    """Ingest today's report from smolting. Shared secret, not the holder gate."""
+    if not ALPHA_PUBLISH_TOKEN:
+        return jsonify({'error': 'alpha publishing not configured'}), 404
+    supplied = request.headers.get('X-Alpha-Token', '')
+    # Constant-time: a length-leaking == on a shared secret is worth avoiding
+    # even when the window is small.
+    if not hmac.compare_digest(supplied, ALPHA_PUBLISH_TOKEN):
+        audit_log('alpha_publish', 'system', '', 'unauthorized', {})
+        return jsonify({'error': 'unauthorized'}), 401
+
+    data = request.get_json(silent=True) or {}
+    report = (data.get('report') or '').strip()
+    if not report:
+        return jsonify({'error': 'report required'}), 400
+
+    payload = {
+        'report':       report[:20000],
+        'published_at': datetime.now(timezone.utc).isoformat(timespec='seconds'),
+        'source':       (data.get('source') or 'smolting')[:40],
+    }
+    _alpha_store(payload)
+    audit_log('alpha_publish', 'system', '', 'success', {'chars': len(payload['report'])})
+    logger.info(f"[alpha] published {len(payload['report'])} chars from {payload['source']}")
+    return jsonify({'ok': True, 'published_at': payload['published_at']})
+
+
+@app.route('/api/alpha', methods=['GET'])
+def api_alpha():
+    """The report itself. Requires the alpha-feed grant on this session."""
+    grants = session.get('grants') or []
+    if ALPHA_GRANT not in grants:
+        # Tell them the real threshold rather than the bottom of the ladder.
+        try:
+            import swarm_core.tokens as _tokens
+            need = _tokens.threshold_for_grant(ALPHA_GRANT)
+        except Exception:  # noqa: BLE001
+            need = None
+        return jsonify({
+            'error':         'locked',
+            'required_grant': ALPHA_GRANT,
+            'min_required':  need,
+            'tier':          session.get('tier'),
+            'authenticated': bool(session.get('authenticated')),
+        }), 403
+
+    payload = _alpha_load()
+    if not payload:
+        return jsonify({'error': 'no_report_yet'}), 404
+    audit_log('alpha_read', session.get('session_id', 'unknown'), '', 'success',
+              {'tier': session.get('tier')})
+    return jsonify(payload)
+
 
 # ── Telegram bot event bridge ─────────────────────────────────────────────────
 

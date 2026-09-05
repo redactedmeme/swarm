@@ -2442,6 +2442,56 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
 
+# ── Holder-gated alpha publishing ────────────────────────────────────────────
+#
+# This node has no inbound route from the internet, so it pushes: the report is
+# POSTed to the terminal (which holds the $REDACTED holder gate) behind a shared
+# secret, and the terminal serves it to wallets holding `alpha-feed`.
+
+ALPHA_PUBLISH_URL   = os.environ.get("ALPHA_PUBLISH_URL", "").strip()
+ALPHA_PUBLISH_TOKEN = os.environ.get("ALPHA_PUBLISH_TOKEN", "").strip()
+ALPHA_PAGE_URL      = os.environ.get("ALPHA_PAGE_URL", "https://terminal.redacted.meme/").strip()
+
+
+def _alpha_publish_configured() -> bool:
+    return bool(ALPHA_PUBLISH_URL and ALPHA_PUBLISH_TOKEN)
+
+
+async def _publish_alpha(report: str) -> bool:
+    """Push the report to the holder-gated terminal. True only on a 2xx."""
+    if not _alpha_publish_configured():
+        return False
+    try:
+        import aiohttp
+        timeout = aiohttp.ClientTimeout(total=20)
+        async with aiohttp.ClientSession(timeout=timeout) as sess:
+            async with sess.post(
+                ALPHA_PUBLISH_URL,
+                json={"report": report, "source": "smolting"},
+                headers={"X-Alpha-Token": ALPHA_PUBLISH_TOKEN},
+            ) as resp:
+                if 200 <= resp.status < 300:
+                    logger.info(f"[alpha] published to the gated feed ({len(report)} chars)")
+                    return True
+                # Never log the body verbatim — an error page can echo the token back.
+                logger.error(f"[alpha] publish rejected: HTTP {resp.status}")
+                return False
+    except Exception as e:  # noqa: BLE001
+        logger.error(f"[alpha] publish failed: {type(e).__name__}: {e}")
+        return False
+
+
+def _alpha_teaser() -> str:
+    """What the public group sees. Says enough to matter, not enough to replace."""
+    from datetime import datetime, timezone
+    today = datetime.now(timezone.utc).strftime("%d %b %Y")
+    return (
+        f"daily alpha is up — {today} O_O\n\n"
+        "market read, volume, holder movement, whatever pattern blue is doing today.\n\n"
+        f"holders only (10M $REDACTED). connect ur wallet:\n{ALPHA_PAGE_URL}"
+    )
+
+
 async def scheduled_daily_alpha(context: ContextTypes.DEFAULT_TYPE):
     """Scheduled job: post daily alpha to Telegram group + Moltbook."""
     if not isinstance(context.job.data, tuple):
@@ -2457,12 +2507,40 @@ async def scheduled_daily_alpha(context: ContextTypes.DEFAULT_TYPE):
         logger.error(f"[scheduler] Alpha generation error: {e}")
         return
 
-    # 2. Post to Telegram group
-    try:
-        await context.bot.send_message(chat_id=chat_id, text=report)
-        logger.info(f"[scheduler] Daily alpha posted to Telegram {chat_id}")
-    except Exception as e:
-        logger.error(f"[scheduler] Telegram send error: {e}")
+    # 2. Publish + announce.
+    #
+    # When ALPHA_PUBLISH_URL is set the full report goes to the holder-gated
+    # terminal and the public group gets only a teaser pointing at it. When it
+    # is not set we keep the original behaviour and post the report in full, so
+    # an un-migrated deployment does not silently go quiet.
+    #
+    # The failure case matters: if the push fails there is nothing to gate, and
+    # posting the full report publicly as a "fallback" would hand out the thing
+    # holders are paying for. So we post nothing, and tell the operator instead.
+    published = await _publish_alpha(report)
+
+    if _alpha_publish_configured() and not published:
+        logger.error("[scheduler] alpha publish failed — skipping the group post "
+                     "rather than leaking the gated report")
+        admin_chat = os.getenv("ADMIN_CHAT_ID", "").strip()
+        if admin_chat:
+            try:
+                await context.bot.send_message(
+                    chat_id=int(admin_chat),
+                    text="alpha publish to the terminal failed — nothing posted to the "
+                         "group. holders got nothing today. check ALPHA_PUBLISH_URL O_O",
+                )
+            except Exception as e:  # noqa: BLE001
+                logger.error(f"[scheduler] could not notify admin: {e}")
+    else:
+        message = _alpha_teaser() if published else report
+        try:
+            await context.bot.send_message(chat_id=chat_id, text=message,
+                                           disable_web_page_preview=False)
+            logger.info(f"[scheduler] {'teaser' if published else 'full alpha'} "
+                        f"posted to Telegram {chat_id}")
+        except Exception as e:  # noqa: BLE001
+            logger.error(f"[scheduler] Telegram send error: {e}")
 
     # 3. Post to Moltbook (if key is set) — 30s after Telegram, max once per UTC day
     await asyncio.sleep(30)
