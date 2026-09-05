@@ -309,6 +309,33 @@ services:
     restart: always
     network_mode: host
 
+  # Public read-only feed: coarse mesh liveness, the price sheet, the treasury
+  # ledger. This node has no inbound route from the internet and redacted.meme's
+  # DNS is not on Cloudflare, so the feed is PUSHED to the website rather than
+  # pulled: STATUS_PUSH_URL + the token in .env.status (its own file, because the
+  # shared .env is loaded wholesale by proxy and refinery, neither of which
+  # needs it).
+  status:
+    build:
+      context: /home/umbrel/swarm
+      dockerfile: apps/status/Dockerfile
+    container_name: swarm-status
+    environment:
+      REDIS_URL: redis://:${REDIS_PASSWORD}@swarm-redis:6379/0
+      PORT: "8098"
+      ALLOW_ORIGIN: https://redacted.meme
+      PYTHONUNBUFFERED: "1"
+      STATUS_PUSH_URL: https://redacted.meme/api/swarm/publish
+      STATUS_PUSH_INTERVAL: "60"
+    env_file:
+      - .env.status
+    ports:
+      - "127.0.0.1:8098:8098"
+    depends_on:
+      redis:
+        condition: service_healthy
+    restart: always
+
   # Settlement ledger + on-chain burn executor. The ONLY component that holds
   # the treasury private key — hence its own git-ignored .env.settler, never
   # the shared .env that refinery/proxy load. Burns are gated: SETTLEMENT_EXECUTE

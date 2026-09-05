@@ -490,6 +490,81 @@ async def api_swarm(request: web.Request) -> web.Response:
     _api_cache[cache_key] = (now, payload)
     return _json(payload)
 
+# ── Push to the public mirror ─────────────────────────────────────────────────
+#
+# This node has no inbound route from the internet, and redacted.meme's DNS is
+# not on Cloudflare, so a tunnelled public hostname for it is not available.
+# Instead the node pushes: the same payload `/api/swarm` serves is POSTed to the
+# website behind a shared secret, and the website serves it to visitors.
+#
+# It fetches its own endpoint over loopback rather than rebuilding the payload.
+# That costs one local request per interval and guarantees the mirror cannot
+# drift from what this service would have served directly.
+
+STATUS_PUSH_URL = os.environ.get("STATUS_PUSH_URL", "").strip()
+STATUS_PUSH_TOKEN = os.environ.get("STATUS_PUSH_TOKEN", "").strip()
+STATUS_PUSH_INTERVAL = int(os.environ.get("STATUS_PUSH_INTERVAL", "60") or 60)
+
+
+def _push_configured() -> bool:
+    return bool(STATUS_PUSH_URL and STATUS_PUSH_TOKEN)
+
+
+async def _push_once(session) -> bool:
+    """One fetch-and-forward. Never raises; returns True only on a 2xx."""
+    try:
+        async with session.get(f"http://127.0.0.1:{PORT}/api/swarm") as r:
+            if r.status != 200:
+                log.warning("push: local /api/swarm returned %s", r.status)
+                return False
+            payload = await r.json()
+    except Exception as exc:  # noqa: BLE001
+        log.warning("push: could not read local payload: %s", exc)
+        return False
+
+    try:
+        async with session.post(
+            STATUS_PUSH_URL,
+            json=payload,
+            headers={"X-Status-Token": STATUS_PUSH_TOKEN},
+        ) as r:
+            if 200 <= r.status < 300:
+                return True
+            # Never log the body: an error page can echo the token back.
+            log.warning("push: mirror rejected with HTTP %s", r.status)
+            return False
+    except Exception as exc:  # noqa: BLE001
+        log.warning("push: mirror unreachable: %s", type(exc).__name__)
+        return False
+
+
+async def _push_loop(app: web.Application) -> None:
+    import aiohttp
+
+    timeout = aiohttp.ClientTimeout(total=20)
+    # on_startup fires before aiohttp binds the port, so an immediate first
+    # push would always fail to reach our own loopback. Wait for the listener
+    # rather than logging a warning on every cold start.
+    for _ in range(20):
+        try:
+            reader, writer = await asyncio.open_connection("127.0.0.1", PORT)
+            writer.close()
+            await writer.wait_closed()
+            break
+        except OSError:
+            await asyncio.sleep(0.5)
+
+    async with aiohttp.ClientSession(timeout=timeout) as session:
+        ok_last = None
+        while True:
+            ok = await _push_once(session)
+            # Log transitions, not every tick — this runs all day.
+            if ok != ok_last:
+                log.info("push: %s -> %s", STATUS_PUSH_URL, "ok" if ok else "failing")
+                ok_last = ok
+            await asyncio.sleep(STATUS_PUSH_INTERVAL)
+
+
 async def make_app() -> web.Application:
     import redis.asyncio as aioredis
 
@@ -503,6 +578,26 @@ async def make_app() -> web.Application:
         await app_["redis"].aclose()
 
     app.on_cleanup.append(close_redis)
+
+    if _push_configured():
+        async def start_push(app_):
+            app_["push_task"] = asyncio.create_task(_push_loop(app_))
+            log.info("push: mirroring to %s every %ss", STATUS_PUSH_URL, STATUS_PUSH_INTERVAL)
+
+        async def stop_push(app_):
+            task = app_.get("push_task")
+            if task:
+                task.cancel()
+                try:
+                    await task
+                except asyncio.CancelledError:
+                    pass
+
+        app.on_startup.append(start_push)
+        app.on_cleanup.append(stop_push)
+    else:
+        log.info("push: not configured (STATUS_PUSH_URL / STATUS_PUSH_TOKEN unset)")
+
     return app
 
 

@@ -9,6 +9,7 @@ Serves the landing page and proxies one small piece of live data:
                     traffic. Any failure degrades to {"agents": []}, which the front end
                     renders as an absent section rather than an error.
 """
+import hmac
 import json
 import os
 import pathlib
@@ -69,7 +70,12 @@ _cache = {'ts': 0.0, 'payload': {'agents': []}}
 
 
 def _fetch_swarm_status():
-    """Fetch and re-shape the upstream status payload. Never raises."""
+    """Fetch and re-shape the upstream status payload. Never raises.
+
+    Only used when SWARM_STATUS_URL is set. The node has no inbound route from
+    the internet, so the supported path is the push below; this pull remains for
+    a deployment that can reach its node directly.
+    """
     if not SWARM_STATUS_URL:
         return {'agents': []}
     try:
@@ -80,13 +86,20 @@ def _fetch_swarm_status():
             raw = json.loads(r.read().decode('utf-8'))
     except (urllib.error.URLError, OSError, ValueError, json.JSONDecodeError):
         return {'agents': []}
+    return _project(raw)
 
+
+def _project(raw):
+    """Re-project an upstream payload onto exactly the fields this page renders.
+
+    The same whitelist applies whether the payload was pulled or pushed —
+    anything the upstream adds later stays off the public surface until it is
+    deliberately allowed here.
+    """
     agents = raw.get('agents')
     if not isinstance(agents, list):
         return {'agents': []}
 
-    # Re-project onto exactly the fields the page renders — anything the upstream
-    # adds later stays off the public surface until it is deliberately allowed here.
     clean = []
     for a in agents:
         if not isinstance(a, dict) or not a.get('id'):
@@ -198,9 +211,56 @@ def _clean_treasury(raw):
     return out
 
 
+# ── Pushed status ─────────────────────────────────────────────────────────────
+#
+# The swarm node has no inbound route from the internet, and redacted.meme's DNS
+# is not on Cloudflare, so a tunnelled hostname for the node is not available.
+# The node therefore pushes: apps/status POSTs its payload here behind a shared
+# secret, and this serves it.
+#
+# Freshness is the thing to get right. A pull that fails renders an absent
+# section, which is honest. A push that stops would leave the last payload
+# sitting here reading "online" forever, so anything older than STATUS_MAX_AGE
+# is discarded and the page goes back to showing nothing.
+
+STATUS_PUSH_TOKEN = os.environ.get('STATUS_PUSH_TOKEN', '').strip()
+STATUS_MAX_AGE = float(os.environ.get('STATUS_MAX_AGE', '300'))
+
+_pushed = {'ts': 0.0, 'payload': None}
+
+
+@app.route('/api/swarm/publish', methods=['POST'])
+def api_swarm_publish():
+    if not STATUS_PUSH_TOKEN:
+        return jsonify({'error': 'status publishing not configured'}), 404
+    supplied = request.headers.get('X-Status-Token', '')
+    if not hmac.compare_digest(supplied, STATUS_PUSH_TOKEN):
+        return jsonify({'error': 'unauthorized'}), 401
+
+    raw = request.get_json(silent=True)
+    if not isinstance(raw, dict) or not isinstance(raw.get('agents'), list):
+        return jsonify({'error': 'payload must carry an agents list'}), 400
+
+    payload = _project(raw)
+    with _cache_lock:
+        _pushed['ts'] = time.time()
+        _pushed['payload'] = payload
+    return jsonify({'ok': True, 'agents': len(payload.get('agents') or [])})
+
+
 @app.route('/api/swarm')
 def api_swarm():
     now = time.time()
+
+    # A fresh push always wins; it is the only path that works for the node.
+    with _cache_lock:
+        pushed, pushed_ts = _pushed['payload'], _pushed['ts']
+    if pushed is not None and now - pushed_ts < STATUS_MAX_AGE:
+        resp = jsonify(pushed)
+        resp.headers['Cache-Control'] = 'public, max-age=30'
+        resp.headers['Access-Control-Allow-Origin'] = '*'
+        return resp
+
     with _cache_lock:
         fresh = now - _cache['ts'] < SWARM_CACHE_TTL
         payload = _cache['payload']
