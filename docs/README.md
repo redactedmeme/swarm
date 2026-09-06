@@ -23,7 +23,8 @@ optional.
 | 6 | [`architecture/ADR-001-sovereign-orchestrator.md`](architecture/ADR-001-sovereign-orchestrator.md) | *Why is the orchestrator built this way?* |
 | 7 | [`architecture/pattern-blue-kernel-bridge.md`](architecture/pattern-blue-kernel-bridge.md) | *How does the philosophy map onto real constructs?* — Kernel↔Contract bridge (v2.2). |
 | 8 | [`architecture/directory-tree.md`](architecture/directory-tree.md) | *Where does everything live?* |
-| 9 | [`history/UPGRADE_LOG.md`](history/UPGRADE_LOG.md) | *What changed and when?* |
+| 9 | [`architecture/hyperbolic-geometry-primer.md`](architecture/hyperbolic-geometry-primer.md) | *Why hyperbolic space?* — Background for the `{7,3}` kernel and curvature depth. |
+| 10 | [`history/UPGRADE_LOG.md`](history/UPGRADE_LOG.md) | *What changed and when?* |
 
 ### Lore — optional
 
