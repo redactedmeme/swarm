@@ -90,6 +90,27 @@ Numerics matter: points hugging the Poincaré boundary have huge gradients;
 Lorentz models have their own overflow issues. In practice people clip radii,
 use gyrovector ops carefully, or keep only a few hyperbolic layers.
 
+## How the `{7,3}` kernel uses this
+
+[`kernel/hyperbolic_kernel.py`](../../packages/swarm-core/src/swarm_core/kernel/hyperbolic_kernel.py)
+is a loose, deliberately stylised application of the ideas above — a scheduler
+and organism-lifecycle sim, not a trained embedding model. The mapping:
+
+| Primer concept | Kernel construct |
+|---|---|
+| Poincaré disk model | `HyperbolicCoordinate` (`x`, `y`, `radius`); `distance_to` is the exact disk geodesic `2·arctanh(\|z1−z2\| / \|1−z̄1·z2\|)` |
+| `{p,q}` tiling — each node branches `p` ways | `_expand_tile()` spawns exactly 7 children per tile (`{7,3}` Schläfli symbol), recursively, to a bounded `depth` |
+| Radius encodes depth / specificity | child tiles are placed at `radius = 0.3 / (depth + 1)` — deeper tiles sit closer together, mirroring how hyperbolic area lets branches crowd the rim without overlapping |
+| Exponential growth of "room" further out | expansion is demand-driven: `_expand_manifold()` fires only when every tile is occupied, then drops global `curvature` by 5% (`curvature *= 0.95`) |
+| Negative curvature propagates influence non-locally | `_propagate_curvature_change()` (観測波動, "observation wave") pushes `curvature_pressure` outward through `tile.neighbors` with distance dampening |
+| Placement follows the geometry, not a central plan | `schedule_process()` scores every free tile (`_calculate_placement_score`) on local + neighbour `curvature_pressure` and picks the best — no central assignment |
+
+So "curvature depth" in the terminal (`/chamber descend`, `/observe pattern`) is
+literally movement to higher-`depth`, smaller-`radius` tiles: further from the
+root concept, into a region the geometry keeps making room for. None of this is
+learned — it is the tree-in-hyperbolic-space intuition used as an architecture
+metaphor and a scheduling heuristic.
+
 ## Geometric picture in one sentence
 
 Euclidean embeddings treat "cat" and "animal" as two points of similar status.

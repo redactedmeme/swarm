@@ -24,7 +24,8 @@ optional.
 | 7 | [`architecture/pattern-blue-kernel-bridge.md`](architecture/pattern-blue-kernel-bridge.md) | *How does the philosophy map onto real constructs?* — Kernel↔Contract bridge (v2.2). |
 | 8 | [`architecture/directory-tree.md`](architecture/directory-tree.md) | *Where does everything live?* |
 | 9 | [`architecture/hyperbolic-geometry-primer.md`](architecture/hyperbolic-geometry-primer.md) | *Why hyperbolic space?* — Background for the `{7,3}` kernel and curvature depth. |
-| 10 | [`history/UPGRADE_LOG.md`](history/UPGRADE_LOG.md) | *What changed and when?* |
+| 10 | [`architecture/beam-scot.md`](architecture/beam-scot.md) | *What is BEAM-SCoT?* — Parallel branch reasoning: angles, scoring, providers. |
+| 11 | [`history/UPGRADE_LOG.md`](history/UPGRADE_LOG.md) | *What changed and when?* |
 
 ### Lore — optional
 
