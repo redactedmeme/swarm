@@ -160,3 +160,29 @@ def test_http_health_no_auth(monkeypatch):
         assert r.status == 200
         assert "browser" in await r.json()
     _run_http(monkeypatch, body)
+
+
+# ── shell environment scrubbing ──────────────────────────────────────────────
+
+def test_shell_env_drops_service_credentials(monkeypatch):
+    monkeypatch.setenv("WORKSPACE_TOKEN_HERMES", "super-secret")
+    monkeypatch.setenv("REDIS_URL", "redis://:password@127.0.0.1:6379")
+    monkeypatch.setenv("EGRESS_TOKEN_WORKSPACE", "egress-secret")
+
+    env = ws._shell_env("hermes")
+
+    assert "WORKSPACE_TOKEN_HERMES" not in env
+    assert "REDIS_URL" not in env
+    assert "EGRESS_TOKEN_WORKSPACE" not in env
+    assert env["HOME"] == str(ws.agent_root("hermes"))
+    assert env["PATH"]
+
+
+def test_shell_env_keeps_proxy_settings(monkeypatch):
+    monkeypatch.setenv("HTTPS_PROXY", "http://swarm:tok@127.0.0.1:8891")
+    monkeypatch.setenv("NO_PROXY", "127.0.0.1,localhost")
+
+    env = ws._shell_env("hermes")
+
+    assert env["HTTPS_PROXY"] == "http://swarm:tok@127.0.0.1:8891"
+    assert env["NO_PROXY"] == "127.0.0.1,localhost"

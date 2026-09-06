@@ -9,6 +9,7 @@ that need DNS-resolution-time checks should layer them on top, not replace this.
 """
 from __future__ import annotations
 
+import ipaddress
 import re
 from urllib.parse import urlparse
 
@@ -50,6 +51,26 @@ def is_blocked(url: str) -> bool:
 
     if _BLOCKED_172_RE.match(host):
         return True
+
+    # Anything that parses as an IP literal gets the real check: this catches
+    # IPv6 loopback (``[::1]``), unique-local (fc00::/7), IPv4-mapped v6
+    # (``::ffff:127.0.0.1``) and integer/octal-encoded IPv4 (``http://2130706433/``),
+    # none of which the substring table above can see.
+    try:
+        ip = ipaddress.ip_address(host.strip("[]"))
+    except ValueError:
+        ip = None
+    if ip is None and host.isdigit():
+        try:
+            ip = ipaddress.ip_address(int(host))
+        except ValueError:
+            ip = None
+    if ip is not None:
+        if isinstance(ip, ipaddress.IPv6Address) and ip.ipv4_mapped is not None:
+            ip = ip.ipv4_mapped
+        if (ip.is_private or ip.is_loopback or ip.is_link_local
+                or ip.is_reserved or ip.is_multicast or ip.is_unspecified):
+            return True
 
     return False
 

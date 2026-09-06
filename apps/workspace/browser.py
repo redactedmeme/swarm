@@ -100,6 +100,22 @@ async def goto(agent: str, url: str, session: str = "default") -> dict:
         return _err("browser unavailable — playwright not installed")
     except Exception as e:
         return _err(f"navigation failed: {e}")
+
+    # The guard above only vetted the URL we asked for. Playwright follows
+    # redirects, so a hostile site can 302 us onto loopback or the cloud
+    # metadata endpoint. Re-check where we actually landed and blank the page
+    # before any content can be read off it.
+    final_url = page.url
+    if _ssrf_blocked(final_url):
+        try:
+            await page.goto("about:blank", timeout=_NAV_TIMEOUT_MS)
+        except Exception:
+            pass
+        session_for(agent).open_pages.pop(session, None)
+        _record(agent, "workspace.browser_goto", "block",
+                {"url": url[:200], "final_url": final_url[:200], "reason": "ssrf-redirect"})
+        return _err(f"redirect landed on a blocked host: {final_url}")
+
     session_for(agent).open_pages[session] = url
     _record(agent, "workspace.browser_goto", "allow",
             {"url": url[:200], "session": session, "status": getattr(resp, "status", None)})

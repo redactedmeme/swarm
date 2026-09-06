@@ -39,7 +39,13 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(mess
 log = logging.getLogger("workspace")
 
 SOCK = os.getenv("WORKSPACE_SOCK", "/run/workspace/workspace.sock")
+_SAFE_AGENT_RE = __import__("re").compile(r"^[a-z0-9][a-z0-9_-]{0,63}$")
 MAX_BODY = 4 * 1024 * 1024
+
+try:
+    from swarm_core.security.identity import AgentId as _AgentId
+except Exception:  # pragma: no cover
+    _AgentId = None
 
 try:
     from swarm_core.security.secrets import get_secret as _get_secret
@@ -59,6 +65,15 @@ def _auth(request: web.Request) -> str:
     got = request.headers.get("Authorization", "").removeprefix("Bearer ").strip()
     if not agent or not got:
         raise web.HTTPUnauthorized(text="missing X-Swarm-Agent or bearer token")
+    # The name is used to build an env var name and a filesystem root, so it has
+    # to be validated here rather than trusted from the header.
+    if not _SAFE_AGENT_RE.match(agent):
+        raise web.HTTPUnauthorized(text="invalid agent name")
+    if _AgentId is not None:
+        try:
+            agent = str(_AgentId(agent))
+        except Exception:
+            raise web.HTTPUnauthorized(text="unknown agent")
     want = _token_for(agent)
     if not want or not hmac.compare_digest(got, want):
         raise web.HTTPUnauthorized(text="bad token for agent")
@@ -228,13 +243,21 @@ def build_app() -> web.Application:
     return app
 
 
+async def _chmod_sock(_app):
+    """run_app() blocks until shutdown, so this has to happen on startup — the
+    socket is created by then, and a 0o660 socket is what keeps the caller set
+    to the containers that share the volume."""
+    try:
+        os.chmod(SOCK, 0o660)
+    except OSError as e:  # pragma: no cover
+        log.warning("could not chmod %s: %s", SOCK, e)
+
+
 if __name__ == "__main__":  # pragma: no cover
     os.makedirs(os.path.dirname(SOCK), exist_ok=True)
     if os.path.exists(SOCK):
         os.unlink(SOCK)
+    app = build_app()
+    app.on_startup.append(_chmod_sock)
     log.info("workspace listening on %s", SOCK)
-    web.run_app(build_app(), path=SOCK, print=None)
-    try:
-        os.chmod(SOCK, 0o660)
-    except OSError:
-        pass
+    web.run_app(app, path=SOCK, print=None)

@@ -80,3 +80,29 @@ def test_ssrf_guard():
         "http://172.15.0.1", "http://172.32.0.1",
     ]:
         assert not is_blocked(ok), ok
+
+
+# ── SSRF guard: IP-literal forms the substring table cannot see ──────────────
+
+def test_ssrf_blocks_ipv6_loopback_and_ula():
+    from swarm_core.web import is_blocked
+
+    assert is_blocked("http://[::1]/")
+    assert is_blocked("http://[fc00::1]/")
+    assert is_blocked("http://[fe80::1]/")
+    assert is_blocked("http://[::ffff:127.0.0.1]/")
+
+
+def test_ssrf_blocks_integer_encoded_ipv4():
+    from swarm_core.web import is_blocked
+
+    assert is_blocked("http://2130706433/")   # 127.0.0.1
+    assert is_blocked("http://0/")
+
+
+def test_ssrf_still_allows_public_hosts():
+    from swarm_core.web import is_blocked
+
+    assert not is_blocked("https://example.com/page")
+    assert not is_blocked("https://8.8.8.8/")
+    assert not is_blocked("http://172.32.1.1/")  # just outside 172.16/12

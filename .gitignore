@@ -119,6 +119,8 @@ handoff.md
 /audit/
 **/*_audit.jsonl
 audit/*.jsonl
+# runtime audit logs written by the local terminal / web app
+fs/audit/
 
 # project-local installed Claude skills (source: packaging/claude-skill/)
 .claude/skills/

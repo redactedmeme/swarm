@@ -217,6 +217,26 @@ def _disk_usage(agent: str) -> int:
     return total
 
 
+# The container env carries this service's own credentials — every agent's
+# WORKSPACE_TOKEN_*, the egress token, and REDIS_URL with the mesh password. The
+# shell is agent-facing, so `env` inside it would hand one agent the keys to
+# impersonate every other agent and to read the mesh Redis directly. Pass a
+# scrubbed environment: an allowlist of inert vars plus the proxy
+# settings (whose token only names the caller identity the shell already has,
+# and whose destinations the allowlist still constrains).
+_ENV_ALLOW = (
+    "PATH", "LANG", "LC_ALL", "TZ", "TERM",
+    "HTTP_PROXY", "HTTPS_PROXY", "NO_PROXY",
+    "http_proxy", "https_proxy", "no_proxy",
+)
+def _shell_env(agent: str) -> dict:
+    env = {k: v for k, v in os.environ.items() if k in _ENV_ALLOW}
+    env.setdefault("PATH", "/usr/local/bin:/usr/bin:/bin")
+    env["HOME"] = str(agent_root(agent))
+    env["SWARM_AGENT"] = agent
+    return env
+
+
 # ── shell ────────────────────────────────────────────────────────────────────
 
 async def shell(agent: str, cmd: str, *, timeout: int | None = None, cwd: str = "") -> dict:
@@ -232,7 +252,7 @@ async def shell(agent: str, cmd: str, *, timeout: int | None = None, cwd: str = 
         cwd=str(workdir),
         stdout=asyncio.subprocess.PIPE,
         stderr=asyncio.subprocess.PIPE,
-        env={**os.environ, "HOME": str(agent_root(agent))},
+        env=_shell_env(agent),
     )
     t0 = time.monotonic()
     timed_out = False
