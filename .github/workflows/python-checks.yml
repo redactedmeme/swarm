@@ -107,3 +107,27 @@ jobs:
             fi
           done
           exit $fail
+
+  secrets:
+    name: no committed credentials
+    runs-on: ubuntu-latest
+    steps:
+      # Fetch enough history to diff a PR against its base.
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      # The gap that let a live bot token reach this repo: leakscan was wired
+      # into the log, egress and send paths, but nothing ever ran it over the
+      # source. The pre-commit hook catches it locally; this catches it when
+      # the hook is not installed, which is the case for every fresh clone.
+      - name: Scan the tracked tree
+        run: python scripts/secret_scan.py --tree
+
+      - name: Scan the pull request diff
+        if: github.event_name == 'pull_request'
+        run: |
+          python scripts/secret_scan.py             --range "origin/${{ github.base_ref }}..HEAD"

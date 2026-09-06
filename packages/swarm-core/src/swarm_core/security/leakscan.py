@@ -125,6 +125,7 @@ _RULES: tuple[_Rule, ...] = (
             r"(?![a-z_][a-z0-9_.-]*(?:[\s\"',)(#]|$))"
             r"(?![A-Z][A-Z0-9_]*(?:[\s\"',)#]|$))"
             r"(?![A-Za-z_][A-Za-z0-9_]*\.[A-Za-z_][A-Za-z0-9_]*(?:[\s\"',)#(]|$))"
+            r"(?![1-9A-HJ-NP-Za-km-z]{32,44}(?:[\s\"',)#]|$))"
             r"[A-Za-z0-9+/=_.~-]{16,}"
         ),
         "block",
@@ -135,7 +136,7 @@ _RULES: tuple[_Rule, ...] = (
 
 # Literal fragments that make a match a false positive regardless of rule.
 _ALLOW = re.compile(
-    r"(?i)(?:example|placeholder|redacted|your[-_]?key|xxxx+|0{16,}|f{16,}|\bdummy\b|<[a-z_]+>)"
+    r"(?i)(?:example|placeholder|redacted|your[-_]?key|xxxx+|0{16,}|f{16,}|\bdummy\b|changeme|<[a-z_]+>)"
 )
 
 _SEVERITY_RANK = {"warn": 0, "redact": 1, "block": 2}
