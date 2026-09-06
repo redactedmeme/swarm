@@ -72,7 +72,17 @@ _RULES: tuple[_Rule, ...] = (
     ),
     _Rule(
         "bip39_mnemonic",
-        re.compile(r"\b(?:[a-z]{3,8}\s+){11,23}[a-z]{3,8}\b"),
+        # Every word must be BIP-39-shaped AND not an English function word.
+        # The bare lowercase-word-run shape matched any prose sentence, which
+        # at block severity refuses ordinary docs commits. None of the words
+        # excluded below appear in the BIP-39 English wordlist.
+        re.compile(
+            r"\b(?:(?!(?:the|and|are|that|this|with|for|not|was|been|but|has"
+            r"|its|their|they|you|from|were|these|those|could|should|would"
+            r"|most|such|each|because|while|during|through|without|within"
+            r"|does|did|also|both|here|our|some|any|per|via)\b)"
+            r"[a-z]{3,8}\s+){11,23}[a-z]{3,8}\b"
+        ),
         "block",
     ),
     _Rule(
@@ -87,6 +97,38 @@ _RULES: tuple[_Rule, ...] = (
     ),
     _Rule("bearer_header", re.compile(r"[Aa]uthorization:\s*Bearer\s+[A-Za-z0-9._-]{20,}"), "redact"),
     _Rule("jwt", re.compile(r"\beyJ[A-Za-z0-9_-]{10,}\.eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}"), "redact"),
+    # Solana keypairs also travel base58-encoded (the form wallet UIs export),
+    # which the JSON-array rule above does not see. 86-88 chars, no 0/O/I/l.
+    _Rule(
+        "solana_base58_key",
+        re.compile(r"(?<![1-9A-HJ-NP-Za-km-z])[1-9A-HJ-NP-Za-km-z]{86,88}(?![1-9A-HJ-NP-Za-km-z])"),
+        "block",
+    ),
+    # Name-shaped catch-all: a variable whose NAME says secret, assigned a
+    # literal. The provider-prefix rules above only cover providers we thought
+    # of; this covers the ones we did not (SWARM_WALLET_KEK, SWARM_INBOX_HMAC_KEY,
+    # RAILWAY_TOKEN, a WireGuard PrivateKey). Values that are plainly references
+    # rather than literals ($VAR, os.getenv(...), {{tpl}}) are excluded.
+    _Rule(
+        "assigned_secret",
+        re.compile(
+            r"(?i)[A-Za-z0-9_.-]{0,40}"
+            r"(?:secret|password|passwd|api[_-]?key|access[_-]?key|private[_-]?key"
+            r"|privkey|bot[_-]?token|auth[_-]?token|_token|token|kek|[_-]key"
+            r"|mnemonic|seed[_-]?phrase|credential)"
+            # not a public on-chain id or a path/name knob
+            r"(?!(?:_?(?:mint|contract|address|program_id|file|path|env|name|map|id)))"
+            r"[A-Za-z0-9_]{0,20}\s*[:=]{1,2}\s*[\"']?"
+            # only literals: reject references, paths, bare identifiers,
+            # env-var NAMEs, and dotted attribute lookups
+            r"(?!\$|\{|<|/|os\.|process\.|getenv|None|null|true|false)"
+            r"(?![a-z_][a-z0-9_.-]*(?:[\s\"',)(#]|$))"
+            r"(?![A-Z][A-Z0-9_]*(?:[\s\"',)#]|$))"
+            r"(?![A-Za-z_][A-Za-z0-9_]*\.[A-Za-z_][A-Za-z0-9_]*(?:[\s\"',)#(]|$))"
+            r"[A-Za-z0-9+/=_.~-]{16,}"
+        ),
+        "block",
+    ),
     _Rule("hex_secret_64", re.compile(r"\b[0-9a-fA-F]{64}\b"), "warn"),
     _Rule("hex_secret_128", re.compile(r"\b[0-9a-fA-F]{128}\b"), "warn"),
 )

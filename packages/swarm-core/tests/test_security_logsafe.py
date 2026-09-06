@@ -11,7 +11,8 @@ import logging
 from swarm_core.security import logsafe
 
 # Shaped to match leakscan's telegram_bot_token rule (8-10 digits, ':', 35 chars).
-TOKEN = "8562183302:AAEbKPLQQM14Y_l16Kl8vRd3QOAFl3X5GHg"
+# MUST be synthetic. Never paste a live credential here to make the match realistic.
+TOKEN = "1234567890:AAFAKEfakeFAKEfakeFAKEfakeFAKEfake0"  # leakscan: allow
 URL = f"https://api.telegram.org/bot{TOKEN}/getUpdates"
 
 

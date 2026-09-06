@@ -49,7 +49,7 @@ def test_tool_call_spoof_removed():
 
 
 def test_secret_in_fetched_content_redacted_and_escalated():
-    payload = "Visit our API. Token: sk-proj-abcd1234EFGH5678ijkl9012mnop3456"
+    payload = "Visit our API. Token: sk-proj-abcd1234EFGH5678ijkl9012mnop3456"  # leakscan: allow
     r = promptguard.guard(payload, source="web:docs")
     assert "sk-proj-abcd1234" not in r.text
     assert r.leak_severity == "block"

@@ -81,7 +81,7 @@ async def test_outbound_secret_is_blocked(proxy_server, upstream):
     async with aiohttp.ClientSession() as s:
         async with s.get(
             f"http://127.0.0.1:{upstream}/x",
-            headers={"X-Leak": "sk-proj-abcd1234EFGH5678ijkl9012mnop"},
+            headers={"X-Leak": "sk-proj-abcd1234EFGH5678ijkl9012mnop"},  # leakscan: allow
             proxy=f"http://swarm:tok-test@127.0.0.1:{proxy_server}",
         ) as r:
             assert r.status == 451

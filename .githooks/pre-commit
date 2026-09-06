@@ -1,0 +1,92 @@
+#!/usr/bin/env python3
+"""Block a commit that stages secret-shaped material.
+
+Runs swarm_core.security.leakscan over the *added* lines of the staged diff.
+leakscan is loaded straight from the working tree, so the hook works whether or
+not the package is installed.
+
+`block`-severity rules abort the commit; `redact`/`warn` are advisory. Annotate
+a deliberate synthetic fixture with a trailing `leakscan: allow` comment on the
+line, or the line above. Emergency bypass: SWARM_SKIP_SECRET_SCAN=1 git commit
+"""
+from __future__ import annotations
+
+import importlib.util
+import os
+import subprocess
+import sys
+from pathlib import Path
+
+if os.environ.get("SWARM_SKIP_SECRET_SCAN") == "1":
+    sys.exit(0)
+
+
+def _load_leakscan():
+    root = Path(__file__).resolve().parent.parent
+    src = root / "packages/swarm-core/src/swarm_core/security/leakscan.py"
+    if not src.is_file():
+        return None
+    spec = importlib.util.spec_from_file_location("_leakscan_hook", src)
+    if spec is None or spec.loader is None:
+        return None
+    mod = importlib.util.module_from_spec(spec)
+    # dataclasses resolves the defining module via sys.modules during
+    # exec_module, so register it before executing.
+    sys.modules[spec.name] = mod
+    spec.loader.exec_module(mod)
+    return mod
+
+
+leakscan = _load_leakscan()
+if leakscan is None:
+    print("pre-commit: leakscan not found; cannot verify staged content.", file=sys.stderr)
+    print("            fix the checkout, or bypass with SWARM_SKIP_SECRET_SCAN=1", file=sys.stderr)
+    sys.exit(1)
+
+diff = subprocess.run(
+    ["git", "diff", "--cached", "--unified=0", "--no-color", "--diff-filter=ACMR"],
+    capture_output=True, text=True, errors="replace",
+).stdout
+
+findings: list[tuple[str, int, object]] = []
+path, lineno = "?", 0
+prev_added = ""
+
+for raw in diff.splitlines():
+    if raw.startswith("+++ b/"):
+        path, lineno = raw[6:], 0
+        prev_added = ""
+        continue
+    if raw.startswith("@@"):
+        try:
+            lineno = int(raw.split("+", 1)[1].split(",", 1)[0].split(" ", 1)[0]) - 1
+        except (IndexError, ValueError):
+            lineno = 0
+        prev_added = ""
+        continue
+    if not raw.startswith("+") or raw.startswith("+++"):
+        continue
+
+    lineno += 1
+    line = raw[1:]
+    if "leakscan: allow" in line or "leakscan: allow" in prev_added:
+        prev_added = line
+        continue
+    for m in leakscan.scan(line):
+        if m.severity == "block":
+            findings.append((path, lineno, m))
+    prev_added = line
+
+if findings:
+    print("\npre-commit: staged changes contain credential-shaped material.\n", file=sys.stderr)
+    for p, n, m in findings:
+        print(f"  {p}:{n}  [{m.rule}]  {m.preview}", file=sys.stderr)
+    print(
+        "\nIf this is a synthetic test fixture, append a `leakscan: allow` comment.\n"
+        "If it is real, do NOT commit it — rotate the credential first.\n"
+        "Bypass (last resort): SWARM_SKIP_SECRET_SCAN=1 git commit ...\n",
+        file=sys.stderr,
+    )
+    sys.exit(1)
+
+sys.exit(0)
