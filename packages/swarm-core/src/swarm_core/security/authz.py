@@ -59,11 +59,13 @@ _DEFAULT_POLICY: dict[str, Any] = {
         "secret.read",
         "docker.control",
         "inbox.broadcast_admin",
+        "social.post",
+        "workspace.shell",
     ],
     "grants": {
         # agent -> capabilities it may hold. "*" = any capability (still subject
         # to the approval gate for requires_approval entries).
-        "hermes": ["code.exec", "infra.deploy", "secret.read", "web.fetch", "inbox.send", "llm.call"],
+        "hermes": ["code.exec", "infra.deploy", "secret.read", "web.fetch", "inbox.send", "llm.call", "social.post", "workspace.shell", "workspace.browse"],
         "redactedbuilder": ["funds.transfer", "web.fetch", "inbox.send", "llm.call"],
         "redactedintern": ["infra.deploy", "inbox.send", "llm.call"],
         "redactedgovimprover": ["inbox.send", "llm.call"],
@@ -130,6 +132,56 @@ def _tok_key(tok: str) -> str:
     return f"authz:approval:{tok}"
 
 
+# Index of not-yet-resolved approvals, so a human surface (Telegram admin DM,
+# the Field Kit board) can enumerate what is waiting. Score = expiry epoch, so
+# expired entries reap on read. Entries are removed on grant / deny / expiry.
+_PENDING_INDEX = "authz:approval:pending"
+_EVENT_STREAM = "swarm:approvals:events"
+
+
+def _redacted_summary(rec: dict[str, Any]) -> str:
+    """A short, non-sensitive description of a requested action."""
+    d = rec.get("detail") or {}
+    for k in ("summary", "reason", "target", "action"):
+        v = d.get(k)
+        if isinstance(v, str) and v:
+            return v[:200]
+    return f"{rec.get('capability', '?')} requested by {rec.get('actor', '?')}"
+
+
+def _publish_event(kind: str, tok: str, rec: dict[str, Any]) -> None:
+    """Best-effort notify surface. Never raises."""
+    payload = {
+        "kind": kind,
+        "token": tok,
+        "actor": rec.get("actor"),
+        "capability": rec.get("capability"),
+        "summary": _redacted_summary(rec),
+        "created": rec.get("created"),
+        "expires": rec.get("created", time.time()) + int(_POLICY["approval_ttl"]),
+    }
+    try:
+        from . import audit as _audit
+
+        _audit.record("authz.approval", actor=str(rec.get("actor", "unknown")),
+                      decision={"requested": "pending", "granted": "allow",
+                                "denied": "deny"}.get(kind, "pending"),
+                      severity="warning" if kind != "granted" else "info",
+                      detail={"token": tok[:6], "capability": rec.get("capability"),
+                              "summary": payload["summary"]})
+    except Exception:
+        pass
+    r = _get_redis()
+    if r is not None:
+        try:
+            import json as _j
+
+            r.lpush(_EVENT_STREAM, _j.dumps(payload))
+            r.ltrim(_EVENT_STREAM, 0, 199)
+        except Exception:  # pragma: no cover
+            pass
+
+
 def request_approval(actor: str, capability: str, *, detail: dict | None = None) -> str:
     """Mint a pending approval and return its token. The token is *not* yet
     valid — an approver must call ``grant_approval(token)``.
@@ -149,10 +201,24 @@ def request_approval(actor: str, capability: str, *, detail: dict | None = None)
         import json as _j
 
         r.set(_tok_key(tok), _j.dumps(rec), ex=ttl)
+        try:
+            r.zadd(_PENDING_INDEX, {tok: rec["created"] + ttl})
+        except Exception:  # pragma: no cover
+            pass
     else:
         _mem_tokens[tok] = rec
     log.info("authz: approval requested actor=%s cap=%s tok=%s", actor, capability, tok[:6])
+    _publish_event("requested", tok, rec)
     return tok
+
+
+def _deindex(tok: str) -> None:
+    r = _get_redis()
+    if r is not None:
+        try:
+            r.zrem(_PENDING_INDEX, tok)
+        except Exception:  # pragma: no cover
+            pass
 
 
 def grant_approval(tok: str, *, approver: str = "operator") -> bool:
@@ -162,7 +228,73 @@ def grant_approval(tok: str, *, approver: str = "operator") -> bool:
     rec["state"] = "granted"
     rec["approver"] = approver
     _write_token(tok, rec)
+    _deindex(tok)
+    _publish_event("granted", tok, rec)
     return True
+
+
+def deny_approval(tok: str, *, approver: str = "operator", reason: str = "") -> bool:
+    """Explicit denial. Expiry is *also* a denial (the token simply vanishes),
+    but this lets a human reject immediately and record why."""
+    rec = _read_token(tok)
+    if not rec or rec.get("state") != "pending":
+        return False
+    rec["state"] = "denied"
+    rec["approver"] = approver
+    rec["deny_reason"] = reason[:200]
+    _write_token(tok, rec)
+    _deindex(tok)
+    _publish_event("denied", tok, rec)
+    return True
+
+
+def list_pending_approvals() -> list[dict[str, Any]]:
+    """Enumerate unresolved approvals for a human surface. Reaps expired
+    entries. Returns redacted records — no raw ``detail`` payloads."""
+    r = _get_redis()
+    now = time.time()
+    out: list[dict[str, Any]] = []
+    if r is not None:
+        try:
+            toks = r.zrange(_PENDING_INDEX, 0, -1)
+        except Exception:  # pragma: no cover
+            toks = []
+        stale: list[str] = []
+        for tok in toks:
+            rec = _read_token(tok)
+            if not rec or rec.get("state") != "pending":
+                stale.append(tok)
+                continue
+            out.append({
+                "token": tok,
+                "actor": rec.get("actor"),
+                "capability": rec.get("capability"),
+                "summary": _redacted_summary(rec),
+                "created": rec.get("created"),
+                "expires": rec.get("created", now) + int(_POLICY["approval_ttl"]),
+            })
+        if stale:
+            try:
+                r.zrem(_PENDING_INDEX, *stale)
+            except Exception:  # pragma: no cover
+                pass
+        return sorted(out, key=lambda e: e["created"])
+
+    for tok, rec in list(_mem_tokens.items()):
+        if rec.get("state") != "pending":
+            continue
+        if now - rec["created"] > int(_POLICY["approval_ttl"]):
+            _mem_tokens.pop(tok, None)
+            continue
+        out.append({
+            "token": tok,
+            "actor": rec.get("actor"),
+            "capability": rec.get("capability"),
+            "summary": _redacted_summary(rec),
+            "created": rec.get("created"),
+            "expires": rec["created"] + int(_POLICY["approval_ttl"]),
+        })
+    return sorted(out, key=lambda e: e["created"])
 
 
 def _read_token(tok: str) -> dict[str, Any] | None:

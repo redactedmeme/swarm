@@ -40,7 +40,10 @@ telegram = ["python-telegram-bot>=21"]
 solana = ["solana>=0.34", "solders>=0.21", "anchorpy>=0.19"]
 # mem0-memory plugin integration (lore_vault, gnosis_*, log_ingest, docs_ingest)
 memory = ["mem0ai>=0.0.1"]
-dev = ["pytest>=8.3", "pytest-asyncio>=0.21", "ruff>=0.6"]
+# swarm_core.web.extract — readable-content extraction. Absent is a supported
+# state (regex fallback); the self-contained service builds skip this.
+web = ["trafilatura>=1.8"]
+dev = ["pytest>=8.3", "pytest-asyncio>=0.21", "ruff>=0.6", "trafilatura>=1.8"]
 # `swarm` CLI -> native binary (scripts/build_executables.py). The .pyz target
 # needs nothing extra.
 build = ["pyinstaller>=6.0"]

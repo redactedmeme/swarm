@@ -320,7 +320,17 @@ class SwarmScheduler:
         self._running = False
 
         self._register_default_tasks()
+        self._register_promoted_routines()
         log.info(f"SwarmScheduler initialized ({len(self._tasks)} tasks, dry_run={dry_run})")
+
+    def _register_promoted_routines(self) -> None:
+        """Pick up routines distilled from demonstration (swarm_core.routines)."""
+        try:
+            from swarm_core.routines import load_routines
+            for task in load_routines():
+                self.register(task)
+        except Exception as e:  # noqa: BLE001 - never block scheduler startup
+            log.warning(f"promoted-routine load skipped: {e}")
 
     # ── Task registration ──────────────────────────────────────────────────────
 

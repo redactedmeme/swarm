@@ -20,6 +20,11 @@ try:
 except Exception:  # pragma: no cover
     _audit = None
 
+try:
+    from swarm_core.web import extract as _extract
+except Exception:  # pragma: no cover
+    _extract = None
+
 
 async def run(task: str, context: dict) -> tuple[str, str, list[str]]:
     url_match = re.search(r"https?://\S+", task)
@@ -44,8 +49,14 @@ async def run(task: str, context: dict) -> tuple[str, str, list[str]]:
     except Exception as e:
         return f"Failed to fetch URL: {e}", "", []
 
-    clean = re.sub(r"<[^>]+>", " ", raw)
-    clean = re.sub(r"\s+", " ", clean).strip()[:4000]
+    if _extract is not None:
+        doc = _extract(raw, url)
+        clean = (doc.get("markdown") or doc.get("text") or "")
+    else:
+        clean = ""
+    if not clean:
+        clean = re.sub(r"\s+", " ", re.sub(r"<[^>]+>", " ", raw)).strip()
+    clean = clean[:8000]
 
     verdict = promptguard.guard(clean, source=f"web:{url}")
     if verdict.blocked:

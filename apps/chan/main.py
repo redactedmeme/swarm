@@ -182,7 +182,15 @@ async def send_rich(send_func, text):
 
     if not text or not str(text).strip():
         return None
-    formatted = tg_fmt.from_llm(str(text), target="HTML")
+    # Optional cosmetic de-AI pass, before formatting (rewrite != format).
+    # No-op unless SWARM_HUMANIZE=true; returns the original on any failure.
+    body = str(text)
+    try:
+        from swarm_core.refine import maybe_humanize
+        body = maybe_humanize(body, voice="chan")
+    except Exception:
+        pass
+    formatted = tg_fmt.from_llm(body, target="HTML")
     last = None
     for chunk in tg_fmt.chunks(formatted):
         try:

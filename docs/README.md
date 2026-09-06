@@ -26,6 +26,7 @@ optional.
 | 9 | [`architecture/hyperbolic-geometry-primer.md`](architecture/hyperbolic-geometry-primer.md) | *Why hyperbolic space?* — Background for the `{7,3}` kernel and curvature depth. |
 | 10 | [`architecture/beam-scot.md`](architecture/beam-scot.md) | *What is BEAM-SCoT?* — Parallel branch reasoning: angles, scoring, providers. |
 | 11 | [`history/UPGRADE_LOG.md`](history/UPGRADE_LOG.md) | *What changed and when?* |
+| 12 | [`plans/README.md`](plans/README.md) | *What is planned but not built?* — Open build plans; delete or move to `history/` once shipped. |
 
 ### Lore — optional
 

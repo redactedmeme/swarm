@@ -10,13 +10,23 @@ from url_guard import validate_url
 
 from swarm_core.security import promptguard
 
+try:
+    from swarm_core.web import extract as _extract
+except Exception:  # pragma: no cover
+    _extract = None
+
 logger = logging.getLogger(__name__)
 
 _TAG_RE = re.compile(r"<[^>]+>")
 _WS_RE  = re.compile(r"\s{2,}")
 
 
-def _strip_html(raw: str) -> str:
+def _strip_html(raw: str, url: str = "") -> str:
+    if _extract is not None:
+        doc = _extract(raw, url)
+        out = doc.get("markdown") or doc.get("text") or ""
+        if out:
+            return out
     text = _TAG_RE.sub(" ", raw)
     return _WS_RE.sub(" ", text).strip()
 
@@ -34,7 +44,7 @@ async def _fetch_body(url: str, session: aiohttp.ClientSession) -> str:
             if "text" not in ct:
                 return ""
             raw = await r.text(errors="ignore")
-            body = _strip_html(raw)[:2500]
+            body = _strip_html(raw, url)[:2500]
     except Exception as e:
         logger.debug(f"[web_research] fetch {url}: {e}")
         return ""

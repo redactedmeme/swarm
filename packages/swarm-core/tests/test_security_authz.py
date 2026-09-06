@@ -55,6 +55,29 @@ def test_approval_is_bound_to_actor_and_cap(authz):
         authz.require("hermes", "secret.read", approval=tok)           # wrong cap
 
 
+def test_pending_approvals_are_listed_and_cleared(authz):
+    tok = authz.request_approval("hermes", "infra.deploy",
+                                 detail={"summary": "redeploy hermes"})
+    pend = authz.list_pending_approvals()
+    assert [e["token"] for e in pend] == [tok]
+    assert pend[0]["summary"] == "redeploy hermes"
+    assert pend[0]["capability"] == "infra.deploy"
+    assert "detail" not in pend[0]  # redacted
+
+    assert authz.grant_approval(tok)
+    assert authz.list_pending_approvals() == []
+
+
+def test_deny_approval_removes_from_queue_and_blocks_use(authz):
+    tok = authz.request_approval("hermes", "infra.deploy")
+    assert authz.deny_approval(tok, reason="not now")
+    assert authz.list_pending_approvals() == []
+    with pytest.raises(authz.Denied):
+        authz.require("hermes", "infra.deploy", approval=tok)
+    # second deny is a no-op
+    assert authz.deny_approval(tok) is False
+
+
 def test_is_admin_fail_closed(authz, monkeypatch):
     monkeypatch.delenv("ADMIN_IDS", raising=False)
     assert authz.is_admin("12345") is False          # nobody configured -> deny

@@ -19,15 +19,53 @@ from functools import lru_cache
 
 logger = logging.getLogger("swarm-manager.x")
 
+ACTOR = os.getenv("SWARM_NODE_ID", "hermes")
+
+_X_CRED_VARS = ("X_API_KEY", "X_API_KEY_SECRET", "X_ACCESS_TOKEN", "X_ACCESS_TOKEN_SECRET")
+
+try:
+    from swarm_core.security.secrets import get_secret as _get_secret
+except Exception:  # pragma: no cover
+    def _get_secret(name, default=None, *, required=False):
+        return os.getenv(name, default)
+
+try:
+    from swarm_core.security import authz as _authz
+except Exception:  # pragma: no cover
+    _authz = None
+
+
+def x_credentials_present() -> bool:
+    """True only when every X credential resolves via the secrets layer."""
+    return all((_get_secret(v) or "").strip() for v in _X_CRED_VARS)
+
+
+def _require_social_post() -> str | None:
+    """Return a JSON error string if the actor may not post, else None."""
+    if _authz is None:
+        return _err("authz unavailable — refusing outward-facing X write")
+    try:
+        _authz.require(ACTOR, "social.post")
+    except Exception as e:  # authz.Denied — no live approval token
+        try:
+            from swarm_core.security import audit as _audit
+            _audit.record("tool.x_write", actor=ACTOR, decision="deny",
+                          detail={"capability": "social.post", "reason": str(e)})
+        except Exception:
+            pass
+        return _err(f"not authorized for social.post (needs approval): {e}")
+    return None
+
+
 # ── Tweepy client (lazy singleton, OAuth 1.0a) ────────────────────────────────
 
 @lru_cache(maxsize=1)
 def _client():
     import tweepy
-    api_key    = os.getenv("X_API_KEY", "").strip()
-    api_secret = os.getenv("X_API_KEY_SECRET", "").strip()
-    access_tok = os.getenv("X_ACCESS_TOKEN", "").strip()
-    access_sec = os.getenv("X_ACCESS_TOKEN_SECRET", "").strip()
+    api_key    = (_get_secret("X_API_KEY") or "").strip()
+    api_secret = (_get_secret("X_API_KEY_SECRET") or "").strip()
+    access_tok = (_get_secret("X_ACCESS_TOKEN") or "").strip()
+    access_sec = (_get_secret("X_ACCESS_TOKEN_SECRET") or "").strip()
 
     if not all([api_key, api_secret, access_tok, access_sec]):
         raise RuntimeError(
@@ -69,6 +107,9 @@ def _tweet_to_dict(t) -> dict:
 
 def _handle_x_post(args: dict) -> str:
     """Post a new tweet."""
+    denied = _require_social_post()
+    if denied:
+        return denied
     text = (args.get("text") or "").strip()
     if not text:
         return _err("text is required")
@@ -89,6 +130,9 @@ def _handle_x_post(args: dict) -> str:
 
 def _handle_x_reply(args: dict) -> str:
     """Reply to an existing tweet."""
+    denied = _require_social_post()
+    if denied:
+        return denied
     text = (args.get("text") or "").strip()
     reply_to = (args.get("reply_to_id") or "").strip()
     if not text:
@@ -113,6 +157,9 @@ def _handle_x_reply(args: dict) -> str:
 
 def _handle_x_like(args: dict) -> str:
     """Like a tweet."""
+    denied = _require_social_post()
+    if denied:
+        return denied
     tweet_id = (args.get("tweet_id") or "").strip()
     if not tweet_id:
         return _err("tweet_id is required")

@@ -7,7 +7,7 @@ WORKDIR /app
 # Shared packages first — they change less often than service code, so this
 # layer stays cached across service-only edits.
 COPY packages/ ./packages/
-RUN pip install --no-cache-dir ./packages/swarm-core
+RUN pip install --no-cache-dir "./packages/swarm-core[web]"
 
 COPY apps/runtime/requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt

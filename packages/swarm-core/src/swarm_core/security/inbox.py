@@ -510,6 +510,88 @@ def complete_message(msg_id: str, result: Optional[dict] = None, error: Optional
     })
 
 
+_MAX_HANDOFF_DEPTH = 5
+
+
+def reassign_message(msg_id: str, to_agent: str, reason: str = "") -> bool:
+    """Transfer ownership of an in-flight task to another agent.
+
+    Moves a ``STATUS_PROCESSING`` message back to ``STATUS_PENDING`` addressed to
+    ``to_agent``, appends a hop to ``doc['handoff_chain']``, re-signs (``to`` is a
+    signed field) and audits. The new destination must pass the route table, and
+    the chain is capped at ``_MAX_HANDOFF_DEPTH`` hops so two agents cannot
+    ping-pong a task forever.
+
+    Returns False if the message is missing, not currently processing, the route
+    is disallowed, or the chain is already at its cap.
+    """
+    new_to = AgentId.recipient(to_agent)
+    now = _now_iso()
+    doc = get_message(msg_id)
+    if not doc:
+        return False
+    if doc.get("status") != STATUS_PROCESSING:
+        logger.info("[inbox] reassign refused id=%s not processing (%s)", msg_id, doc.get("status"))
+        return False
+
+    chain = list(doc.get("handoff_chain") or [])
+    if len(chain) >= _MAX_HANDOFF_DEPTH:
+        logger.warning("[inbox] reassign refused id=%s — handoff chain at cap (%d)", msg_id, _MAX_HANDOFF_DEPTH)
+        if _audit is not None:
+            try:
+                _audit.record("inbox.reassign", actor=str(doc.get("to", "unknown")),
+                              decision="deny", severity="warning",
+                              detail={"id": msg_id, "reason": "chain-depth-cap", "to": new_to})
+            except Exception:
+                pass
+        return False
+
+    if not _route_ok(doc.get("from", ""), doc.get("type", ""), new_to):
+        logger.warning("[inbox] reassign refused id=%s — route %s/%s → %s not allowed",
+                       msg_id, doc.get("from"), doc.get("type"), new_to)
+        return False
+
+    prev_owner = doc.get("to", "")
+    chain.append({"from": prev_owner, "to": new_to, "reason": reason[:280], "ts": now})
+    doc["handoff_chain"] = chain
+    doc["to"] = new_to
+    doc["status"] = STATUS_PENDING
+    doc["claimed_at"] = None
+    doc["sig"] = _sign(doc)
+
+    epoch = _epoch()
+    r = _get_redis()
+    if r:
+        try:
+            pipe = r.pipeline()
+            pipe.set(f"swarm:msg:{msg_id}", json.dumps(doc))
+            pipe.zrem(f"swarm:pending:{prev_owner}", msg_id)
+            pipe.zadd(f"swarm:pending:{new_to}", {msg_id: epoch})
+            pipe.zadd("swarm:all", {msg_id: epoch})
+            pipe.execute()
+        except Exception as e:
+            logger.error("[inbox] redis reassign failed, falling back to file: %s", e)
+            _file_update_message(msg_id, {
+                "to": new_to, "status": STATUS_PENDING, "claimed_at": None,
+                "handoff_chain": chain, "sig": doc["sig"],
+            })
+    else:
+        _file_update_message(msg_id, {
+            "to": new_to, "status": STATUS_PENDING, "claimed_at": None,
+            "handoff_chain": chain, "sig": doc["sig"],
+        })
+
+    logger.info("[inbox] reassign id=%s %s → %s (hop %d)", msg_id, prev_owner, new_to, len(chain))
+    if _audit is not None:
+        try:
+            _audit.record("inbox.reassign", actor=str(prev_owner), decision="allow",
+                          detail={"id": msg_id, "to": new_to, "reason": reason[:280],
+                                  "hop": len(chain)})
+        except Exception:
+            pass
+    return True
+
+
 def _write_reply_key(r, doc: dict, result: Optional[dict], error: Optional[str]) -> None:
     """Mirror the completion onto ``payload.reply_key`` if the sender asked for a
     direct-poll reply (the chan→hermes delegation contract in

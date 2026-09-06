@@ -46,6 +46,15 @@ callers:
     token_env: EGRESS_TOKEN_RUNTIME
     allow: ["*"]              # the research agent needs the open web
 
+  workspace:
+    token_env: EGRESS_TOKEN_WORKSPACE
+    # A browser genuinely needs the open web; a tiny allowlist makes the whole
+    # feature useless. This is the deliberate tradeoff — egress still applies
+    # ssrf_block + deny_always + the outbound leak scan, and the workspace is
+    # per-agent isolated. Narrow this per deployment if an agent's browser use
+    # is known to be domain-bounded.
+    allow: ["*"]
+
   smolting:
     token_env: EGRESS_TOKEN_SMOLTING
     allow:

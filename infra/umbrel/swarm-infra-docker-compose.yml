@@ -90,6 +90,7 @@ services:
       EGRESS_TOKEN_RUNTIME: ${EGRESS_TOKEN_RUNTIME}
       EGRESS_TOKEN_SMOLTING: ${EGRESS_TOKEN_SMOLTING}
       EGRESS_TOKEN_CHAN: ${EGRESS_TOKEN_CHAN}
+      EGRESS_TOKEN_WORKSPACE: ${EGRESS_TOKEN_WORKSPACE}
       REDIS_URL: redis://:${REDIS_PASSWORD}@127.0.0.1:6379
       SWARM_AUDIT_LOG: /audit/egress.jsonl
     volumes:
@@ -122,6 +123,37 @@ services:
     mem_limit: 512m
     restart: always
 
+  # Persistent per-agent computer (fs + shell + browser) — docs/plans/grok-bot-parity.md
+  # §5/§6. NOT exec-runner: this one HAS network + persistence. Containment is
+  # per-agent token + per-agent volume + egress allowlist + full audit. Talks to
+  # callers over a unix socket on the `workspacesock` volume; browser egress goes
+  # through swarm-egress (the `workspace` caller in security/egress.yaml).
+  workspace:
+    build:
+      context: /home/umbrel/swarm
+      dockerfile: apps/workspace/Dockerfile
+    container_name: swarm-workspace
+    environment:
+      WORKSPACE_SOCK: /run/workspace/workspace.sock
+      WORKSPACE_TOKEN_HERMES: ${WORKSPACE_TOKEN_HERMES}
+      SWARM_DATA_DIR: /data
+      SWARM_AUDIT_LOG: /audit/workspace.jsonl
+      REDIS_URL: redis://:${REDIS_PASSWORD}@127.0.0.1:6379
+      # Browser egress via the allowlisting proxy, same as hermes.
+      HTTPS_PROXY: http://swarm:${EGRESS_TOKEN_WORKSPACE}@127.0.0.1:8891
+      HTTP_PROXY: http://swarm:${EGRESS_TOKEN_WORKSPACE}@127.0.0.1:8891
+      NO_PROXY: 127.0.0.1,localhost,::1,redis,postgres,qdrant
+    volumes:
+      - workspacedata:/data
+      - workspacesock:/run/workspace
+      - auditdata:/audit
+    security_opt:
+      - no-new-privileges:true
+    pids_limit: 512
+    mem_limit: 2g
+    restart: always
+    network_mode: host
+
   hermes-bot:
     build:
       context: /home/umbrel/swarm
@@ -130,6 +162,7 @@ services:
     volumes:
       - hermesdata:/data
       - execsock:/run/exec
+      - workspacesock:/run/workspace
       - auditdata:/audit
     environment:
       REDIS_URL: redis://:${REDIS_PASSWORD}@127.0.0.1:6379
@@ -146,6 +179,9 @@ services:
       EXEC_ENABLED: "true"
       EXEC_RUNNER_SOCK: /run/exec/exec.sock
       EXEC_RUNNER_TOKEN: ${EXEC_RUNNER_TOKEN}
+      WORKSPACE_ENABLED: ${WORKSPACE_ENABLED:-false}
+      WORKSPACE_SOCK: /run/workspace/workspace.sock
+      WORKSPACE_TOKEN_HERMES: ${WORKSPACE_TOKEN_HERMES}
       SWARM_AUDIT_LOG: /audit/hermes.jsonl
       SWARM_INBOX_HMAC_KEY: ${SWARM_INBOX_HMAC_KEY}
       SWARM_INBOX_ENFORCE: ${SWARM_INBOX_ENFORCE:-warn}
@@ -390,3 +426,5 @@ volumes:
   hermesdata:
   auditdata:     # per-container audit JSONL chains (control 6); Redis stream aggregates
   execsock:      # unix socket shared exec-runner <-> hermes (control 1)
+  workspacesock: # unix socket shared workspace <-> hermes (fs + shell + browser)
+  workspacedata: # per-agent persistent workspace roots + browser profiles

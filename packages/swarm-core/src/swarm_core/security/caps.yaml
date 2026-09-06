@@ -22,9 +22,11 @@ requires_approval:
   - secret.read          # pulling a raw secret value
   - docker.control       # anything touching the docker socket
   - inbox.broadcast_admin
+  - social.post          # outward-facing X/Twitter writes (post / reply / like)
+  - workspace.shell      # apps/workspace shell: has network AND persistence
 
 grants:
-  hermes:            [code.exec, infra.deploy, secret.read, web.fetch, inbox.send, llm.call]
+  hermes:            [code.exec, infra.deploy, secret.read, web.fetch, inbox.send, llm.call, social.post, workspace.shell, workspace.browse]
   redactedbuilder:   [funds.transfer, web.fetch, inbox.send, llm.call]
   redactedintern:    [infra.deploy, inbox.send, llm.call]
   redactedgovimprover: [inbox.send, llm.call]

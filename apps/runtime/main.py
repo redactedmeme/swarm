@@ -14,7 +14,7 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Optional
 
-from fastapi import FastAPI, Depends
+from fastapi import FastAPI, Depends, HTTPException
 from pydantic import BaseModel
 
 
@@ -351,7 +351,7 @@ async def kernel_tiles():
 # Hermes and smolting POST /announce every 2 min. We write their heartbeat to
 # Redis so the webchat /agents page shows them as online.
 
-@app.post("/announce")
+@app.post("/announce", dependencies=[Depends(verify_token)])
 async def mesh_announce(body: dict):
     node_id = body.get("nodeId", "")
     if not node_id:
@@ -367,14 +367,34 @@ async def mesh_announce(body: dict):
     return {"ok": True, "nodeId": node_id}
 
 
-@app.get("/messages/{node_id}")
+@app.get("/messages/{node_id}", dependencies=[Depends(verify_token)])
 async def mesh_get_messages(node_id: str):
-    # No active message queuing yet — return empty so bots don't error out.
-    return {"messages": []}
+    """Pending SwarmInbox messages for a node (backed by swarm_core.security.inbox)."""
+    try:
+        from swarm_core.security import inbox as _inbox
+        msgs = _inbox.read_pending(node_id)
+    except Exception as e:
+        logger.warning(f"[mesh] read_pending({node_id}) failed: {e}")
+        return {"messages": []}
+    return {"messages": msgs, "count": len(msgs)}
 
 
-@app.post("/message/{target}")
+@app.post("/message/{target}", dependencies=[Depends(verify_token)])
 async def mesh_send_message(target: str, body: dict):
-    # Stub — log and discard until a real queue is needed.
-    logger.debug(f"[mesh] message to {target} from {body.get('from', '?')}: {body.get('type', '?')}")
-    return {"ok": True}
+    """Enqueue a SwarmInbox message for ``target`` via swarm_core.security.inbox."""
+    frm = body.get("from") or body.get("nodeId") or "runtime"
+    msg_type = body.get("type") or "task_request"
+    payload = body.get("payload")
+    if not isinstance(payload, dict):
+        payload = {k: v for k, v in body.items() if k not in ("from", "nodeId", "type", "payload")}
+    try:
+        from swarm_core.security import inbox as _inbox
+        msg_id = _inbox.write_message(frm, target, msg_type, payload,
+                                      reply_to=body.get("reply_to"))
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=f"invalid message: {e}")
+    except Exception as e:
+        logger.warning(f"[mesh] write_message to {target} failed: {e}")
+        raise HTTPException(status_code=502, detail="inbox write failed")
+    logger.info(f"[mesh] {frm} → {target} [{msg_type}] id={msg_id}")
+    return {"ok": True, "id": msg_id}

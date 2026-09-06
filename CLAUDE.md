@@ -24,7 +24,7 @@ no `sys.path` inserts reaching across the tree.
 
 | Path | What |
 |---|---|
-| `packages/swarm-core/` | Shared library: committee deliberation, BEAM-SCoT, {7,3} hyperbolic kernel, lore vault, agent registry, session store, schedulers, **`swarm_core.security`** (see below). Was `python/` + `kernel/` + `core/` + `llm/`. |
+| `packages/swarm-core/` | Shared library: committee deliberation, BEAM-SCoT, {7,3} hyperbolic kernel, lore vault, agent registry, session store, schedulers, `swarm_core.web` (SSRF guard + readable extraction, `[web]` extra), `swarm_core.routines` (trace→skill→scheduled replay), `swarm_core.refine` (iterate-until-better loop + `SWARM_HUMANIZE` de-AI pass), **`swarm_core.security`** (see below). Was `python/` + `kernel/` + `core/` + `llm/`. |
 | `packages/swarm-tg/` | Telegram formatting + swarm task client, shared by all four bots. Was `shared/`. |
 | `packages/swarm-agent-base/` | Shared autonomous-agent runtime: the heartbeat / SwarmInbox-poll / soul-update / mesh-thought loops (`AgentRuntime`), one LLM client, soul store, activity log. Used by `apps/degen`, `apps/govimprover`. |
 | `apps/<name>/` | One deployable each — see the table below. |
@@ -51,19 +51,23 @@ no `sys.path` inserts reaching across the tree.
 | `apps/dashboard/` | Solana volume dashboard | Railway |
 | `apps/webchat/` | Private web chat for chan | Railway + umbrel |
 | `apps/status/` | Public heartbeat feed | not deployed |
+| `apps/fieldkit/` | Field Kit — mobile companion surface (mandala, ticker, roster, chamber). React/Nitro, self-contained | Vercel |
 | `apps/settler/` | Settlement ledger + on-chain burn executor — the only treasury-key holder | umbrel |
 | `apps/degen/` | RedactedDegen — Solana LP scout (Raydium/Orca/Meteora → mesh signals) | umbrel |
 | `apps/govimprover/` | RedactedGovImprover — Realms DAO proposal architect (draft only) | umbrel |
+| `apps/workspace/` | Persistent per-agent computer — fs + shell + Playwright browser over a unix socket (NOT exec-runner; has network + persistence). Per-agent volume + token + egress allowlist | umbrel |
 | `apps/x402/`, `apps/arb-keeper/`, `apps/mcp/` | Dormant / stubs | — |
 
 ### Build contexts — the one rule that matters
 
 A service builds with the **repo root** as its Docker context if it imports the
 shared packages (`hermes`, `smolting`, `chan`, `refinery`, `runtime`,
-`terminal`, `settler`, `degen`, `govimprover`, `builder`), because the image
-must `COPY packages/`. Self-contained services (`proxy`, `dashboard`,
-`webchat`, `website`) keep their own directory as context so their builds stay
-small.
+`terminal`, `settler`, `degen`, `govimprover`, `builder`, `workspace`), because
+the image must `COPY packages/`. (`workspace` uses the Playwright base image but
+still builds from the repo root for `swarm_core`.) Self-contained services (`proxy`, `dashboard`,
+`webchat`, `website`, `fieldkit`) keep their own directory as context so their
+builds stay small. `fieldkit` is the only Node/React app — it deploys to Vercel
+with root directory `apps/fieldkit`, not through a Dockerfile.
 
 `builder` moved onto the repo root on 2026-09-03. It was self-contained until
 `3a56377` turned its `swarm_inbox.py` / `task_client.py` into re-export shims
@@ -103,7 +107,12 @@ Driven from the `swarm` CLI (`swarm wallets …`, `swarm reserve …`).
 
 Services: `apps/exec-runner` (no-secrets/no-network code sandbox, unix socket) and
 `apps/swarm-egress` (per-agent egress allowlist + outbound leak scan). `apps/secrets-init`
-is the one-shot Vaultwarden→tmpfs sidecar.
+is the one-shot Vaultwarden→tmpfs sidecar. `apps/workspace` is the *opposite* of
+exec-runner — a persistent per-agent fs+shell+browser with network; its
+containment is `WORKSPACE_TOKEN_<AGENT>` + a per-agent volume + the `workspace`
+egress caller + full audit. Caps: `workspace.browse`, and `workspace.shell`
+(approval-gated — it has network *and* persistence). Off unless
+`WORKSPACE_ENABLED=true` on the caller.
 
 Config: `packages/swarm-core/src/swarm_core/security/{policy,caps,egress}.yaml`.
 Rollout is staged via env — `SWARM_INBOX_ENFORCE`, `LLM_DIRECT_FALLBACK`,
