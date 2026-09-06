@@ -33,3 +33,9 @@ from swarm_core.security.inbox import (  # noqa: F401  keep names that * may ski
     verify_doc,
     sign_doc,
 )
+
+# Private, but call sites predate the consolidation and reach for it directly
+# (chan's hermes reply-key round-trip and its Redis state cache). `import *`
+# skips underscore names, so it must be re-exported explicitly or those call
+# sites silently degrade inside their try/except.
+from swarm_core.security.inbox import _get_redis  # noqa: F401
