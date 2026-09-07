@@ -24,6 +24,7 @@ from __future__ import annotations
 import asyncio
 import os
 import shutil
+import signal
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -237,6 +238,19 @@ def _shell_env(agent: str) -> dict:
     return env
 
 
+def _kill_tree(proc) -> None:
+    """SIGKILL the command's whole process group, falling back to the shell."""
+    try:
+        os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
+        return
+    except (ProcessLookupError, PermissionError, OSError, AttributeError):
+        pass
+    try:
+        proc.kill()
+    except ProcessLookupError:
+        pass
+
+
 # ── shell ────────────────────────────────────────────────────────────────────
 
 async def shell(agent: str, cmd: str, *, timeout: int | None = None, cwd: str = "") -> dict:
@@ -247,12 +261,17 @@ async def shell(agent: str, cmd: str, *, timeout: int | None = None, cwd: str = 
     if not workdir.is_dir():
         raise WorkspaceError(f"cwd not a directory: {cwd}")
 
+    # start_new_session puts the shell in its own process group, so a timeout can
+    # kill the whole tree. Killing only the shell leaves its children running and
+    # holding the pipes open, which makes the second communicate() below block
+    # until the command finishes anyway — the timeout would not bound anything.
     proc = await asyncio.create_subprocess_shell(
         cmd,
         cwd=str(workdir),
         stdout=asyncio.subprocess.PIPE,
         stderr=asyncio.subprocess.PIPE,
         env=_shell_env(agent),
+        start_new_session=True,
     )
     t0 = time.monotonic()
     timed_out = False
@@ -260,8 +279,11 @@ async def shell(agent: str, cmd: str, *, timeout: int | None = None, cwd: str = 
         out, err = await asyncio.wait_for(proc.communicate(), timeout=timeout)
     except asyncio.TimeoutError:
         timed_out = True
-        proc.kill()
-        out, err = await proc.communicate()
+        _kill_tree(proc)
+        try:
+            out, err = await asyncio.wait_for(proc.communicate(), timeout=5)
+        except (asyncio.TimeoutError, Exception):
+            out, err = b"", b""
 
     exit_code = -1 if timed_out else (proc.returncode if proc.returncode is not None else -1)
     result = {

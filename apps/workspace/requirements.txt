@@ -1,2 +1,6 @@
 aiohttp>=3.10
-playwright>=1.47
+# Pinned to the Playwright base image tag in the Dockerfile. Playwright pins a
+# browser revision per version, and the base image ships only that revision's
+# build — a floating `>=` resolves to a newer client that then cannot find its
+# Chromium at runtime. Bump this and the FROM tag together.
+playwright==1.47.0

@@ -6,7 +6,9 @@
 #
 # Uses the Playwright base image so Chromium + its system libs are already
 # present (the browser download needs network at build time regardless of base).
-FROM mcr.microsoft.com/playwright/python:v1.47.0-jammy
+# It must be the *noble* tag: the jammy tag ships Python 3.10 and swarm-core
+# requires >= 3.11, so the jammy build dies at the pip install below.
+FROM mcr.microsoft.com/playwright/python:v1.47.0-noble
 
 WORKDIR /app
 ENV PYTHONUNBUFFERED=1 PYTHONDONTWRITEBYTECODE=1

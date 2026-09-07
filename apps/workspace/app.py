@@ -243,21 +243,32 @@ def build_app() -> web.Application:
     return app
 
 
-async def _chmod_sock(_app):
-    """run_app() blocks until shutdown, so this has to happen on startup — the
-    socket is created by then, and a 0o660 socket is what keeps the caller set
-    to the containers that share the volume."""
+def _bind_socket(path: str):
+    """Bind the unix socket ourselves so its mode is right *before* anything can
+    connect. aiohttp's on_startup hook runs before ``run_app`` creates the site,
+    so a chmod there has no socket to act on, and after ``run_app`` returns the
+    server is already shutting down. 0o660 is what keeps the caller set to the
+    containers that share the volume."""
+    import socket as _socket
+    import stat as _stat
+
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    if os.path.exists(path):
+        os.unlink(path)
+    sock = _socket.socket(_socket.AF_UNIX, _socket.SOCK_STREAM)
+    old_umask = os.umask(0o177)
     try:
-        os.chmod(SOCK, 0o660)
-    except OSError as e:  # pragma: no cover
-        log.warning("could not chmod %s: %s", SOCK, e)
+        sock.bind(path)
+    finally:
+        os.umask(old_umask)
+    os.chmod(path, stat_mode := (_stat.S_IRUSR | _stat.S_IWUSR | _stat.S_IRGRP | _stat.S_IWGRP))
+    log.info("workspace socket %s mode %o", path, stat_mode)
+    sock.listen(128)
+    return sock
 
 
 if __name__ == "__main__":  # pragma: no cover
-    os.makedirs(os.path.dirname(SOCK), exist_ok=True)
-    if os.path.exists(SOCK):
-        os.unlink(SOCK)
     app = build_app()
-    app.on_startup.append(_chmod_sock)
+    listener = _bind_socket(SOCK)
     log.info("workspace listening on %s", SOCK)
-    web.run_app(app, path=SOCK, print=None)
+    web.run_app(app, sock=listener, print=None)

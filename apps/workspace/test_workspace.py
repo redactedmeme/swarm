@@ -186,3 +186,73 @@ def test_shell_env_keeps_proxy_settings(monkeypatch):
 
     assert env["HTTPS_PROXY"] == "http://swarm:tok@127.0.0.1:8891"
     assert env["NO_PROXY"] == "127.0.0.1,localhost"
+
+
+def test_shell_timeout_kills_the_whole_process_tree():
+    """`sleep` is a child of the shell. Killing only the shell leaves it holding
+    the pipes, so the call would block for the command's full duration."""
+    if sys.platform == "win32":
+        pytest.skip("process groups are POSIX-only")
+
+    import time as _t
+
+    t0 = _t.monotonic()
+    result = asyncio.run(ws.shell("hermes", "sleep 30", timeout=2))
+    elapsed = _t.monotonic() - t0
+
+    assert result["timed_out"] is True
+    assert elapsed < 10, f"timeout did not bound the command (took {elapsed:.1f}s)"
+
+
+# ── browser redirect SSRF guard ──────────────────────────────────────────────
+
+class _FakePage:
+    """Stands in for a Playwright page that got redirected somewhere hostile."""
+
+    def __init__(self, land_on):
+        self.url = "https://harmless.example/"
+        self._land_on = land_on
+        self.blanked = False
+
+    async def goto(self, url, **_kw):
+        if url == "about:blank":
+            self.blanked = True
+            self.url = "about:blank"
+            return None
+        self.url = self._land_on          # the redirect
+        return type("R", (), {"status": 302})()
+
+    async def title(self):
+        return "t"
+
+
+def test_browser_goto_blocks_a_redirect_onto_a_private_host(monkeypatch):
+    import browser as br
+
+    page = _FakePage("http://169.254.169.254/latest/meta-data/")
+
+    async def _fake_page(_agent, _session):
+        return page
+
+    monkeypatch.setattr(br, "_page", _fake_page)
+    result = asyncio.run(br.goto("hermes", "https://harmless.example/", "s1"))
+
+    assert result["status"] == "error"
+    assert "blocked host" in result["error"]
+    assert page.blanked, "the hostile page was left open"
+    assert "s1" not in ws.session_for("hermes").open_pages
+
+
+def test_browser_goto_allows_a_benign_redirect(monkeypatch):
+    import browser as br
+
+    page = _FakePage("https://elsewhere.example/final")
+
+    async def _fake_page(_agent, _session):
+        return page
+
+    monkeypatch.setattr(br, "_page", _fake_page)
+    result = asyncio.run(br.goto("hermes", "https://harmless.example/", "s2"))
+
+    assert result["status"] == "ok"
+    assert result["url"] == "https://elsewhere.example/final"
