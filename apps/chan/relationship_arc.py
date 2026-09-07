@@ -14,6 +14,8 @@ import logging
 import sqlite3
 from datetime import datetime, timezone
 from pathlib import Path
+
+import database_encryption as db_enc
 from typing import Optional, Callable, Awaitable
 
 logger = logging.getLogger(__name__)
@@ -41,8 +43,7 @@ def register_llm_fn(fn: Callable[[list, int], Awaitable[str]]) -> None:
 def _get_lco_chunks(limit: int = 30) -> list[dict]:
     """Read recent compressed chunks directly from long_context.db."""
     try:
-        conn = sqlite3.connect(str(_DB_PATH))
-        conn.row_factory = sqlite3.Row
+        conn = db_enc.get_encrypted_connection(_DB_PATH)
         rows = conn.execute(
             "SELECT content, tier FROM compressed_chunks ORDER BY ts_range_end DESC LIMIT ?",
             (limit,)

@@ -16,6 +16,8 @@ import sqlite3
 import logging
 from datetime import datetime, timezone
 from pathlib import Path
+
+import database_encryption as db_enc
 from typing import Optional
 
 logger = logging.getLogger(__name__)
@@ -68,8 +70,7 @@ _INTIMATE_WORDS = re.compile(r"\b(miss|love|hold|close|warm|heart|soul|yours|min
 
 def _get_db() -> sqlite3.Connection:
     _DATA_DIR.mkdir(parents=True, exist_ok=True)
-    conn = sqlite3.connect(str(_DB_PATH))
-    conn.row_factory = sqlite3.Row
+    conn = db_enc.get_encrypted_connection(_DB_PATH)
     conn.execute("PRAGMA journal_mode=WAL")
     conn.executescript("""
         CREATE TABLE IF NOT EXISTS trigger_map (

@@ -51,7 +51,11 @@ def get_encrypted_connection(db_path: str | Path) -> sqlite3.Connection:
     try:
         import sqlcipher3 as sqlite3_enc
         conn = sqlite3_enc.connect(str(db_path), check_same_thread=False)
-        conn.row_factory = sqlite3.Row
+        # Row must come from the SAME DBAPI module as the connection. A stdlib
+        # sqlite3.Row cannot wrap a sqlcipher3 cursor — it raises
+        # "Row() argument 1 must be sqlite3.Cursor, not sqlcipher3.dbapi2.Cursor"
+        # at *fetch* time, not connect time, so the break surfaces far from here.
+        conn.row_factory = sqlite3_enc.Row
 
         # Set encryption key and pragmas
         conn.execute(f"PRAGMA key = '{key}'")

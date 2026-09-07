@@ -23,6 +23,8 @@ import re
 import sqlite3
 import time
 from pathlib import Path
+
+import database_encryption as db_enc
 from typing import Optional
 
 logger = logging.getLogger(__name__)
@@ -69,8 +71,7 @@ def _search_lco_chunks(keywords: list[str], limit: int = 10) -> list[dict]:
     if not _DB_PATH.exists() or not keywords:
         return []
     try:
-        conn = sqlite3.connect(str(_DB_PATH))
-        conn.row_factory = sqlite3.Row
+        conn = db_enc.get_encrypted_connection(_DB_PATH)
         rows = conn.execute(
             "SELECT content, tier, ts_range_start, ts_range_end "
             "FROM compressed_chunks ORDER BY ts_range_end DESC LIMIT 60"

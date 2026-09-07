@@ -32,6 +32,8 @@ import logging
 import asyncio
 from datetime import datetime, timezone
 from pathlib import Path
+
+import database_encryption as db_enc
 from typing import Callable, Awaitable, Optional
 
 logger = logging.getLogger(__name__)
@@ -54,8 +56,7 @@ _COMPRESS_THRESHOLD = 60
 
 def _get_db() -> sqlite3.Connection:
     _DATA_DIR.mkdir(parents=True, exist_ok=True)
-    conn = sqlite3.connect(str(_DB_PATH))
-    conn.row_factory = sqlite3.Row
+    conn = db_enc.get_encrypted_connection(_DB_PATH)
     conn.execute("PRAGMA journal_mode=WAL")
     conn.executescript("""
         CREATE TABLE IF NOT EXISTS compressed_chunks (
