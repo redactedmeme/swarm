@@ -41,7 +41,12 @@ def _preexec() -> None:  # pragma: no cover - runs in the child only
     resource.setrlimit(resource.RLIMIT_FSIZE, (MAX_FILE_BYTES, MAX_FILE_BYTES))
     resource.setrlimit(resource.RLIMIT_NPROC, (MAX_PROCS, MAX_PROCS))
     resource.setrlimit(resource.RLIMIT_CORE, (0, 0))
-    os.setsid()  # own process group -> we can killpg the whole subtree
+    # NO os.setsid() here. create_subprocess_exec is called with
+    # start_new_session=True, which already makes the child a session leader
+    # *before* preexec_fn runs, so a second setsid() raises EPERM. CPython
+    # reports that only as "Exception occurred in preexec_fn", which means every
+    # snippet fails to spawn with no usable error — the sandbox looks wired up
+    # and silently executes nothing.
 
 
 def _argv(code: str) -> list[str]:

@@ -103,8 +103,11 @@ services:
   # It talks to callers over a unix socket on the shared `execsock` volume.
   exec-runner:
     build:
-      context: /home/umbrel/swarm
-      dockerfile: apps/exec-runner/Dockerfile
+      # Self-contained: no swarm_core import, only aiohttp — so the context is
+      # its OWN directory, and its Dockerfile's `COPY . .` is relative to that.
+      # Building it from the repo root puts app.py at /app/apps/exec-runner/app.py
+      # and the container crash-loops on "can't open file '/app/app.py'".
+      context: /home/umbrel/swarm/apps/exec-runner
     container_name: swarm-exec-runner
     environment:
       EXEC_RUNNER_SOCK: /run/exec/exec.sock

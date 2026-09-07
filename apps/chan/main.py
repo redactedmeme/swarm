@@ -169,6 +169,9 @@ logger = logging.getLogger(__name__)
 # example of "how chan answers", and reproduced by the model on healthy calls.
 # By the time it was found there were 30 copies in memory.md and 23 in the
 # vector store, and chan was emitting it with every provider working fine.
+# Upper bound on the typing keepalive (seconds); refreshed every 4s.
+_TYPING_MAX_SECONDS = 180
+
 LLM_FALLBACK_TEXT = "...i'm having trouble thinking right now. give me a moment? (｡•́︿•̀｡)"
 
 import re as _re_tags
@@ -948,6 +951,27 @@ class RedactedChanBot:
                 pass
             return
 
+        # Typing indicator for the whole response pipeline. Telegram clears the
+        # bubble after ~5s, and chan's pipeline (memory, vector recall, LLM,
+        # intuition) regularly runs 10-30s — so a one-shot action leaves the user
+        # watching nothing. Refresh it until the first reply goes out.
+        # Bounded: it stops itself after _TYPING_MAX_SECONDS so a stray exit path
+        # can never leak a forever-task onto the loop.
+        async def _keep_typing_main():
+            for _ in range(_TYPING_MAX_SECONDS // 4):
+                try:
+                    await context.bot.send_chat_action(
+                        chat_id=update.effective_chat.id, action="typing")
+                except Exception:
+                    pass
+                await asyncio.sleep(4)
+
+        _main_typing = asyncio.create_task(_keep_typing_main())
+
+        def _stop_typing() -> None:
+            if not _main_typing.done():
+                _main_typing.cancel()
+
         # Introspection frame — Phase One: observe internal decision-making
         _intro_frame = ilog.IntrospectionFrame(user_id, text)
 
@@ -1280,6 +1304,7 @@ class RedactedChanBot:
             first_part = _re.sub(r'\[SUB:\s*.+?\]', '', response, flags=_re.DOTALL).strip()
             first_part = _re.sub(r'\[TOOL:\s*\w+\s*\{.*?\}\]', '', first_part, flags=_re.DOTALL).strip()
             if first_part:
+                _stop_typing()
                 sent_first = await send_rich(lambda t, **kw: update.message.reply_text(t, **kw), first_part)
                 if sent_first:
                     hr.track_message(sent_first.message_id, first_part, from_bot=True)
@@ -1536,6 +1561,7 @@ class RedactedChanBot:
             cleaned, hermes_tasks = hd.extract_hermes_markers(final_response)
             if hermes_tasks:
                 final_response = cleaned
+                _stop_typing()
                 sent = await send_rich(lambda t, **kw: update.message.reply_text(t, **kw), final_response)
                 if sent:
                     hr.track_message(sent.message_id, final_response, from_bot=True)
@@ -1590,6 +1616,7 @@ class RedactedChanBot:
             logger.debug("[hermes_dispatch] extraction error: %s", e)
 
         if not _hermes_sent_main:
+            _stop_typing()
             sent = await send_rich(lambda t, **kw: update.message.reply_text(t, **kw), final_response)
             if sent:
                 hr.track_message(sent.message_id, final_response, from_bot=True)

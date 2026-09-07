@@ -65,8 +65,10 @@ shared packages (`hermes`, `smolting`, `chan`, `refinery`, `runtime`,
 `terminal`, `settler`, `degen`, `govimprover`, `builder`, `workspace`), because
 the image must `COPY packages/`. (`workspace` uses the Playwright base image but
 still builds from the repo root for `swarm_core`.) Self-contained services (`proxy`, `dashboard`,
-`webchat`, `website`, `fieldkit`) keep their own directory as context so their
-builds stay small. `fieldkit` is the only Node/React app — it deploys to Vercel
+`webchat`, `website`, `fieldkit`, `exec-runner`) keep their own directory as
+context so their builds stay small. `exec-runner` is deliberately dependency-free
+(aiohttp only, no `swarm_core`) — that is its containment, so it must never gain
+a repo-root context. `fieldkit` is the only Node/React app — it deploys to Vercel
 with root directory `apps/fieldkit`, not through a Dockerfile.
 
 `builder` moved onto the repo root on 2026-09-03. It was self-contained until
