@@ -163,6 +163,14 @@ logging.basicConfig(
 harden_logging()
 logger = logging.getLogger(__name__)
 
+# The reply used when the LLM genuinely fails. It is a NAMED CONSTANT because it
+# must never be written back into memory: it was, and the result was a feedback
+# loop — the outage reply got stored as an exchange, retrieved later as an
+# example of "how chan answers", and reproduced by the model on healthy calls.
+# By the time it was found there were 30 copies in memory.md and 23 in the
+# vector store, and chan was emitting it with every provider working fine.
+LLM_FALLBACK_TEXT = "...i'm having trouble thinking right now. give me a moment? (｡•́︿•̀｡)"
+
 import re as _re_tags
 _STRIP_TAGS = _re_tags.compile(r"<[^>]+>")
 
@@ -1204,8 +1212,11 @@ class RedactedChanBot:
         try:
             response = await self.llm.chat_completion_with_fallback(messages, max_tokens=_max_tokens)
         except Exception as e:
-            logger.error(f"[chan] LLM failed: {e}")
-            response = "...i'm having trouble thinking right now. give me a moment? (｡•́︿•̀｡)"
+            # logger.exception, not logger.error: the bare message loses the
+            # traceback, and this handler is the one place where knowing *which*
+            # call failed matters — the fallback below is otherwise silent.
+            logger.exception("[chan] LLM failed: %s", e)
+            response = LLM_FALLBACK_TEXT
 
         # Intuition layer — pre-send self-check: "is this helping or hurting?"
         try:
@@ -1333,8 +1344,13 @@ class RedactedChanBot:
         # Strip tool markers from displayed response
         display = _re.sub(r'\[TOOL:\s*\w+\s*\{.*?\}\]', '', response, flags=_re.DOTALL).strip()
 
-        # Persist to memory
-        cm.log_exchange(user_id, str(user_id), text, display)
+        # Persist to memory — but never the fallback. Storing it is what created
+        # the feedback loop described at LLM_FALLBACK_TEXT.
+        _is_fallback = (response == LLM_FALLBACK_TEXT)
+        if _is_fallback:
+            logger.warning("[chan] fallback reply — not persisting it to memory")
+        else:
+            cm.log_exchange(user_id, str(user_id), text, display)
 
         # Record turn in within-conversation arc tracker
         try:
@@ -1380,14 +1396,16 @@ class RedactedChanBot:
 
         # Backup conversation to daily file in /data/conversation_backups/
         try:
-            cm.backup_conversation_to_file()
+            if not _is_fallback:
+                cm.backup_conversation_to_file()
         except Exception:
             pass
 
         # Embed and store in vector memory for semantic retrieval
         try:
             ts_id = datetime.now(timezone.utc).strftime("%Y%m%d%H%M%S%f")
-            vm.add_exchange(ts_id, text, display, metadata={"user_id": str(user_id)})
+            if not _is_fallback:
+                vm.add_exchange(ts_id, text, display, metadata={"user_id": str(user_id)})
         except Exception:
             pass
 
