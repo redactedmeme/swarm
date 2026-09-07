@@ -60,6 +60,30 @@ def _err(msg: str) -> dict:
     return {"status": "error", "error": msg}
 
 
+def _proxy_settings() -> dict | None:
+    """Chromium does not authenticate to a proxy from the ``HTTPS_PROXY`` env
+    var — it strips the credentials and the CONNECT then fails with
+    ERR_TUNNEL_CONNECTION_FAILED. Playwright takes the username/password as
+    explicit launch options, so split the URL and hand them over. Without this
+    the browser has no working egress at all once the allowlist is in front."""
+    raw = (os.getenv("HTTPS_PROXY") or os.getenv("HTTP_PROXY")
+           or os.getenv("https_proxy") or os.getenv("http_proxy") or "").strip()
+    if not raw:
+        return None
+    parsed = urlparse(raw)
+    if not parsed.hostname:
+        return None
+    server = f"{parsed.scheme or 'http'}://{parsed.hostname}"
+    if parsed.port:
+        server += f":{parsed.port}"
+    out: dict = {"server": server}
+    if parsed.username:
+        out["username"] = parsed.username
+    if parsed.password:
+        out["password"] = parsed.password
+    return out
+
+
 async def _context(agent: str):
     """Lazily start a persistent per-agent Chromium context. Raises on missing
     Playwright so callers can convert it to a clean error."""
@@ -70,11 +94,15 @@ async def _context(agent: str):
     from playwright.async_api import async_playwright  # may ImportError
 
     pw = await async_playwright().start()
-    context = await pw.chromium.launch_persistent_context(
-        user_data_dir=str(browser_profile_dir(agent)),
-        headless=True,
-        args=["--no-sandbox", "--disable-dev-shm-usage"],
-    )
+    launch_kwargs: dict = {
+        "user_data_dir": str(browser_profile_dir(agent)),
+        "headless": True,
+        "args": ["--no-sandbox", "--disable-dev-shm-usage"],
+    }
+    proxy = _proxy_settings()
+    if proxy:
+        launch_kwargs["proxy"] = proxy
+    context = await pw.chromium.launch_persistent_context(**launch_kwargs)
     _BROWSERS[agent] = {"pw": pw, "context": context, "pages": {}}
     return _BROWSERS[agent]
 

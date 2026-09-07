@@ -59,4 +59,9 @@ asyncio_mode = "auto"
 where = ["src"]
 
 [tool.setuptools.package-data]
-swarm_core = ["**/*.json", "**/*.md"]
+# The security policies (policy.yaml, caps.yaml, egress.yaml) are DATA that has
+# to ship inside the wheel. Omitting the yaml glob does not fail the build — it
+# fails silently at runtime, and every module falls back to its hardcoded
+# _DEFAULT_POLICY. That is how the `workspace` egress caller and every `inject`
+# rule vanished from the installed containers while the repo looked correct.
+swarm_core = ["**/*.json", "**/*.md", "**/*.yaml", "**/*.yml"]

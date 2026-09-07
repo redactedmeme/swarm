@@ -64,3 +64,40 @@ def test_unknown_token_falls_back_to_default(pol):
 def test_injection_spec_surfaced(pol):
     d = pol.decide("api.telegram.org", "tok-hermes")
     assert d.allow and d.inject.get("secret") == "TELEGRAM_BOT_TOKEN"
+
+
+# ── proxy auth handshake ─────────────────────────────────────────────────────
+
+def test_anonymous_connect_gets_a_407_challenge_not_a_403():
+    """Browsers only send Proxy-Authorization in reply to a 407. A flat 403 on
+    an anonymous CONNECT makes Chromium give up with ERR_TUNNEL_CONNECTION_FAILED
+    and never retry, which leaves a browser behind this proxy with no egress."""
+    import asyncio
+
+    import proxy as px
+
+    written = bytearray()
+
+    class _W:
+        def write(self, b):
+            written.extend(b)
+
+        async def drain(self):
+            pass
+
+        def close(self):
+            pass
+
+    asyncio.run(px._challenge(_W()))
+    text = bytes(written).decode("latin1")
+    assert text.startswith("HTTP/1.1 407 ")
+    assert "Proxy-Authenticate: Basic" in text
+
+
+def test_proxy_token_accepts_basic_and_bearer():
+    import proxy as px
+    import base64
+
+    assert px._proxy_token("Bearer abc123") == "abc123"
+    creds = base64.b64encode(b"swarm:abc123").decode()
+    assert px._proxy_token(f"Basic {creds}") == "abc123"

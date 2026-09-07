@@ -101,6 +101,26 @@ async def _pipe(reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> N
             pass
 
 
+async def _challenge(writer: asyncio.StreamWriter) -> None:
+    """Ask an unauthenticated client for credentials.
+
+    Browsers never send Proxy-Authorization preemptively — they send it only in
+    reply to a 407. Answering an anonymous CONNECT with a flat 403 means Chromium
+    reports ERR_TUNNEL_CONNECTION_FAILED and never retries, so a browser behind
+    this proxy can reach nothing at all no matter how its allowlist reads.
+    """
+    writer.write(
+        b"HTTP/1.1 407 Proxy Authentication Required\r\n"
+        b'Proxy-Authenticate: Basic realm=\"swarm-egress\"\r\n'
+        b"Content-Length: 0\r\nConnection: close\r\n\r\n"
+    )
+    try:
+        await writer.drain()
+    except Exception:
+        pass
+    writer.close()
+
+
 async def _deny(writer: asyncio.StreamWriter, code: int, msg: str) -> None:
     writer.write(f"HTTP/1.1 {code} {msg}\r\nContent-Length: 0\r\nConnection: close\r\n\r\n".encode())
     try:
@@ -137,6 +157,13 @@ async def handle(client_r: asyncio.StreamReader, client_w: asyncio.StreamWriter)
         d = pol.decide(host, token)
         _audit_decision("egress.connect", d, host, {"port": port})
         if not d.allow:
+            # No credentials at all: challenge rather than refuse, so a client
+            # that only authenticates on demand (every browser) gets a chance to
+            # identify itself. A wrong or unknown token still gets a flat 403.
+            if not token:
+                log.info("CHALLENGE CONNECT %s (anonymous)", host)
+                await _challenge(client_w)
+                return
             log.warning("DENY CONNECT %s (%s) caller=%s", host, d.reason, d.caller)
             await _deny(client_w, 403, "Forbidden by egress policy")
             return
@@ -169,6 +196,10 @@ async def handle(client_r: asyncio.StreamReader, client_w: asyncio.StreamWriter)
     d = pol.decide(host, token)
     _audit_decision("egress.http", d, host, {"method": method})
     if not d.allow:
+        if not token:
+            log.info("CHALLENGE %s http://%s (anonymous)", method, host)
+            await _challenge(client_w)
+            return
         log.warning("DENY %s http://%s (%s) caller=%s", method, host, d.reason, d.caller)
         await _deny(client_w, 403, "Forbidden by egress policy")
         return

@@ -256,3 +256,22 @@ def test_browser_goto_allows_a_benign_redirect(monkeypatch):
 
     assert result["status"] == "ok"
     assert result["url"] == "https://elsewhere.example/final"
+
+
+def test_proxy_settings_split_credentials_out_of_the_url(monkeypatch):
+    import browser as br
+
+    monkeypatch.setenv("HTTPS_PROXY", "http://swarm:s3cret@127.0.0.1:8891")
+    assert br._proxy_settings() == {
+        "server": "http://127.0.0.1:8891",
+        "username": "swarm",
+        "password": "s3cret",
+    }
+
+
+def test_proxy_settings_none_without_a_proxy(monkeypatch):
+    import browser as br
+
+    for k in ("HTTPS_PROXY", "HTTP_PROXY", "https_proxy", "http_proxy"):
+        monkeypatch.delenv(k, raising=False)
+    assert br._proxy_settings() is None

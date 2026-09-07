@@ -84,3 +84,32 @@ def test_is_admin_fail_closed(authz, monkeypatch):
     monkeypatch.setenv("ADMIN_IDS", "111, 222")
     assert authz.is_admin("222") is True
     assert authz.is_admin("333") is False
+
+
+def test_security_yaml_policies_ship_inside_the_package():
+    """These are data files, not source. If the packaging glob drops them the
+    build still succeeds and every policy silently reverts to its hardcoded
+    default — see the `workspace` egress caller that vanished this way."""
+    from pathlib import Path
+
+    import swarm_core.security as sec
+
+    here = Path(sec.__file__).parent
+    for name in ("policy.yaml", "caps.yaml", "egress.yaml"):
+        assert (here / name).is_file(), f"{name} is missing from the installed package"
+
+
+def test_egress_policy_defines_the_workspace_caller():
+    from swarm_core.security import egress
+
+    doc = egress._load_policy() if hasattr(egress, "_load_policy") else None
+    callers = (doc or {}).get("callers", {}) if isinstance(doc, dict) else {}
+    if not callers:
+        import yaml
+        from pathlib import Path
+        import swarm_core.security as sec
+        callers = yaml.safe_load(
+            (Path(sec.__file__).parent / "egress.yaml").read_text()
+        )["callers"]
+    assert "workspace" in callers
+    assert callers["workspace"]["token_env"] == "EGRESS_TOKEN_WORKSPACE"
