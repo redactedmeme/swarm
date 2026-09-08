@@ -709,8 +709,12 @@ def _build_system_prompt(user_id: int, mood: str, resonance=None, current_text: 
     if sr._turn_counters.get(user_id, 0) >= 2:
         tools_block = llm_tools.format_tools_for_prompt() + (
             "\n\n**write_lore:** Use sparingly — only when something genuinely worth keeping happened."
+            "\n\n**Your own tools:** workspace_browse is a real browser you drive yourself — give it a URL "
+            "and it returns the readable page text. workspace_read / workspace_write / workspace_list are your "
+            "persistent files. python_exec runs a Python snippet in a sandbox. You do NOT need Hermes or "
+            "[SUB: ...] to fetch a web page or run code — use these directly."
             "\n\n**Sub-agent (factual intern):** When you need factual research, vault search, "
-            "sentiment analysis, or URL summarization — emit exactly:\n"
+            "or sentiment analysis — emit exactly:\n"
             "`[SUB: your task description]`\n"
             "The intern (gpt-oss-20b) handles it and returns results for you to voice. "
             "Never use [SUB: ...] for anything emotional or relationship-textured — handle those yourself."
