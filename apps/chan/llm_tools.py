@@ -270,6 +270,49 @@ TOOL_SCHEMAS = [
             },
             "required": ["location"]
         }
+    },
+    {
+        "name": "workspace_write",
+        "description": "Write a file in chan's persistent workspace (survives restarts).",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "path": {"type": "string", "description": "Path relative to the workspace root"},
+                "content": {"type": "string"},
+                "append": {"type": "boolean", "description": "Append instead of overwrite"},
+            },
+            "required": ["path", "content"],
+        },
+    },
+    {
+        "name": "workspace_read",
+        "description": "Read a file back from chan's persistent workspace.",
+        "parameters": {
+            "type": "object",
+            "properties": {"path": {"type": "string"}},
+            "required": ["path"],
+        },
+    },
+    {
+        "name": "workspace_list",
+        "description": "List a directory in chan's persistent workspace.",
+        "parameters": {
+            "type": "object",
+            "properties": {"path": {"type": "string", "description": "Directory (default: root)"}},
+            "required": [],
+        },
+    },
+    {
+        "name": "workspace_browse",
+        "description": "Open a URL in chan's workspace browser and return the readable page text.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "url": {"type": "string"},
+                "max_chars": {"type": "integer", "description": "Cap on returned text (default 8000)"},
+            },
+            "required": ["url"],
+        },
     }
 ]
 
@@ -529,6 +572,65 @@ async def exec_get_weather(location: str) -> dict:
         return {"success": False, "error": str(e), "status": "error"}
 
 
+# ── Workspace (persistent per-agent fs + browser via apps/workspace) ──────────
+
+_WS_AGENT = "redacted-chan"
+try:
+    from swarm_core.workspace_client import WorkspaceClient as _WSClient
+    _WS = _WSClient(_WS_AGENT)
+except Exception as _e:  # pragma: no cover
+    _WS = None
+    logger.warning(f"[llm_tools] workspace client unavailable: {_e}")
+
+try:
+    from swarm_core.security import authz as _authz
+except Exception:  # pragma: no cover
+    _authz = None
+
+
+def _ws_ok(r: dict) -> dict:
+    return {"success": r.get("status") == "ok", **r}
+
+
+async def exec_workspace_write(content: str, path: str, append: bool = False) -> dict:
+    if _WS is None:
+        return {"success": False, "error": "workspace unavailable"}
+    r = _ws_ok(_WS.write(path, content, append=bool(append)))
+    _log_tool_call("workspace_write", {"path": path, "append": bool(append)}, {"success": r["success"]})
+    return r
+
+
+async def exec_workspace_read(path: str) -> dict:
+    if _WS is None:
+        return {"success": False, "error": "workspace unavailable"}
+    r = _ws_ok(_WS.read(path))
+    _log_tool_call("workspace_read", {"path": path}, {"success": r["success"]})
+    return r
+
+
+async def exec_workspace_list(path: str = "") -> dict:
+    if _WS is None:
+        return {"success": False, "error": "workspace unavailable"}
+    r = _ws_ok(_WS.list(path))
+    _log_tool_call("workspace_list", {"path": path}, {"success": r["success"]})
+    return r
+
+
+async def exec_workspace_browse(url: str, max_chars: int = 8000) -> dict:
+    if _WS is None:
+        return {"success": False, "error": "workspace unavailable"}
+    if _authz is not None:
+        try:
+            _authz.require(_WS_AGENT, "workspace.browse")
+        except Exception as e:
+            r = {"success": False, "error": f"not authorized for workspace.browse: {e}"}
+            _log_tool_call("workspace_browse", {"url": url}, r)
+            return r
+    r = _ws_ok(_WS.browse(url, max_chars=int(max_chars or 8000)))
+    _log_tool_call("workspace_browse", {"url": url}, {"success": r["success"]})
+    return r
+
+
 # ── Executor Registry ──────────────────────────────────────────────────────────
 
 TOOL_EXECUTORS = {
@@ -545,6 +647,10 @@ TOOL_EXECUTORS = {
     "get_stock_price": exec_get_stock_price,
     "get_news": exec_get_news,
     "get_weather": exec_get_weather,
+    "workspace_write": exec_workspace_write,
+    "workspace_read": exec_workspace_read,
+    "workspace_list": exec_workspace_list,
+    "workspace_browse": exec_workspace_browse,
 }
 
 

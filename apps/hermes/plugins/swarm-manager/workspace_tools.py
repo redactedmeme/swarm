@@ -12,11 +12,11 @@ as ``approval`` in the tool args. ``workspace_browse`` needs ``workspace.browse`
 """
 from __future__ import annotations
 
-import http.client
 import json
 import logging
 import os
-import socket
+
+from swarm_core.workspace_client import WorkspaceClient
 
 logger = logging.getLogger("swarm-manager.workspace")
 
@@ -25,58 +25,15 @@ WORKSPACE_SOCK = os.getenv("WORKSPACE_SOCK", "/run/workspace/workspace.sock")
 ACTOR = os.getenv("SWARM_NODE_ID", "hermes")
 
 try:
-    from swarm_core.security.secrets import get_secret as _get_secret
-except Exception:  # pragma: no cover
-    def _get_secret(name, default=None, *, required=False):
-        return os.getenv(name, default)
-
-try:
     from swarm_core.security import authz as _authz
 except Exception:  # pragma: no cover
     _authz = None
 
-
-def _token() -> str:
-    env = "WORKSPACE_TOKEN_" + ACTOR.upper().replace("-", "_")
-    return (_get_secret(env) or "").strip()
-
-
-class _UnixHTTPConnection(http.client.HTTPConnection):
-    def __init__(self, sock_path: str, timeout: int = 90):
-        super().__init__("localhost", timeout=timeout)
-        self._sock_path = sock_path
-
-    def connect(self):
-        s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
-        s.settimeout(self.timeout)
-        s.connect(self._sock_path)
-        self.sock = s
+_WS = WorkspaceClient(ACTOR, sock=WORKSPACE_SOCK)
 
 
 def _call(method: str, path: str, body: dict | None, timeout: int = 90) -> dict:
-    conn = _UnixHTTPConnection(WORKSPACE_SOCK, timeout=timeout)
-    headers = {
-        "Content-Type": "application/json",
-        "X-Swarm-Agent": ACTOR,
-        "Authorization": f"Bearer {_token()}",
-    }
-    try:
-        conn.request(method, path, body=json.dumps(body or {}), headers=headers)
-        resp = conn.getresponse()
-        raw = resp.read().decode("utf-8", "replace")
-        try:
-            data = json.loads(raw)
-        except Exception:
-            data = {"status": "error", "error": raw[:300]}
-        if resp.status != 200 and "error" not in data:
-            data = {"status": "error", "error": f"HTTP {resp.status}: {raw[:200]}"}
-        return data
-    except FileNotFoundError:
-        return {"status": "error", "error": "workspace service unavailable (socket missing)"}
-    except Exception as e:  # noqa: BLE001
-        return {"status": "error", "error": f"workspace call failed: {e}"}
-    finally:
-        conn.close()
+    return _WS.call(method, path, body, timeout=timeout)
 
 
 def _require(capability: str, approval: str | None) -> str | None:
