@@ -7,6 +7,7 @@ Each tool is defined with JSON schema (for prompt injection) and an executor.
 
 import json
 import logging
+import os
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -312,6 +313,22 @@ TOOL_SCHEMAS = [
                 "max_chars": {"type": "integer", "description": "Cap on returned text (default 8000)"},
             },
             "required": ["url"],
+        },
+    },
+    {
+        "name": "python_exec",
+        "description": (
+            "Execute a short Python snippet in an isolated sandbox with no network "
+            "and no access to swarm secrets. Use for pure computation; filesystem, "
+            "sockets and outbound HTTP are unavailable."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "code": {"type": "string", "description": "Python code to execute (stdlib only, no network)."},
+                "timeout": {"type": "integer", "description": "Seconds (max 30, default 10)"},
+            },
+            "required": ["code"],
         },
     }
 ]
@@ -631,6 +648,20 @@ async def exec_workspace_browse(url: str, max_chars: int = 8000) -> dict:
     return r
 
 
+async def exec_python_exec(code: str, timeout: int = 10) -> dict:
+    """Run a Python snippet in the exec-runner sandbox (no network, no secrets)."""
+    if os.getenv("EXEC_ENABLED", "false").lower() != "true":
+        return {"success": False, "error": "code execution disabled (EXEC_ENABLED not set)"}
+    try:
+        from swarm_core.exec_client import run_code
+    except Exception as e:  # pragma: no cover
+        return {"success": False, "error": f"exec client unavailable: {e}"}
+    r = run_code(code, actor=_WS_AGENT, timeout=int(timeout or 10))
+    r["success"] = r.get("status") == "ok"
+    _log_tool_call("python_exec", {"timeout": timeout}, {"success": r["success"], "status": r.get("status")})
+    return r
+
+
 # ── Executor Registry ──────────────────────────────────────────────────────────
 
 TOOL_EXECUTORS = {
@@ -651,6 +682,7 @@ TOOL_EXECUTORS = {
     "workspace_read": exec_workspace_read,
     "workspace_list": exec_workspace_list,
     "workspace_browse": exec_workspace_browse,
+    "python_exec": exec_python_exec,
 }
 
 

@@ -71,7 +71,7 @@ _DEFAULT_POLICY: dict[str, Any] = {
         "redactedgovimprover": ["inbox.send", "llm.call"],
         "smolting": ["web.fetch", "inbox.send", "llm.call", "workspace.browse"],
         "runtime": ["web.fetch", "inbox.send", "llm.call"],
-        "redacted-chan": ["inbox.send", "llm.call", "web.fetch", "workspace.browse"],
+        "redacted-chan": ["inbox.send", "llm.call", "web.fetch", "workspace.browse", "code.exec"],
         "mandalaasettler": ["funds.transfer", "inbox.send", "llm.call"],
         "refinery": ["inbox.send", "llm.call"],
     },
