@@ -1579,27 +1579,39 @@ class RedactedChanBot:
                     _relay = None
                     try:
                         _br = await llm_tools.execute_tool('workspace_browse', {'url': _url})
+                        _title = str(_br.get('title') or '').strip()
                         _txt = str(_br.get('content') or _br.get('text') or _br.get('error') or '')
                         # drop the promptguard <untrusted> fence + DATA preamble
                         if '\n---\n' in _txt:
                             _txt = _txt.split('\n---\n', 1)[1]
                         _txt = _txt.replace('</untrusted>', '').strip()
+                        _txt = ' '.join(_txt.split())
+                        _sys = (
+                            "You are redacted-chan summarising a web page for master. Report ONLY what is "
+                            "literally present in the text below. Quote concrete phrases from it. Do NOT infer "
+                            "file formats, endpoints, field names, JSON structure, versions or status values that "
+                            "are not written verbatim in the text. If the text is mostly navigation, boilerplate "
+                            "or non-English, say so. If it does not contain something, say it is not there — never "
+                            "invent. 3-5 sentences, your voice, no headings, no bullet points."
+                        )
                         try:
                             from groq import AsyncGroq as _AG
                             _c = _AG(api_key=os.getenv('GROQ_API_KEY', ''))
                             _rr = await _c.chat.completions.create(
                                 model=os.getenv('GROQ_MODEL', 'meta-llama/llama-4-scout-17b-16e-instruct'),
+                                temperature=0,
                                 messages=[
-                                    {'role': 'system', 'content': 'You are redacted-chan. In your own voice, 2-3 sentences, tell master what this web page says. Plain and concrete, no quotes, no labels.'},
-                                    {'role': 'user', 'content': f'Page: {_url}\n\n{_txt[:4000]}'},
+                                    {'role': 'system', 'content': _sys},
+                                    {'role': 'user', 'content': f'URL: {_url}\nTitle: {_title or "(none)"}\n\nPAGE TEXT:\n{_txt[:9000]}'},
                                 ],
-                                max_tokens=180,
+                                max_tokens=320,
                             )
                             _relay = _rr.choices[0].message.content.strip()
                         except Exception:
                             _relay = None
                         if not _relay:
-                            _relay = f"(from {_url}) " + ' '.join(_txt.split())[:400]
+                            _head = f"{_title} — " if _title else ''
+                            _relay = f"(from {_url}) {_head}" + _txt[:500]
                     except Exception as _we:
                         _relay = f"(couldn't read {_url}: {_we})"
                     cleaned = (cleaned + '\n\n' + _relay).strip()
