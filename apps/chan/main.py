@@ -1562,6 +1562,30 @@ class RedactedChanBot:
         _hermes_sent_main = False
         try:
             cleaned, hermes_tasks = hd.extract_hermes_markers(final_response)
+
+            # Web-page fetches are chan's own job now — a [HERMES: ...] task whose
+            # instruction is basically 'read this URL' goes to her own workspace_browse
+            # instead of being relayed to Hermes.
+            if hermes_tasks:
+                _kept, _web = [], []
+                for _t in hermes_tasks:
+                    _um = _re.search(r'https?://\S+', _t.get('instruction', '') or '')
+                    if _um and _t.get('task_type') in ('general', None):
+                        _web.append((_t, _um.group(0).rstrip(').,;\'"')))
+                    else:
+                        _kept.append(_t)
+                hermes_tasks = _kept
+                for _t, _url in _web:
+                    try:
+                        _br = await llm_tools.execute_tool('workspace_browse', {'url': _url})
+                        _txt = _br.get('content') or _br.get('text') or _br.get('error') or ''
+                        _relay = await _naturalize_hermes_result(
+                            _t.get('instruction', ''), {'content': str(_txt)[:1200]})
+                    except Exception as _we:
+                        _relay = f"(couldn't read {_url}: {_we})"
+                    cleaned = (cleaned + '\n\n' + _relay).strip()
+                    final_response = cleaned
+
             if hermes_tasks:
                 final_response = cleaned
                 _stop_typing()
