@@ -26,6 +26,9 @@ except ImportError:
 logger = logging.getLogger(__name__)
 
 MESH_URL  = os.getenv("SWARM_MESH_URL", "").rstrip("/")
+# The runtime bridge gates /announce, /messages, /message behind
+# `Authorization: Bearer <SUB_AGENT_TOKEN>` (apps/runtime/auth.py).
+MESH_TOKEN = os.getenv("SUB_AGENT_TOKEN", "")
 NODE_ID   = os.getenv("SWARM_NODE_ID", "smolting")
 NODE_ROLE = os.getenv("SWARM_NODE_ROLE", "telegram-agent")
 NODE_CAPS = ["moltbook-post", "sovereignty", "memory", "telegram"]
@@ -42,9 +45,12 @@ def _enabled() -> bool:
 async def _session() -> aiohttp.ClientSession:
     global _SESSION
     if _SESSION is None or _SESSION.closed:
+        headers = {"Content-Type": "application/json"}
+        if MESH_TOKEN:
+            headers["Authorization"] = f"Bearer {MESH_TOKEN}"
         _SESSION = aiohttp.ClientSession(
             timeout=aiohttp.ClientTimeout(total=8),
-            headers={"Content-Type": "application/json"},
+            headers=headers,
         )
     return _SESSION
 

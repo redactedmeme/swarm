@@ -55,6 +55,7 @@ web_tools   = _import_plugin_module("web_tools")
 exec_tools  = _import_plugin_module("exec_tools")
 skill_tools = _import_plugin_module("skill_tools")
 x_tools     = _import_plugin_module("x_tools")
+workspace_tools = _import_plugin_module("workspace_tools")
 
 
 # ── Tool registry ─────────────────────────────────────────────────────────────
@@ -82,6 +83,13 @@ def _load_tools():
         x_tools.register(ctx)
     except Exception as _xe:
         logger.warning("[tools] X tools not registered (missing credentials?): %s", _xe)
+    if os.getenv("WORKSPACE_ENABLED", "false").lower() == "true":
+        try:
+            workspace_tools.register(ctx)
+        except Exception as _we:
+            logger.warning("[tools] Workspace tools not registered: %s", _we)
+    else:
+        logger.info("[tools] Workspace tools skipped — set WORKSPACE_ENABLED=true to enable")
     logger.info("[swarm_manager] %d tools loaded: %s", len(TOOLS), list(TOOLS))
 
 

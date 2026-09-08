@@ -232,6 +232,18 @@ _ENV_ALLOW = (
 )
 def _shell_env(agent: str) -> dict:
     env = {k: v for k, v in os.environ.items() if k in _ENV_ALLOW}
+    # curl (and libcurl) deliberately ignore the UPPER-case ``HTTP_PROXY`` for
+    # ``http://`` URLs — only ``http_proxy`` (lower) is honoured there. The
+    # container is configured with the upper-case names, so mirror each proxy
+    # var to its opposite case; otherwise plain-HTTP egress from the shell
+    # slips past swarm-egress (allowlist + SSRF block + leak scan).
+    for up, lo in (("HTTP_PROXY", "http_proxy"),
+                   ("HTTPS_PROXY", "https_proxy"),
+                   ("NO_PROXY", "no_proxy")):
+        if up in env and lo not in env:
+            env[lo] = env[up]
+        elif lo in env and up not in env:
+            env[up] = env[lo]
     env.setdefault("PATH", "/usr/local/bin:/usr/bin:/bin")
     env["HOME"] = str(agent_root(agent))
     env["SWARM_AGENT"] = agent
