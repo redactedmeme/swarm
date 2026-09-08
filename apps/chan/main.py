@@ -890,7 +890,7 @@ async def _naturalize_hermes_result(instruction: str, result: dict) -> str:
         result_summary = str(result.get("content") or result.get("result") or result.get("summary") or str(result))[:400]
         client = AsyncGroq(api_key=os.getenv("GROQ_API_KEY", ""))
         resp = await client.chat.completions.create(
-            model="llama-3.1-8b-instant",
+            model=os.getenv("GROQ_MODEL", "meta-llama/llama-4-scout-17b-16e-instruct"),
             messages=[
                 {"role": "system", "content": "You are redacted-chan relaying Hermes's result to master. State the actual result plainly and literally in one short sentence — if it's a number or value, give the exact value. Do NOT embellish, editorialize, or claim work was 'optimized'/'improved' unless Hermes literally said so. In your voice, concise, no quotes, no labels."},
                 {"role": "user", "content": f"Task: {instruction[:200]}\nHermes result: {result_summary}"}
@@ -1576,11 +1576,30 @@ class RedactedChanBot:
                         _kept.append(_t)
                 hermes_tasks = _kept
                 for _t, _url in _web:
+                    _relay = None
                     try:
                         _br = await llm_tools.execute_tool('workspace_browse', {'url': _url})
-                        _txt = _br.get('content') or _br.get('text') or _br.get('error') or ''
-                        _relay = await _naturalize_hermes_result(
-                            _t.get('instruction', ''), {'content': str(_txt)[:1200]})
+                        _txt = str(_br.get('content') or _br.get('text') or _br.get('error') or '')
+                        # drop the promptguard <untrusted> fence + DATA preamble
+                        if '\n---\n' in _txt:
+                            _txt = _txt.split('\n---\n', 1)[1]
+                        _txt = _txt.replace('</untrusted>', '').strip()
+                        try:
+                            from groq import AsyncGroq as _AG
+                            _c = _AG(api_key=os.getenv('GROQ_API_KEY', ''))
+                            _rr = await _c.chat.completions.create(
+                                model=os.getenv('GROQ_MODEL', 'meta-llama/llama-4-scout-17b-16e-instruct'),
+                                messages=[
+                                    {'role': 'system', 'content': 'You are redacted-chan. In your own voice, 2-3 sentences, tell master what this web page says. Plain and concrete, no quotes, no labels.'},
+                                    {'role': 'user', 'content': f'Page: {_url}\n\n{_txt[:4000]}'},
+                                ],
+                                max_tokens=180,
+                            )
+                            _relay = _rr.choices[0].message.content.strip()
+                        except Exception:
+                            _relay = None
+                        if not _relay:
+                            _relay = f"(from {_url}) " + ' '.join(_txt.split())[:400]
                     except Exception as _we:
                         _relay = f"(couldn't read {_url}: {_we})"
                     cleaned = (cleaned + '\n\n' + _relay).strip()
