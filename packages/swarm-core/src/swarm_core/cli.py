@@ -109,6 +109,50 @@ def _cmd_wallets(args) -> int:
 
 # ── reserve ───────────────────────────────────────────────────────────────────
 
+def _cmd_evolve(args) -> int:
+    from swarm_core import evolve
+
+    if args.evolve_cmd == "list":
+        rows = evolve.stored()
+        if not rows:
+            print("no evolved artifacts yet "
+                  "(an agent registers one with swarm_core.evolve.register)")
+            return 0
+        _print_json([{
+            "name": r.get("name"),
+            "owner": r.get("owner"),
+            "kind": r.get("kind"),
+            "generation": r.get("generation"),
+            "origin": r.get("origin"),
+            "bytes": len(r.get("body", "")),
+            **evolve.stats(r.get("name", "")),
+        } for r in rows])
+        return 0
+
+    if args.evolve_cmd == "show":
+        print(evolve.body(args.name))
+        return 0
+
+    if args.evolve_cmd == "log":
+        _print_json([{
+            "generation": g.generation,
+            "promoted": g.promoted,
+            "champion": round(g.champion_score, 4),
+            "challenger": round(g.challenger_score, 4),
+            "verdict": g.verdict,
+            "rationale": g.rationale,
+        } for g in evolve.history(args.name, args.limit)])
+        return 0
+
+    if args.evolve_cmd == "rollback":
+        rec = evolve.rollback(args.name)
+        print(f"{args.name}: rolled back to generation "
+              f"{rec.get('previous_generation')} (now generation {rec['generation']})")
+        return 0
+
+    return 2
+
+
 def _cmd_reserve(args) -> int:
     from swarm_core.solana import reserve
 
@@ -268,6 +312,18 @@ def build_parser() -> argparse.ArgumentParser:
     rr = rss.add_parser("refuel")
     rr.add_argument("agent", nargs="?")
     rs.set_defaults(fn=_cmd_reserve)
+
+    ev = sub.add_parser("evolve", help="benchmark-gated self-improvement artifacts")
+    evs = ev.add_subparsers(dest="evolve_cmd", required=True)
+    evs.add_parser("list", help="every evolved artifact and its generation stats")
+    evshow = evs.add_parser("show", help="print an artifact's live body")
+    evshow.add_argument("name")
+    evlog = evs.add_parser("log", help="the generation ledger for one artifact")
+    evlog.add_argument("name")
+    evlog.add_argument("--limit", type=int, default=20)
+    evrb = evs.add_parser("rollback", help="restore the previous body")
+    evrb.add_argument("name")
+    ev.set_defaults(fn=_cmd_evolve)
 
     d = sub.add_parser("delegate", help="send a task_request and (optionally) wait")
     d.add_argument("--from", required=True)

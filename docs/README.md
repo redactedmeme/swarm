@@ -25,8 +25,9 @@ optional.
 | 8 | [`architecture/directory-tree.md`](architecture/directory-tree.md) | *Where does everything live?* |
 | 9 | [`architecture/hyperbolic-geometry-primer.md`](architecture/hyperbolic-geometry-primer.md) | *Why hyperbolic space?* — Background for the `{7,3}` kernel and curvature depth. |
 | 10 | [`architecture/beam-scot.md`](architecture/beam-scot.md) | *What is BEAM-SCoT?* — Parallel branch reasoning: angles, scoring, providers. |
-| 11 | [`history/UPGRADE_LOG.md`](history/UPGRADE_LOG.md) | *What changed and when?* |
-| 12 | [`plans/README.md`](plans/README.md) | *What is planned but not built?* — Open build plans; delete or move to `history/` once shipped. |
+| 11 | [`architecture/self-improvement.md`](architecture/self-improvement.md) | *How does the swarm improve itself?* — `swarm_core.evolve`: benchmark, arena, generation ledger. |
+| 12 | [`history/UPGRADE_LOG.md`](history/UPGRADE_LOG.md) | *What changed and when?* |
+| 13 | [`plans/README.md`](plans/README.md) | *What is planned but not built?* — Open build plans; delete or move to `history/` once shipped. |
 
 ### Lore — optional
 

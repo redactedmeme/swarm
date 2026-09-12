@@ -65,13 +65,13 @@ _DEFAULT_POLICY: dict[str, Any] = {
     "grants": {
         # agent -> capabilities it may hold. "*" = any capability (still subject
         # to the approval gate for requires_approval entries).
-        "hermes": ["code.exec", "infra.deploy", "secret.read", "web.fetch", "inbox.send", "llm.call", "social.post", "workspace.shell", "workspace.browse"],
+        "hermes": ["code.exec", "infra.deploy", "secret.read", "web.fetch", "inbox.send", "llm.call", "social.post", "workspace.shell", "workspace.browse", "evolve.promote"],
         "redactedbuilder": ["funds.transfer", "web.fetch", "inbox.send", "llm.call"],
         "redactedintern": ["infra.deploy", "inbox.send", "llm.call"],
         "redactedgovimprover": ["inbox.send", "llm.call"],
-        "smolting": ["web.fetch", "inbox.send", "llm.call", "workspace.browse"],
+        "smolting": ["web.fetch", "inbox.send", "llm.call", "workspace.browse", "evolve.promote"],
         "runtime": ["web.fetch", "inbox.send", "llm.call"],
-        "redacted-chan": ["inbox.send", "llm.call", "web.fetch", "workspace.browse", "workspace.shell", "infra.deploy", "code.exec"],
+        "redacted-chan": ["inbox.send", "llm.call", "web.fetch", "workspace.browse", "workspace.shell", "infra.deploy", "code.exec", "evolve.promote"],
         "mandalaasettler": ["funds.transfer", "inbox.send", "llm.call"],
         "refinery": ["inbox.send", "llm.call"],
     },

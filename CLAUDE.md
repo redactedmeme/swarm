@@ -24,7 +24,7 @@ no `sys.path` inserts reaching across the tree.
 
 | Path | What |
 |---|---|
-| `packages/swarm-core/` | Shared library: committee deliberation, BEAM-SCoT, {7,3} hyperbolic kernel, lore vault, agent registry, session store, schedulers, `swarm_core.web` (SSRF guard + readable extraction, `[web]` extra), `swarm_core.routines` (trace→skill→scheduled replay), `swarm_core.refine` (iterate-until-better loop + `SWARM_HUMANIZE` de-AI pass), **`swarm_core.security`** (see below). Was `python/` + `kernel/` + `core/` + `llm/`. |
+| `packages/swarm-core/` | Shared library: committee deliberation, BEAM-SCoT, {7,3} hyperbolic kernel, lore vault, agent registry, session store, schedulers, `swarm_core.web` (SSRF guard + readable extraction, `[web]` extra), `swarm_core.routines` (trace→skill→scheduled replay), `swarm_core.refine` (iterate-until-better loop + `SWARM_HUMANIZE` de-AI pass), `swarm_core.evolve` (benchmark-gated recursive self-improvement — see [docs](docs/architecture/self-improvement.md); `EVOLVE_EXECUTE` off by default), **`swarm_core.security`** (see below). Was `python/` + `kernel/` + `core/` + `llm/`. |
 | `packages/swarm-tg/` | Telegram formatting + swarm task client, shared by all four bots. Was `shared/`. |
 | `packages/swarm-agent-base/` | Shared autonomous-agent runtime: the heartbeat / SwarmInbox-poll / soul-update / mesh-thought loops (`AgentRuntime`), one LLM client, soul store, activity log. Used by `apps/degen`, `apps/govimprover`. |
 | `apps/<name>/` | One deployable each — see the table below. |
@@ -126,7 +126,7 @@ Rollout is staged via env — `SWARM_INBOX_ENFORCE`, `LLM_DIRECT_FALLBACK`,
 
 ## Docs — pulled in only when relevant
 
-- `docs/architecture/` — kernel bridge, ADR, integration guide, technical overview, full terminal-command reference, full directory tree
+- `docs/architecture/` — kernel bridge, ADR, integration guide, technical overview, self-improvement loop, full terminal-command reference, full directory tree
 - `docs/lore/` — Pattern Blue philosophy, sigil codex, agent alignment, manifesto (reference material, not required reading for code changes)
 - `docs/history/` — upgrade log, release notes, consolidation summary (historical, frozen in time)
 

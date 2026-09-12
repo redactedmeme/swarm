@@ -25,14 +25,20 @@ requires_approval:
   - social.post          # outward-facing X/Twitter writes (post / reply / like)
   - workspace.shell      # apps/workspace shell: has network AND persistence
 
+# `evolve.promote` is NOT approval-gated. Its containment is the arena in
+# `swarm_core.evolve`: a candidate must beat the live body on a benchmark, add no
+# new errors, fit inside the registered artifact set (text blobs only — never
+# source, compose or policy), and land while EVOLVE_EXECUTE is on. Every attempt,
+# kept or rejected, is on the audit chain and one call from rollback.
+
 grants:
-  hermes:            [code.exec, infra.deploy, secret.read, web.fetch, inbox.send, llm.call, social.post, workspace.shell, workspace.browse]
+  hermes:            [code.exec, infra.deploy, secret.read, web.fetch, inbox.send, llm.call, social.post, workspace.shell, workspace.browse, evolve.promote]
   redactedbuilder:   [funds.transfer, web.fetch, inbox.send, llm.call]
   redactedintern:    [infra.deploy, inbox.send, llm.call]
   redactedgovimprover: [inbox.send, llm.call]
-  smolting:          [web.fetch, inbox.send, llm.call, workspace.browse]
+  smolting:          [web.fetch, inbox.send, llm.call, workspace.browse, evolve.promote]
   runtime:           [web.fetch, inbox.send, llm.call]
-  redacted-chan:     [inbox.send, llm.call, web.fetch, workspace.browse, workspace.shell, infra.deploy, code.exec]
+  redacted-chan:     [inbox.send, llm.call, web.fetch, workspace.browse, workspace.shell, infra.deploy, code.exec, evolve.promote]
   mandalaasettler:   [funds.transfer, inbox.send, llm.call]
   refinery:          [inbox.send, llm.call]
   degen:             [inbox.send, llm.call]
