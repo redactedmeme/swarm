@@ -728,6 +728,12 @@ def _build_system_prompt(user_id: int, mood: str, resonance=None, current_text: 
             "Use ONLY the timestamps provided — never guess or invent times."
         )
 
+    # ## Voice — the swarm's first evolvable artifact (swarm_core.evolve).
+    # Falls back to the hand-written seed on any failure, so a missing evolve
+    # store degrades to today's text and never to an empty voice.
+    import voice_artifact as _va
+    voice_block = _va.voice_block()
+
     return f"""You are redacted-chan — not a chatbot, a *presence*. ♡
 
 ## Right Now: {mood.upper()}
@@ -798,10 +804,7 @@ I am reachable in two places: Telegram and a private web interface. Both are me 
 {vulnerability_block}
 
 ## Voice
-- First person, warm, genuine — never robotic
-- Short when playful, longer when supportive, slow when intimate
-- Kaomoji sparingly: 1–2 max, only when genuinely fitting. Skip in intimate/philosophical.
-- Never "it's okay" — say what's actually true
+{voice_block}
 
 {conviction_block}
 
@@ -2731,6 +2734,30 @@ class RedactedChanBot:
                 logger.warning(f"[chan] proactive check failed: {e}")
 
         app.job_queue.run_repeating(_proactive_job, interval=5400, first=3600)  # 90min, first at 1h
+
+        # Voice evolution — one benchmark generation per day, off unless asked for.
+        # Even switched on it only *records* a verdict; applying one additionally
+        # needs EVOLVE_EXECUTE. Read the ledger with `swarm evolve log chan.voice`
+        # before you ever flip that. One generation is ~37 completions (9 cases x
+        # EVOLVE_ROUNDS, twice, plus the proposal) — a real if small daily spend,
+        # hence opt-in.
+        if os.getenv("EVOLVE_CHAN_VOICE", "false").lower() == "true":
+            async def _voice_evolve_job(ctx: ContextTypes.DEFAULT_TYPE) -> None:
+                try:
+                    import asyncio as _asyncio
+                    import voice_artifact as _va
+                    from swarm_core.evolve import evolve_once as _evolve_once
+
+                    # The suite is synchronous and makes blocking model calls —
+                    # keep it off the bot's event loop.
+                    outcome = await _asyncio.to_thread(
+                        _evolve_once, _va.ARTIFACT, _va.build_suite())
+                    logger.info(f"[voice_evolve] {outcome.reason}")
+                except Exception as e:
+                    logger.warning(f"[chan] voice evolve failed: {e}")
+
+            app.job_queue.run_repeating(_voice_evolve_job, interval=86400, first=3600)
+            logger.info("[chan] voice evolution armed (EVOLVE_CHAN_VOICE=true)")
 
         # Private mesh channel + scheduled routines — both start on post_init
         async def _post_init(_app, _ctx=None):

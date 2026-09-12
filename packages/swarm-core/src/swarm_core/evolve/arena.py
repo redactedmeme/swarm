@@ -67,14 +67,20 @@ def compete(
     diff_summary: str = "",
     rounds: int | None = None,
     min_gain: float | None = None,
+    champion_result: SuiteResult | None = None,
 ) -> Verdict:
-    """Evaluate ``candidate`` against the live body and promote it if it wins."""
+    """Evaluate ``candidate`` against the live body and promote it if it wins.
+
+    ``champion_result`` reuses a measurement the caller already has. ``evolve_once``
+    scores the live body to build the proposal prompt, and re-scoring it here would
+    make every generation a third more expensive for no extra information.
+    """
     art = artifacts.get(name)
-    champion_body = artifacts.body(name)
     rounds = ROUNDS if rounds is None else rounds
     min_gain = MIN_GAIN if min_gain is None else min_gain
 
-    champion = suite.evaluate_repeated(champion_body, rounds)
+    champion = (champion_result if champion_result is not None
+                else suite.evaluate_repeated(artifacts.body(name), rounds))
     challenger = suite.evaluate_repeated(candidate, rounds)
 
     gain = challenger.score - champion.score

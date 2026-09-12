@@ -100,7 +100,8 @@ def evolve_once(
                        rationale=rationale, reason="proposer returned the current body unchanged")
 
     verdict = arena.compete(name, candidate, suite, rationale=rationale,
-                            diff_summary=rationale, rounds=rounds)
+                            diff_summary=rationale, rounds=rounds,
+                            champion_result=baseline)
     return Outcome(
         artifact=name,
         ran=True,

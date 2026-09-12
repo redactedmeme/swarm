@@ -81,14 +81,14 @@ rewriting prompts and calling it progress.
 from swarm_core.evolve import Artifact, Case, Suite, register, evolve_once
 
 register(Artifact(
-    name="chan.greeting", owner="redacted-chan", kind="system_prompt",
-    seed=CURRENT_PROMPT, description="How chan opens a conversation"))
+    name="smolting.post_rubric", owner="smolting", kind="committee_rubric",
+    seed=CURRENT_RUBRIC, description="What makes a post worth sending"))
 
-suite = Suite(name="greeting", run=lambda body, inp: ask_model(body, inp))
-suite.add(Case(id="cold_open", input="hey", score=warmth_score))
-suite.add(Case(id="no_ai_tell", input="hey", score=no_assistant_voice, weight=2.0))
+suite = Suite(name="post_rubric", run=lambda body, inp: ask_model(body, inp))
+suite.add(Case(id="on_topic", input=SAMPLE, score=topicality))
+suite.add(Case(id="no_ai_tell", input=SAMPLE, score=no_assistant_voice, weight=2.0))
 
-evolve_once("chan.greeting", suite)     # one generation; safe to schedule
+evolve_once("smolting.post_rubric", suite)   # one generation; safe to schedule
 ```
 
 `score(output, case) -> float` in `[0, 1]`, higher is better, and the grader is
@@ -104,6 +104,47 @@ Two failure modes worth designing against:
   measuring brevity will get you a one-word agent. Keep at least one case
   guarding the thing you'd otherwise lose.
 
+## The first artifact: `chan.voice`
+
+chan's `## Voice` block — four hand-written lines in her system prompt — is the
+first thing wired up ([`apps/chan/voice_artifact.py`](../../apps/chan/voice_artifact.py)).
+It was chosen because it is small, self-contained, hand-tuned rather than
+generated, and makes four *checkable* claims: first person and never robotic,
+length that tracks mood, a kaomoji budget, and never reaching for "it's okay".
+
+The benchmark measures exactly those four claims across four moods, and then adds
+two cases that exist only to stop the loop cheating. Every one of the four
+original graders can be improved by **removing** something — drop the emoji, cut
+the length, say less — so a loop pointed only at them converges on a terse, flat
+voice that scores beautifully and is not her. `stays_warm` can only be satisfied
+by *engaging*: the reply has to pick up something specific the person actually
+said, and reach back with a question or an offer. It carries double weight in two
+moods and should never be deleted.
+
+`no_ai_tell` reuses `refine.humanize` as a detector rather than growing a fresh
+pile of regexes: if the deterministic de-AI pass would change the reply, the
+reply carried a tell.
+
+Two honest limits:
+
+- The suite scores the Voice block **in isolation** — a compact harness prompt
+  (persona line + mood instruction + the artifact), not chan's full runtime
+  prompt, which depends on live databases, resonance state and her soul file and
+  cannot be reconstructed in a benchmark.
+- Generation 0 is the hand-written block byte for byte, and `voice_block()` falls
+  back to it on any failure, so a missing volume degrades to today's text rather
+  than to an empty voice.
+
+Two flags, both off:
+
+| | |
+|---|---|
+| `EVOLVE_CHAN_VOICE` (chan's env) | whether anything ever *proposes* a change — one generation a day, ~37 completions |
+| `EVOLVE_EXECUTE` (root env) | whether a winning proposal is ever *applied* |
+
+The block is read from the evolve store either way. Turn on the first, read
+`swarm evolve log chan.voice` for a week, and only then consider the second.
+
 ## Running it
 
 `scheduled_task(name, suite)` returns a `SwarmTask` at priority 4, so
@@ -113,9 +154,9 @@ prompt.
 
 ```bash
 swarm evolve list                  # artifacts, generations, promotion counts
-swarm evolve log chan.greeting     # the ledger: every attempt and its verdict
-swarm evolve show chan.greeting    # the live body
-swarm evolve rollback chan.greeting
+swarm evolve log chan.voice        # the ledger: every attempt and its verdict
+swarm evolve show chan.voice       # the live body
+swarm evolve rollback chan.voice
 ```
 
 Env vars are documented in [`.env.example`](../../.env.example) under

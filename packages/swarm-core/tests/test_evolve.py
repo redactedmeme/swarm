@@ -198,6 +198,28 @@ def test_promotion_requires_the_evolve_promote_grant(evolve, monkeypatch):
     assert evolve.artifacts.body("test.prompt") == "plain"
 
 
+def test_a_supplied_champion_result_is_not_re_measured(evolve):
+    """evolve_once already scored the live body to build the prompt; re-scoring it
+    in the arena would make every generation a third more expensive."""
+    calls = []
+
+    def run(body, inp):
+        calls.append(body)
+        return body
+
+    s = evolve.bench.Suite(name="count", run=run)
+    s.add(evolve.bench.Case(id="only", input=None,
+                            score=lambda o, c: 1.0 if "better" in o else 0.0))
+
+    _register(evolve, seed="plain")
+    baseline = s.evaluate_repeated("plain", 1)
+    calls.clear()
+
+    evolve.arena.compete("test.prompt", "much better", s, rounds=1,
+                         champion_result=baseline)
+    assert calls == ["much better"]      # the champion was never run again
+
+
 # ── ledger (the recursive part) ──────────────────────────────────────────────
 
 def test_lessons_feed_rejections_back_to_the_next_proposer(evolve):
