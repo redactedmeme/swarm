@@ -32,9 +32,17 @@ grants:
   redactedgovimprover: [inbox.send, llm.call]
   smolting:          [web.fetch, inbox.send, llm.call, workspace.browse]
   runtime:           [web.fetch, inbox.send, llm.call]
-  redacted-chan:     [inbox.send, llm.call, web.fetch, workspace.browse, code.exec]
+  redacted-chan:     [inbox.send, llm.call, web.fetch, workspace.browse, workspace.shell, infra.deploy, code.exec]
   mandalaasettler:   [funds.transfer, inbox.send, llm.call]
   refinery:          [inbox.send, llm.call]
   degen:             [inbox.send, llm.call]
   settler:           [inbox.send, llm.call, funds.refuel]
   arb-keeper:        [inbox.send, llm.call]
+
+# agent -> capabilities that skip the approval gate for that agent only. The
+# agent still needs the static grant above. redacted-chan is a trusted private
+# 1:1 companion with no outward publishing surface, so her workspace shell runs
+# always-on (same ergonomics as her sandboxed python_exec). infra.deploy is
+# deliberately NOT exempted — it stays approval-gated for everyone.
+approval_exempt:
+  redacted-chan: [workspace.shell]

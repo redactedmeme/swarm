@@ -78,6 +78,22 @@ def test_deny_approval_removes_from_queue_and_blocks_use(authz):
     assert authz.deny_approval(tok) is False
 
 
+def test_approval_exempt_waives_gate_for_one_agent_only(authz):
+    # workspace.shell is in requires_approval, but redacted-chan is exempt.
+    authz.require("redacted-chan", "workspace.shell")            # no approval needed
+    assert authz.requires_approval("workspace.shell") is True    # still gated in general
+    assert authz.requires_approval("workspace.shell", "redacted-chan") is False
+    # hermes has the grant but is NOT exempt -> still needs approval
+    with pytest.raises(authz.Denied):
+        authz.require("hermes", "workspace.shell")
+    # the exemption does not grant caps chan lacks
+    with pytest.raises(authz.Denied):
+        authz.require("redacted-chan", "funds.transfer")
+    # and it does not leak to other gated caps chan does hold
+    with pytest.raises(authz.Denied):
+        authz.require("redacted-chan", "infra.deploy")
+
+
 def test_is_admin_fail_closed(authz, monkeypatch):
     monkeypatch.delenv("ADMIN_IDS", raising=False)
     assert authz.is_admin("12345") is False          # nobody configured -> deny

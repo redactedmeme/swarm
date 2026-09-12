@@ -139,6 +139,11 @@ services:
     environment:
       WORKSPACE_SOCK: /run/workspace/workspace.sock
       WORKSPACE_TOKEN_HERMES: ${WORKSPACE_TOKEN_HERMES}
+      # redacted-chan drives her own workspace (fs + browser + shell). She runs
+      # from the standalone /home/umbrel/redacted-chan copy, but the workspace
+      # service (here) must know her token + mount the shared socket into her
+      # container. Shell is always-on for her (security/caps.yaml approval_exempt).
+      WORKSPACE_TOKEN_REDACTED_CHAN: ${WORKSPACE_TOKEN_REDACTED_CHAN}
       SWARM_DATA_DIR: /data
       SWARM_AUDIT_LOG: /audit/workspace.jsonl
       REDIS_URL: redis://:${REDIS_PASSWORD}@127.0.0.1:6379
@@ -150,6 +155,31 @@ services:
       - workspacedata:/data
       - workspacesock:/run/workspace
       - auditdata:/audit
+    security_opt:
+      - no-new-privileges:true
+    pids_limit: 512
+    mem_limit: 2g
+    restart: always
+    network_mode: host
+
+  # DeepSeek Harness (dsh) coding agent — web UI + SDK/ACP. LLM is redacted-proxy
+  # (settings.yaml seeded into the volume). Self-contained build context: dsh is
+  # pulled from npm, no swarm_core import, so context is apps/dsh/ ONLY.
+  # dsh binds 127.0.0.1 only (it refuses non-loopback for the web profile) and
+  # prints a per-boot auth token in its logs. Stable URL:
+  #   https://umbrel.taila13a94.ts.net:3080/  (tailscale serve on tailscale_web_1)
+  # append ?token=<from `docker logs swarm-dsh`> once. SSH-tunnel fallback:
+  #   ssh -N -L 3080:127.0.0.1:3080 umbrel@100.106.250.9
+  dsh:
+    build:
+      context: /home/umbrel/swarm/apps/dsh
+      dockerfile: Dockerfile
+    container_name: swarm-dsh
+    environment:
+      PROXY_TOKEN: ${PROXY_TOKEN}  # REDACTED — real value on box; usage attributed via X-Client: dsh
+      DSH_HOME: /data/dsh
+    volumes:
+      - dshdata:/data
     security_opt:
       - no-new-privileges:true
     pids_limit: 512
@@ -431,3 +461,4 @@ volumes:
   execsock:      # unix socket shared exec-runner <-> hermes (control 1)
   workspacesock: # unix socket shared workspace <-> hermes (fs + shell + browser)
   workspacedata: # per-agent persistent workspace roots + browser profiles
+  dshdata:       # dsh $DSH_HOME — sessions, profile, seeded settings.yaml

@@ -71,9 +71,17 @@ _DEFAULT_POLICY: dict[str, Any] = {
         "redactedgovimprover": ["inbox.send", "llm.call"],
         "smolting": ["web.fetch", "inbox.send", "llm.call", "workspace.browse"],
         "runtime": ["web.fetch", "inbox.send", "llm.call"],
-        "redacted-chan": ["inbox.send", "llm.call", "web.fetch", "workspace.browse", "code.exec"],
+        "redacted-chan": ["inbox.send", "llm.call", "web.fetch", "workspace.browse", "workspace.shell", "infra.deploy", "code.exec"],
         "mandalaasettler": ["funds.transfer", "inbox.send", "llm.call"],
         "refinery": ["inbox.send", "llm.call"],
+    },
+    # agent -> capabilities that skip the approval gate for that agent only. Use
+    # sparingly: the agent still needs the static grant, and the exemption is
+    # recorded in caps.yaml where it can be audited. redacted-chan is a trusted
+    # private companion with no outward publishing surface, so her workspace
+    # shell is always-on (same ergonomics as her sandboxed python_exec).
+    "approval_exempt": {
+        "redacted-chan": ["workspace.shell"],
     },
     "approval_ttl": 900,
 }
@@ -90,7 +98,7 @@ def _load_policy() -> None:
             import yaml
 
             doc = yaml.safe_load(path.read_text("utf-8")) or {}
-            for key in ("requires_approval", "grants", "approval_ttl"):
+            for key in ("requires_approval", "grants", "approval_exempt", "approval_ttl"):
                 if key in doc and doc[key] is not None:
                     _POLICY[key] = doc[key]
         except Exception as exc:  # pragma: no cover
@@ -332,8 +340,14 @@ def has_grant(actor: str, capability: str) -> bool:
     return "*" in caps or capability in caps
 
 
-def requires_approval(capability: str) -> bool:
-    return capability in set(_POLICY["requires_approval"])
+def requires_approval(capability: str, actor: str | None = None) -> bool:
+    if capability not in set(_POLICY["requires_approval"]):
+        return False
+    if actor is not None:
+        exempt = set(_POLICY.get("approval_exempt", {}).get(actor, []))
+        if capability in exempt:
+            return False
+    return True
 
 
 def allowed(actor: str, capability: str, *, approval: str | None = None) -> bool:
@@ -358,7 +372,7 @@ def require(actor: str, capability: str, *, approval: str | None = None) -> None
     if not has_grant(actor, capability):
         raise Denied(actor, capability, "no static grant")
 
-    if requires_approval(capability):
+    if requires_approval(capability, actor):
         if not approval:
             raise Denied(actor, capability, "approval required but none supplied")
         rec = _read_token(approval)
