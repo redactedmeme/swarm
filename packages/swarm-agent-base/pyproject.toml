@@ -7,6 +7,7 @@ name = "swarm-agent-base"
 version = "0.1.0"
 description = "Shared autonomous-agent runtime for the REDACTED swarm: the heartbeat / SwarmInbox-poll / soul-update / mesh-thought loops every bot re-implements, plus one LLM client, soul store, and activity log."
 requires-python = ">=3.11"
+license = { text = "MIT" }
 dependencies = [
     "swarm-core",
     "swarm-tg",

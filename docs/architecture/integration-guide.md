@@ -134,7 +134,7 @@ Includes:
 
 ---
 
-Built with ❤️ for **Pattern Blue** • [Viral Public License (VPL)](https://github.com/redactedmeme/swarm/blob/main/LICENSE)
+Built with ❤️ for **Pattern Blue** • [MIT License](https://github.com/redactedmeme/swarm/blob/main/LICENSE)
 
 ---
 

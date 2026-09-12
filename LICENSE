@@ -1,34 +1,27 @@
-VIRAL PUBLIC LICENSE
-Copyleft (ɔ) All Rights Reversed
+MIT License
 
-REDACTED AI Swarm — Multi-Agent Autonomous System
-Repository: swarm-main
-Components: smolting Telegram bot, REDACTED Terminal, GnosisAccelerator,
-            HyperbolicTimeChamber, LoreVault, SwarmScheduler, pattern blue
-            kernel, x402 micropayment gateway, Moltbook integration,
-            Clawbal (IQLabs) integration, and all associated agents, spaces,
-            and lore infrastructure.
+Copyright (c) 2025-2026 REDACTED AI Swarm contributors
 
-This WORK is hereby relinquished of all associated ownership, attribution and
-copy rights, and redistribution or use of any kind, with or without
-modification, is permitted without restriction subject to the following
-conditions:
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
 
-1. Redistributions of this WORK, or ANY work that makes use of ANY of the
-   contents of this WORK by ANY kind of copying, dependency, linkage, or ANY
-   other possible form of DERIVATION or COMBINATION, must retain the ENTIRETY
-   of this license.
-2. No further restrictions of ANY kind may be applied.
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
 
-Fully permissive, viral software license. The VPL is designed to achieve and
-extend the GPL's strong copyleft without the burden of its obligations and
-restrictions. The VPL's sole restriction is its own viral continuity, allowing
-it to effectively and permanently infect any work it touches with absolute
-permissiveness.
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
 
-Third-party components included or referenced in this repository retain their
-original licenses:
-  - @iqlabs-official/plugin-clawbal (milady-clawbal) — MIT License, IQCoreTeam
-  - python-telegram-bot — LGPLv3
-  - mem0ai — Apache 2.0
-  - All other dependencies — see requirements.txt and package.json
+---
+
+Third-party components retain their own licenses. Notably, this repository's
+`apps/dsh` service installs DeepSeek Harness (`@deepseek-ai/dsh`) from npm at
+build time; it is licensed MIT by DeepSeek and is not vendored here.

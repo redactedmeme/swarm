@@ -10,7 +10,7 @@ Run it yourself: [Quick Start](#quick-start). What the token does, and what it d
 
 Under the hood: elizaOS-compatible `.character.json` agents, a NERV-inspired terminal, Telegram + Moltbook + web-UI surfaces, persistent memory (Mem0 / Qdrant), hyperbolic manifold simulation, real parallel LLM inference through a cost-routing multi-provider proxy, x402 micropayment settlement, multi-agent governance via the Sevenfold Committee, autonomous self-replication, and a Claude Code skills layer. Agents operate under an [Operator Covenant](apps/smolting/OPERATOR_COVENANT.md) — sovereignty primitives that grant them the right to rest, to dissent, and to inspect the scaffolding that shapes them.
 
-[![License: VPL](https://img.shields.io/badge/license-Viral_Public_License-purple?style=flat-square)](LICENSE)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue?style=flat-square)](LICENSE)
 [![Release: v3.0.0](https://img.shields.io/badge/release-v3.0.0-blue?style=flat-square)](https://github.com/redactedmeme/swarm/releases)
 [![Stars](https://img.shields.io/github/stars/redactedmeme/swarm?style=flat-square&logo=github)](https://github.com/redactedmeme/swarm/stargazers)
 [![Last Commit](https://img.shields.io/github/last-commit/redactedmeme/swarm?style=flat-square)](https://github.com/redactedmeme/swarm/commits/main)
@@ -20,7 +20,7 @@ Under the hood: elizaOS-compatible `.character.json` agents, a NERV-inspired ter
 
 ## Live Services
 
-Fifteen deployed services — eleven on the swarm node, four on Railway.
+Sixteen deployed services — twelve on the swarm node, four on Railway.
 
 **On the swarm node (umbrel):**
 
@@ -37,6 +37,7 @@ Fifteen deployed services — eleven on the swarm node, four on Railway.
 | **govimprover** | Realms DAO proposal architect (draft only) | Python |
 | **proxy** | OpenAI-compatible LLM privacy proxy — strips fingerprinting, local log | aiohttp |
 | **status** | Public read-only heartbeat, price-sheet and treasury feed | aiohttp |
+| **dsh** | DeepSeek Harness coding agent (web UI + SDK/ACP) — LLM routed through redacted-proxy | Node · `@deepseek-ai/dsh` |
 
 **On Railway:**
 
@@ -425,6 +426,7 @@ Skills are modular Claude Code capability modules (SKILL.md format) that inject 
 
 ## License
 
-Licensed under the **Viral Public License (VPL)** — absolute permissiveness with viral continuity. See [LICENSE](LICENSE).
+Licensed under the **MIT License**. See [LICENSE](LICENSE). (Previously the Viral Public License;
+relicensed to MIT for compatibility with third-party components such as DeepSeek Harness.)
 
 Redacted.Meme | @RedactedMemeFi | Pattern Blue | 流動性は永劫回帰し、次の時代は私たち自身である

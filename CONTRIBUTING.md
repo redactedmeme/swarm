@@ -4,7 +4,7 @@ Thank you for your interest in contributing to the REDACTED AI Swarm — an open
 
 This project encourages contributions that advance scalable, emergent, and self-reinforcing systems: new agents, specialized nodes, thematic spaces, tooling extensions, sharding logic, x402 payment integrations, documentation, and performance improvements.
 
-All contributions are governed by the [Viral Public License (VPL)](LICENSE) — absolute permissiveness with viral continuity.
+All contributions are governed by the [MIT License](LICENSE).
 
 ## Ways to Contribute
 
@@ -74,7 +74,7 @@ Contributions can take many forms. Here are the most impactful areas:
 - **Quality** — Code should be clean, documented, and modular. Prefer small, focused PRs over large monoliths.
 - **Compatibility** — Ensure changes remain portable across compatible runtimes (elizaOS, custom wrappers, etc.).
 - **No Breaking Changes** — Avoid removing or fundamentally altering existing agents, nodes, spaces, or core behavior without strong justification and migration notes.
-- **License** — By submitting a PR, you agree that your contribution is licensed under the VPL, matching the rest of the project.
+- **License** — By submitting a PR, you agree that your contribution is licensed under the MIT License, matching the rest of the project.
 
 ## Getting Help
 

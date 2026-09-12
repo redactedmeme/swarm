@@ -7,6 +7,7 @@ name = "swarm-tg"
 version = "0.1.0"
 description = "Telegram formatting and swarm task-client helpers shared by every REDACTED bot."
 requires-python = ">=3.11"
+license = { text = "MIT" }
 dependencies = ["redis>=5.0"]
 
 [tool.setuptools.packages.find]

@@ -56,6 +56,7 @@ no `sys.path` inserts reaching across the tree.
 | `apps/degen/` | RedactedDegen — Solana LP scout (Raydium/Orca/Meteora → mesh signals) | umbrel |
 | `apps/govimprover/` | RedactedGovImprover — Realms DAO proposal architect (draft only) | umbrel |
 | `apps/workspace/` | Persistent per-agent computer — fs + shell + Playwright browser over a unix socket (NOT exec-runner; has network + persistence). Per-agent volume + token + egress allowlist | umbrel |
+| `apps/dsh/` | DeepSeek Harness (`@deepseek-ai/dsh`, MIT) coding agent — web UI + SDK/ACP. Pulled from npm in its own Dockerfile; LLM is redacted-proxy via seeded `settings.yaml`. Web UI has no auth — tunnel-only | umbrel |
 | `apps/x402/`, `apps/arb-keeper/`, `apps/mcp/` | Dormant / stubs | — |
 
 ### Build contexts — the one rule that matters
@@ -65,11 +66,13 @@ shared packages (`hermes`, `smolting`, `chan`, `refinery`, `runtime`,
 `terminal`, `settler`, `degen`, `govimprover`, `builder`, `workspace`), because
 the image must `COPY packages/`. (`workspace` uses the Playwright base image but
 still builds from the repo root for `swarm_core`.) Self-contained services (`proxy`, `dashboard`,
-`webchat`, `website`, `fieldkit`, `exec-runner`) keep their own directory as
+`webchat`, `website`, `fieldkit`, `exec-runner`, `dsh`) keep their own directory as
 context so their builds stay small. `exec-runner` is deliberately dependency-free
 (aiohttp only, no `swarm_core`) — that is its containment, so it must never gain
-a repo-root context. `fieldkit` is the only Node/React app — it deploys to Vercel
-with root directory `apps/fieldkit`, not through a Dockerfile.
+a repo-root context. `dsh` installs `@deepseek-ai/dsh` from npm and imports no
+shared code — its context is `apps/dsh/` only. `fieldkit` is the only Node/React
+app — it deploys to Vercel with root directory `apps/fieldkit`, not through a
+Dockerfile.
 
 `builder` moved onto the repo root on 2026-09-03. It was self-contained until
 `3a56377` turned its `swarm_inbox.py` / `task_client.py` into re-export shims
@@ -113,8 +116,9 @@ is the one-shot Vaultwarden→tmpfs sidecar. `apps/workspace` is the *opposite* 
 exec-runner — a persistent per-agent fs+shell+browser with network; its
 containment is `WORKSPACE_TOKEN_<AGENT>` + a per-agent volume + the `workspace`
 egress caller + full audit. Caps: `workspace.browse`, and `workspace.shell`
-(approval-gated — it has network *and* persistence). Off unless
-`WORKSPACE_ENABLED=true` on the caller.
+(approval-gated — it has network *and* persistence; exception: `redacted-chan`
+is `approval_exempt` in `caps.yaml`, so her shell is always-on). Off unless
+`WORKSPACE_ENABLED=true` on the caller (`hermes`, `redacted-chan`).
 
 Config: `packages/swarm-core/src/swarm_core/security/{policy,caps,egress}.yaml`.
 Rollout is staged via env — `SWARM_INBOX_ENFORCE`, `LLM_DIRECT_FALLBACK`,
@@ -169,4 +173,4 @@ See [`README.md#quick-start`](README.md) for per-service run instructions.
   override the repo's `railway.toml` where they disagree. Change both together.
 - Never commit real credentials to `.env` files or docs — `.env.example` per service documents required vars.
 - Conversation data (history, vault, soul, whispers) lives on the `/data` volume only, never in the repo.
-- License is VPL (Viral Public License) — see [LICENSE](LICENSE).
+- License is MIT — see [LICENSE](LICENSE). (Relicensed from the Viral Public License 2026-09-06.)
