@@ -954,6 +954,38 @@ def _new_session(direct: bool = False) -> aiohttp.ClientSession:
     return aiohttp.ClientSession()
 
 
+def _build_openai_body(provider: str, upstream_model: str, payload: dict) -> dict:
+    """Provider-specific request-body rewrites for the OpenAI-compatible providers.
+    Shared by the buffered (`_forward`) and streaming (`_forward_stream`) paths."""
+    body = {**payload, "model": upstream_model}
+    _um_l = upstream_model.lower()
+    if provider == "openrouter":
+        if "deepseek" in _um_l:
+            # deepseek reasoning models return null `content` at small token budgets
+            # unless reasoning is disabled — inject centrally so no caller must know.
+            body.setdefault("reasoning", {"enabled": False})
+    else:
+        # `reasoning` is an OpenRouter-specific control; Groq/xAI/OpenAI/Venice reject the
+        # request outright ("property 'reasoning' is unsupported"). Callers often send it
+        # (it was added for deepseek), which would otherwise fail every Groq candidate and
+        # skip the free tier entirely — strip it before forwarding.
+        body.pop("reasoning", None)
+        if provider == "groq" and ("gpt-oss" in _um_l or _um_l.startswith("qwen")):
+            # Groq reasoning models (gpt-oss*, qwen*) otherwise leak <think> traces into
+            # `content` (qwen) or emit a separate reasoning field — hide it so callers get
+            # clean content. Only these models accept the param (llama/gemma reject it).
+            body.setdefault("reasoning_format", "hidden")
+        if provider == "groq" and "gpt-oss" in _um_l:
+            # gpt-oss spends its token budget on hidden reasoning first, so at the modest
+            # max_tokens the swarm requests `content` comes back empty (→ counted as a
+            # failure → needless escalation to the paid tier). Capping reasoning effort at
+            # "low" leaves room for the actual answer. Validated: low → full content,
+            # default/medium → empty. Env-overridable (set GROQ_REASONING_EFFORT="" to skip).
+            if GROQ_REASONING_EFFORT:
+                body.setdefault("reasoning_effort", GROQ_REASONING_EFFORT)
+    return body
+
+
 async def _forward(provider: str, upstream_model: str, payload: dict,
                    session: aiohttp.ClientSession) -> dict:
     headers = _build_forward_headers(provider)
@@ -961,43 +993,155 @@ async def _forward(provider: str, upstream_model: str, payload: dict,
 
     if provider == "anthropic":
         body = _to_anthropic({**payload, "model": upstream_model})
+        body.pop("stream", None)
         async with session.post(url, json=body, headers=headers, timeout=aiohttp.ClientTimeout(total=90)) as resp:
             result = await resp.json(content_type=None)
             if "content" not in result:
                 raise ValueError(f"Anthropic error: {result.get('error', result)}")
             return _from_anthropic(result)
     else:
-        body = {**payload, "model": upstream_model}
-        _um_l = upstream_model.lower()
-        if provider == "openrouter":
-            if "deepseek" in _um_l:
-                # deepseek reasoning models return null `content` at small token budgets
-                # unless reasoning is disabled — inject centrally so no caller must know.
-                body.setdefault("reasoning", {"enabled": False})
-        else:
-            # `reasoning` is an OpenRouter-specific control; Groq/xAI/OpenAI/Venice reject the
-            # request outright ("property 'reasoning' is unsupported"). Callers often send it
-            # (it was added for deepseek), which would otherwise fail every Groq candidate and
-            # skip the free tier entirely — strip it before forwarding.
-            body.pop("reasoning", None)
-            if provider == "groq" and ("gpt-oss" in _um_l or _um_l.startswith("qwen")):
-                # Groq reasoning models (gpt-oss*, qwen*) otherwise leak <think> traces into
-                # `content` (qwen) or emit a separate reasoning field — hide it so callers get
-                # clean content. Only these models accept the param (llama/gemma reject it).
-                body.setdefault("reasoning_format", "hidden")
-            if provider == "groq" and "gpt-oss" in _um_l:
-                # gpt-oss spends its token budget on hidden reasoning first, so at the modest
-                # max_tokens the swarm requests `content` comes back empty (→ counted as a
-                # failure → needless escalation to the paid tier). Capping reasoning effort at
-                # "low" leaves room for the actual answer. Validated: low → full content,
-                # default/medium → empty. Env-overridable (set GROQ_REASONING_EFFORT="" to skip).
-                if GROQ_REASONING_EFFORT:
-                    body.setdefault("reasoning_effort", GROQ_REASONING_EFFORT)
+        body = _build_openai_body(provider, upstream_model, payload)
+        # This path parses one JSON body — never let a caller's stream flag turn the
+        # upstream response into an SSE stream we can't parse. Streaming has its own path.
+        body.pop("stream", None)
+        body.pop("stream_options", None)
         async with session.post(url, json=body, headers=headers, timeout=aiohttp.ClientTimeout(total=90)) as resp:
             result = await resp.json(content_type=None)
             if "choices" not in result:
                 raise ValueError(f"{provider} error: {result.get('error', result)}")
             return _clean_choices(result)
+
+
+# Commit heuristic for streaming failover: hold the SSE stream (buffering chunks,
+# able to fail over to the next candidate) until the upstream has proven itself by
+# emitting real content / a tool call, or until one of these bounds trips and we
+# commit anyway. Keeps the "empty reasoning-model reply → escalate" guard working
+# for the first token, then relays live.
+_STREAM_COMMIT_MAX_CHUNKS = 40
+_STREAM_COMMIT_MAX_BYTES  = 16384
+
+
+async def _forward_stream(provider: str, upstream_model: str, payload: dict,
+                          session: aiohttp.ClientSession, stats: dict):
+    """Async generator of raw SSE line-bytes for one upstream candidate.
+
+    Raises (before yielding anything) on an HTTP error, an error body, or an
+    immediately-empty completion, so the caller can fail over to the next
+    candidate. Once it yields, the candidate is committed. Accumulates assistant
+    text / tool-call flag / usage into `stats` for post-stream logging."""
+    headers = _build_forward_headers(provider)
+    url     = _PROVIDER_URLS[provider]
+
+    # Anthropic uses a different SSE event grammar; rather than translate it,
+    # fetch it buffered and re-emit as a minimal 2-chunk OpenAI stream.
+    if provider == "anthropic":
+        result = await _forward(provider, upstream_model, payload, session)
+        msg = (result.get("choices") or [{}])[0].get("message", {}) or {}
+        text = msg.get("content") or ""
+        if not (text or msg.get("tool_calls")):
+            raise RuntimeError(f"empty content from {provider}/{upstream_model}")
+        stats["text"] = text
+        stats["usage"] = result.get("usage") or {}
+        cid = result.get("id") or f"chatcmpl-{int(time.time()*1000)}"
+        base = {"id": cid, "object": "chat.completion.chunk",
+                "model": result.get("model") or upstream_model}
+        first = {**base, "choices": [{"index": 0, "delta": {"role": "assistant", "content": text}, "finish_reason": None}]}
+        last  = {**base, "choices": [{"index": 0, "delta": {}, "finish_reason": result.get("choices", [{}])[0].get("finish_reason", "stop")}]}
+        yield f"data: {json.dumps(first)}\n\n".encode()
+        yield f"data: {json.dumps(last)}\n\n".encode()
+        return
+
+    body = _build_openai_body(provider, upstream_model, payload)
+    body["stream"] = True
+    # Ask OpenAI-compatible providers to include a usage block in the final chunk.
+    so = body.get("stream_options")
+    body["stream_options"] = {**so, "include_usage": True} if isinstance(so, dict) else {"include_usage": True}
+
+    buf: list[bytes] = []
+    buf_bytes = 0
+    committed = False
+    acc_text = ""
+    saw_tool = False
+    saw_finish = False
+    usage: dict = {}
+
+    async with session.post(url, json=body, headers=headers,
+                            timeout=aiohttp.ClientTimeout(total=300, sock_read=90)) as resp:
+        if resp.status >= 400:
+            detail = (await resp.text())[:500]
+            raise ValueError(f"{provider} error {resp.status}: {detail}")
+
+        async for raw in resp.content:
+            line = raw.decode("utf-8", "replace").rstrip("\r\n")
+            if not line:
+                if not committed:
+                    buf.append(raw)
+                    buf_bytes += len(raw)
+                else:
+                    yield raw
+                continue
+            if line.startswith(":"):  # SSE comment / keep-alive
+                if committed:
+                    yield raw
+                continue
+            if line.startswith("data:"):
+                data = line[5:].strip()
+                if data == "[DONE]":
+                    break
+                try:
+                    obj = json.loads(data)
+                except Exception:
+                    obj = None
+                if obj is not None:
+                    if isinstance(obj.get("error"), (dict, str)) and not obj.get("choices"):
+                        raise ValueError(f"{provider} stream error: {obj['error']}")
+                    if obj.get("usage"):
+                        usage = obj["usage"]
+                    ch0 = (obj.get("choices") or [{}])[0]
+                    delta = ch0.get("delta") or {}
+                    piece = delta.get("content")
+                    if isinstance(piece, str):
+                        acc_text += piece
+                    if delta.get("tool_calls"):
+                        saw_tool = True
+                    if ch0.get("finish_reason"):
+                        saw_finish = True
+                # Rewrite the model name so the client sees what it asked for? No —
+                # keep upstream's chunk verbatim; only the outer response is ours.
+
+            if committed:
+                yield raw
+                continue
+
+            # Not yet committed — buffer and decide.
+            buf.append(raw)
+            buf_bytes += len(raw)
+            if acc_text.strip() or saw_tool:
+                committed = True
+                for b in buf:
+                    yield b
+                buf = []
+            elif saw_finish:
+                # Stream ended before any content — treat as a failed candidate.
+                raise RuntimeError(f"empty content from {provider}/{upstream_model}")
+            elif len(buf) >= _STREAM_COMMIT_MAX_CHUNKS or buf_bytes >= _STREAM_COMMIT_MAX_BYTES:
+                committed = True
+                for b in buf:
+                    yield b
+                buf = []
+
+    if not committed:
+        # Upstream closed with nothing usable.
+        if acc_text.strip() or saw_tool:
+            for b in buf:
+                yield b
+        else:
+            raise RuntimeError(f"empty content from {provider}/{upstream_model}")
+
+    stats["text"] = acc_text
+    stats["tool"] = saw_tool
+    stats["usage"] = usage
+    stats["committed"] = True
 
 
 # ── Client attribution + usage accounting ─────────────────────────────────────
@@ -1478,6 +1622,108 @@ async def handle_chat_completions(request: web.Request) -> web.Response:
     scrub = PRIVACY_SCRUB() or _is_max_privacy(PRIVACY_MODE())
     original_messages = payload.get("messages", [])
     payload["messages"] = _clean_messages(original_messages, scrub)
+
+    want_stream = bool(payload.get("stream"))
+
+    # ── Streaming path (real SSE passthrough) ─────────────────────────────────
+    # Relay the upstream SSE stream chunk-for-chunk. Failover still works up to the
+    # first committed chunk (see _forward_stream); after that the chosen candidate
+    # owns the response. Same cascade, cooldown, logging and usage accounting as
+    # the buffered path.
+    if want_stream:
+        _sessions_s: dict[bool, aiohttp.ClientSession] = {}
+        def _session_for_s(prov: str) -> aiohttp.ClientSession:
+            direct = prov in DIRECT_EGRESS_PROVIDERS
+            if direct not in _sessions_s:
+                _sessions_s[direct] = _new_session(direct=direct)
+            return _sessions_s[direct]
+
+        sse = web.StreamResponse(status=200, headers={
+            "Content-Type": "text/event-stream; charset=utf-8",
+            "Cache-Control": "no-cache, no-transform",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+            "X-Privacy-Mode": PRIVACY_MODE(),
+            **({"X-Auto-Tier": auto_tier} if auto_tier else {}),
+        })
+        started = False
+        served_prov = served_model = ""
+        stats: dict = {}
+        err_text = ""
+        skip_provs: set[str] = set()
+        try:
+            for _prov, _um in candidates:
+                if _prov in skip_provs:
+                    continue
+                stats = {}
+                try:
+                    agen = _forward_stream(_prov, _um, payload, _session_for_s(_prov), stats)
+                    async for chunk in agen:
+                        if not started:
+                            await sse.prepare(request)
+                            started = True
+                        await sse.write(chunk)
+                    served_prov, served_model = _prov, _um
+                    break
+                except Exception as _fe:
+                    err_text = str(_fe)
+                    logger.warning("[proxy] (stream) %s/%s failed: %s", _prov, _um, err_text)
+                    if started:
+                        # Already relaying — cannot fail over. End the stream.
+                        served_prov, served_model = _prov, _um
+                        break
+                    if _is_hard_provider_failure(err_text):
+                        skip_provs.add(_prov)
+                        _PROVIDER_COOLDOWN[_prov] = time.time() + PROVIDER_COOLDOWN_S
+                    continue
+        finally:
+            for _s in _sessions_s.values():
+                await _s.close()
+
+        if not started:
+            # Nothing committed — behave like the buffered path's cascade failure.
+            latency_ms = (time.monotonic() - t0) * 1000
+            logger.warning("[proxy] (stream) all %d candidate(s) failed, last error: %s",
+                           len(candidates), err_text)
+            _log_entry(provider, upstream_model, original_messages, "",
+                       latency_ms, error=err_text or "all providers failed", ephemeral=ephemeral)
+            await _record_usage(request.get("client", "unknown"), provider, upstream_model,
+                                0, 0, 0.0, error=True)
+            return web.json_response(
+                {"error": {"message": err_text or "all providers failed", "provider": provider}},
+                status=502)
+
+        try:
+            await sse.write(b"data: [DONE]\n\n")
+            await sse.write_eof()
+        except Exception:
+            pass
+
+        provider, upstream_model = served_prov or provider, served_model or upstream_model
+        response_text = stats.get("text", "") or ""
+        latency_ms = (time.monotonic() - t0) * 1000
+        u = stats.get("usage") or {}
+        input_tokens = int(u.get("prompt_tokens") or u.get("input_tokens") or 0)
+        output_tokens = int(u.get("completion_tokens") or u.get("output_tokens") or 0)
+        tokens_exact = bool(input_tokens or output_tokens)
+        if not tokens_exact:
+            prompt_chars = sum(len(str(m.get("content", ""))) for m in original_messages)
+            input_tokens = prompt_chars // 4
+            output_tokens = len(response_text) // 4
+        cost_usd = _estimate_cost_usd(provider, upstream_model, input_tokens, output_tokens)
+        logger.info("[proxy] %s/%s → %d chars (%.0fms) $%.6f [stream]%s",
+                    provider, upstream_model, len(response_text), latency_ms, cost_usd,
+                    " [ephemeral]" if (ephemeral or EPHEMERAL_MODE()) else "")
+        _log_entry(provider, upstream_model, original_messages, response_text,
+                   latency_ms, ephemeral=ephemeral, cost_usd=cost_usd)
+        await _record_usage(request.get("client", "unknown"), provider, upstream_model,
+                            input_tokens, output_tokens, cost_usd, exact=tokens_exact)
+        try:
+            await credits.debit(await _usage_redis_client(), request.get("client", "unknown"),
+                                input_tokens, output_tokens)
+        except Exception:
+            pass
+        return sse
 
     error_text = ""
     response_text = ""
