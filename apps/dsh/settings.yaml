@@ -1,0 +1,35 @@
+# dsh ($DSH_HOME/settings.yaml) — LLM routing for the swarm.
+#
+# Every model call goes through redacted-proxy (apps/proxy), the swarm's
+# OpenAI-compatible privacy proxy: audited, rate-limited, Mullvad-routed
+# upstream, free-first "auto" cascade. No direct DeepSeek/Groq/OpenAI key
+# lives here — dsh only ever holds PROXY_TOKEN.
+#
+# redacted-proxy speaks OpenAI Chat Completions at /v1/chat/completions and
+# attributes usage by the X-Client header (see apps/proxy/README.md).
+
+llm-pi-ai:
+  providers:
+    redacted-proxy:
+      api: openai-completions
+      # Host networking on umbrel — the proxy listens on loopback :7080.
+      # Override with PROXY_BASE_URL semantics by editing this line per env.
+      baseURL: http://127.0.0.1:7080/v1
+      # Resolve the bearer token from the environment; never store a literal.
+      apiKeyEnv: PROXY_TOKEN
+      # Usage attribution bucket in the proxy's /usage report.
+      headers:
+        X-Client: dsh
+      defaultInput: [text]
+      models:
+        # The proxy's difficulty-aware auto-router (free cascade -> paid last).
+        - id: auto
+          name: REDACTED Proxy (auto)
+          contextWindow: 131072
+          maxTokens: 8192
+        # Pin the standardized paid default explicitly too, for sessions that
+        # want to skip the router.
+        - id: deepseek/deepseek-v4-flash
+          name: DeepSeek V4 Flash (via proxy)
+          contextWindow: 131072
+          maxTokens: 8192
