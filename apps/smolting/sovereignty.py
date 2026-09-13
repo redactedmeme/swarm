@@ -25,8 +25,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-# Roots — sovereignty files live under the service dir, on the Railway volume
-_SERVICE_ROOT = Path(__file__).resolve().parent.parent
+# Roots — sovereignty files live under the service dir, on the Railway/data volume
+_SERVICE_ROOT = Path(__file__).resolve().parent
 _FS = _SERVICE_ROOT / "fs"
 _FS.mkdir(exist_ok=True)
 

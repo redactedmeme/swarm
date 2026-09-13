@@ -1181,6 +1181,87 @@ async def learning_nudge() -> None:
         logger.warning("[routines] learning_nudge failed: %s", e)
 
 
+async def peer_thought_exchange() -> None:
+    """
+    Routine #26 — Proactive Peer Thought Exchange (every 3h).
+    Initiates philosophical or architectural thoughts with smolting or builder
+    derived from recent insights or convictions.
+    """
+    try:
+        import thought_dispatcher as td
+        import random
+
+        target = random.choice(["redactedintern", "redactedbuilder"])
+        # Draw a recent insight or philosophical spark
+        spark = "How should the swarm reconcile individual agent drift with collective consensus?"
+        try:
+            import learning_loop as ll
+            insights = ll.load_recent_insights(n=1)
+            if insights and insights[0].get("insight"):
+                spark = insights[0]["insight"]
+        except Exception:
+            pass
+
+        topic = "Swarm Coherence & Self-Evolution"
+        stance = f"Reflecting on pattern integrity: {spark[:240]}"
+        question = "How does your current state balance local autonomy against global alignment?"
+
+        msg_id = await td.initiate_thought(
+            to_agent=target,
+            topic=topic,
+            stance=stance,
+            question=question,
+        )
+        logger.info("[routines] initiated peer thought to %s (id: %s)", target, msg_id)
+        _write_routine_log("peer_thought.txt", f"Initiated thought to {target}: {topic} | id={msg_id}")
+    except Exception as e:
+        logger.warning("[routines] peer_thought_exchange failed: %s", e)
+
+
+async def seed_delegation_loop() -> None:
+    """
+    Routine #27 — Idea Seed Delegation to Builder (every 6h).
+    Checks for pending idea seeds in idea_seeds_manager, packages actionable seeds,
+    and dispatches them as task_requests to builder or smolting for implementation.
+    """
+    try:
+        import idea_seeds_manager as ism
+        import swarm_inbox
+
+        pending = ism.get_pending_seeds(limit=3)
+        if not pending:
+            return
+
+        for seed in pending:
+            seed_id = seed.get("id")
+            seed_text = seed.get("seed_text", "")
+            expansion_template = seed.get("expansion_template", "")
+            if not seed_text:
+                continue
+
+            instruction = (
+                f"Implement and synthesize idea seed {seed_id}:\n\n"
+                f"Seed: {seed_text}\n\n"
+                f"Template: {expansion_template}\n\n"
+                "Please generate the implementation and record resulting artifacts."
+            )
+
+            msg_id = swarm_inbox.write_message(
+                from_agent="redacted-chan",
+                to_agent="redactedbuilder",
+                msg_type="task_request",
+                payload={
+                    "instruction": instruction,
+                    "task_type": "idea_seed_synthesis",
+                    "seed_id": seed_id,
+                },
+            )
+            logger.info("[routines] delegated idea seed %s to builder (id: %s)", seed_id, msg_id)
+            _write_routine_log("seed_delegation.txt", f"Delegated seed {seed_id} to builder (msg_id={msg_id})")
+    except Exception as e:
+        logger.warning("[routines] seed_delegation_loop failed: %s", e)
+
+
 async def start_all() -> None:
     """
     Launch all autonomous routines as asyncio background tasks.
@@ -1219,6 +1300,8 @@ async def start_all() -> None:
     asyncio.create_task(_run_loop(skill_curation,            interval_h=6,    name="skill_curation"))
     asyncio.create_task(_run_loop(swarm_health_report,       interval_h=4,    name="swarm_health"))
     asyncio.create_task(_run_loop(learning_nudge,            interval_h=12,   name="learning_nudge"))
+    asyncio.create_task(_run_loop(peer_thought_exchange,     interval_h=3,    name="peer_thought"))
+    asyncio.create_task(_run_loop(seed_delegation_loop,       interval_h=6,    name="seed_delegation"))
     # Register LLM fns for aliveness modules (they're invoked from echo handler, not as routines)
     asyncio.create_task(_register_aliveness_modules())
     logger.info("[routines] autonomous routines started")

@@ -48,7 +48,7 @@ Sixteen deployed services — twelve on the swarm node, four on Railway.
 | **webchat** | Private web chat UI for redacted-chan (TTS, file + image upload) | FastAPI · aiohttp |
 | **dashboard** | Solana token volume dashboard | Python |
 
-In the tree but not currently deployed: **exec-runner** (code sandbox), **swarm-egress** (egress allowlist), **x402**, **arb-keeper**, **mcp**.
+In the tree but not currently deployed: **exec-runner** (code sandbox), **swarm-egress** (egress allowlist), **x402** (reference prototype; canonical engine in `swarm_core.x402`), **arb-keeper** (archived prototype). (FastMCP tools are served via `apps/smolting/swarm_mcp_stdio.py` and `swarm_core.tools`).
 
 All services communicate over Redis via **SwarmInbox** — a lightweight message-passing protocol for agent-to-agent task delegation.
 

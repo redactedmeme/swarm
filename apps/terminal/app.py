@@ -474,6 +474,7 @@ def api_gate_verify():
         session['authenticated']  = True
         session['wallet_address'] = res['wallet']
         session['tier']           = res['tier']
+        session['balance']        = res.get('balance', 0)
         session['grants']         = res['grants']
         audit_log('gate_verify', session_id, '', 'success',
                   {'wallet_prefix': res['wallet'][:8], 'tier': res['tier']})
@@ -493,6 +494,7 @@ def api_gate_status():
         'authenticated': bool(session.get('authenticated')),
         'wallet':        session.get('wallet_address'),
         'tier':          session.get('tier'),
+        'balance':       session.get('balance', 0),
         'grants':        session.get('grants', []),
     })
 

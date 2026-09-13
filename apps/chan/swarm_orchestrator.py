@@ -406,6 +406,23 @@ async def _inbox_poll_loop(interval_s: float = 15.0) -> None:
             import swarm_inbox
             messages = swarm_inbox.read_pending(for_agent=SELF_AGENT)
             for msg in messages:
+                if msg.get("type") == "thought":
+                    if not swarm_inbox.claim_message(msg["id"]):
+                        continue
+                    try:
+                        import thought_dispatcher as td
+                        if _llm_fn:
+                            async def _td_llm(messages: list[dict]) -> str:
+                                return await _llm_fn(messages, 250)
+                            reply_id = await td.handle_thought(msg, _td_llm)
+                            swarm_inbox.complete_message(msg["id"], result={"replied": reply_id})
+                        else:
+                            swarm_inbox.complete_message(msg["id"], error="llm_unavailable")
+                    except Exception as e:
+                        logger.warning("[orchestrator] thought handling failed: %s", e)
+                        swarm_inbox.complete_message(msg["id"], error=str(e))
+                    continue
+
                 if msg.get("type") != "task_request":
                     continue
                 payload = msg.get("payload", {})

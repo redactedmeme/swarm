@@ -24,13 +24,15 @@ from datetime import datetime, timezone
 # Load .env from repo root
 try:
     from dotenv import load_dotenv
-    load_dotenv(Path(__file__).resolve().parent.parent / ".env")
+    from swarm_core.paths import repo_root
+    load_dotenv(repo_root() / ".env")
 except ImportError:
     pass
 
 import sys
 _BOT_DIR = Path(__file__).resolve().parent
-_REPO_ROOT = _BOT_DIR.parent
+from swarm_core.paths import repo_root as _get_repo_root
+_REPO_ROOT = _get_repo_root()
 
 from telegram import Update
 from telegram.ext import (
@@ -895,8 +897,9 @@ async def _naturalize_hermes_result(instruction: str, result: dict) -> str:
     """Use Groq 8b to write a natural 1-sentence relay of Hermes's result."""
     try:
         from groq import AsyncGroq
+        from swarm_core.security.secrets import get_secret
         result_summary = str(result.get("content") or result.get("result") or result.get("summary") or str(result))[:400]
-        client = AsyncGroq(api_key=os.getenv("GROQ_API_KEY", ""))
+        client = AsyncGroq(api_key=get_secret("GROQ_API_KEY", "") or "")
         resp = await client.chat.completions.create(
             model=os.getenv("GROQ_MODEL", "meta-llama/llama-4-scout-17b-16e-instruct"),
             messages=[
@@ -1604,7 +1607,8 @@ class RedactedChanBot:
                         )
                         try:
                             from groq import AsyncGroq as _AG
-                            _c = _AG(api_key=os.getenv('GROQ_API_KEY', ''))
+                            from swarm_core.security.secrets import get_secret as _gs
+                            _c = _AG(api_key=_gs('GROQ_API_KEY', '') or '')
                             _rr = await _c.chat.completions.create(
                                 model=os.getenv('GROQ_MODEL', 'meta-llama/llama-4-scout-17b-16e-instruct'),
                                 temperature=0,

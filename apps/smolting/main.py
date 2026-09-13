@@ -11,16 +11,15 @@ from datetime import datetime
 # Load .env from repo root
 try:
     from dotenv import load_dotenv
-    load_dotenv(Path(__file__).resolve().parent.parent / ".env")
+    from swarm_core.paths import repo_root
+    load_dotenv(repo_root() / ".env")
 except ImportError:
     pass
 
-# Ensure python/ is on sys.path for all shared modules (lore_vault, groq_committee, etc.)
-# In container: /app/main.py → /app/python/ (rootDirectory = smolting-telegram-bot/)
-# In repo:      smolting-telegram-bot/main.py → ../python/ (repo root)
 import sys as _sys
 _BOT_DIR = Path(__file__).resolve().parent
-_REPO_ROOT = _BOT_DIR.parent
+from swarm_core.paths import repo_root as _get_repo_root
+_REPO_ROOT = _get_repo_root()
 from swarm_tg.tg_fmt import TgFmt, from_llm, truncate
 
 fmt = TgFmt("HTML")

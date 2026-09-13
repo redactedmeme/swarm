@@ -21,7 +21,11 @@ import asyncio
 from dotenv import load_dotenv
 from pathlib import Path
 
-load_dotenv(Path(__file__).resolve().parent.parent / ".env")
+try:
+    from swarm_core.paths import repo_root
+    load_dotenv(repo_root() / ".env")
+except Exception:
+    load_dotenv(Path(__file__).resolve().parent.parent / ".env")
 
 logger = logging.getLogger(__name__)
 

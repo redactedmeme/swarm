@@ -201,7 +201,7 @@ async def _llm_complete(messages: list, max_tokens: int = 600) -> str:
 
 def _build_system_prompt() -> str:
     """Assemble system prompt with soul block injected."""
-    base = bp.SYSTEM_PROMPT
+    base = bp.get_system_prompt() if hasattr(bp, "get_system_prompt") else bp.SYSTEM_PROMPT
     soul_block = soul_manager.get_soul_for_prompt()
     if soul_block:
         return base + "\n\n" + soul_block

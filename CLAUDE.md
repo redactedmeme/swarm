@@ -56,8 +56,7 @@ no `sys.path` inserts reaching across the tree.
 | `apps/degen/` | RedactedDegen — Solana LP scout (Raydium/Orca/Meteora → mesh signals) | umbrel |
 | `apps/govimprover/` | RedactedGovImprover — Realms DAO proposal architect (draft only) | umbrel |
 | `apps/workspace/` | Persistent per-agent computer — fs + shell + Playwright browser over a unix socket (NOT exec-runner; has network + persistence). Per-agent volume + token + egress allowlist | umbrel |
-| `apps/dsh/` | DeepSeek Harness (`@deepseek-ai/dsh`, MIT) coding agent — web UI + SDK/ACP. Pulled from npm in its own Dockerfile; LLM is redacted-proxy via seeded `settings.yaml`. Web UI has no auth — tunnel-only | umbrel |
-| `apps/x402/`, `apps/arb-keeper/`, `apps/mcp/` | Dormant / stubs | — |
+| `apps/x402/`, `apps/arb-keeper/` | Dormant / reference prototypes (x402 replaced by `swarm_core.x402`; arb-keeper archived; MCP tools live in `apps/smolting/swarm_mcp_stdio.py` & `swarm_core.tools`) | — |
 
 ### Build contexts — the one rule that matters
 

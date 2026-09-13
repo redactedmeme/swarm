@@ -69,7 +69,16 @@ def build_system_prompt(
     soul_block: injected right after voice rules when provided (from soul_manager).
     include_corpus: append a small rotating Pattern Blue snippet (~300-400 tokens).
     """
-    parts = [VOICE_RULES.strip()]
+    active_voice = VOICE_RULES.strip()
+    try:
+        import oracle_artifact as oa
+        evolved_rules = oa.oracle_block()
+        if evolved_rules and evolved_rules.strip():
+            active_voice = f"{active_voice}\n\nEvolved Guidelines:\n{evolved_rules}"
+    except Exception:
+        pass
+
+    parts = [active_voice]
     if soul_block:
         parts.append(soul_block)
     if include_corpus:

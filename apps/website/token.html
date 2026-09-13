@@ -179,13 +179,20 @@
       the swarm to talk to itself would only move tokens between our own wallets.
     </p>
 
-    <h2>Where the money goes</h2>
+    <h2>Value Accrual: Two Clean Mechanisms</h2>
+    <p>
+      Instead of complex internal snapshot contracts, holder value distribution is powered directly on Solana by <strong>Pump.fun Holder Rewards</strong>:
+    </p>
+    <ul>
+      <li><strong>Pump.fun Native Holder Rewards:</strong> Trading volume fees are redirected to Pump.fun's distribution contract, streaming SOL pro-rata several times every hour to any wallet holding over $20 worth of $REDACTED. Completely automated on-chain — no claiming, no staking.</li>
+      <li><strong>Swarm x402 Utility Engine:</strong> Payments for actual swarm inference and services split into burn and compute runway:</li>
+    </ul>
     <div class="tw"><table>
       <thead><tr><th>Slice</th><th>Share</th><th>Fate</th></tr></thead>
       <tbody>
-        <tr><td>Burn</td><td>50%</td><td>Sent to the incinerator. Irreversible, verifiable, gone.</td></tr>
-        <tr><td>Compute</td><td>30%</td><td>Buys the swarm's own LLM API credits.</td></tr>
-        <tr><td>Rewards</td><td>20%</td><td>Reserved pool. Not distributing — see below.</td></tr>
+        <tr><td>Burn</td><td>50%</td><td>Sent to the incinerator (<code>1nc1nerator...</code>). Irreversible, verifiable, gone.</td></tr>
+        <tr><td>Compute</td><td>30%</td><td>Buys the swarm's own LLM API credits and node inference.</td></tr>
+        <tr><td>Treasury / Reserve</td><td>20%</td><td>Operating reserve and grants pool.</td></tr>
       </tbody>
     </table></div>
     <p>
@@ -199,11 +206,6 @@
       flowing to holders. It is capped at 90 days of runway: past that, the overflow
       rolls into the burn instead of accumulating. A treasury that grows without limit
       is an unaccountable pile; a capped one is a budget.
-    </p>
-    <p>
-      The rewards slice is reserved and deliberately not distributing. If it activates
-      it will be a <em>claim</em> against the pool — holder-initiated, snapshot-based —
-      rather than an automatic push.
     </p>
 
     <h2>What holding unlocks</h2>
@@ -273,7 +275,7 @@
         not a mechanism — treat it as unbuilt until a transaction is linked here.
       </li>
       <li>
-        <strong>Rewards claims.</strong> Reserved, not distributing.
+        <strong>Rewards claims.</strong> Replaced by native <strong>Pump.fun Holder Rewards</strong>, which stream SOL distributions automatically on-chain to wallets holding &gt;$20 in $REDACTED without requiring custom claims.
       </li>
       <li>
         <strong>The settlement program.</strong> An Anchor program exists in the tree

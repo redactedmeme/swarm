@@ -252,6 +252,15 @@ def web_search(
         else:
             summary = "no on-topic results after filtering"
 
+        try:
+            from swarm_core.security.promptguard import wrap_untrusted
+            summary = wrap_untrusted(summary, source=f"web:{query}")
+            for r in results:
+                if "snippet" in r and r["snippet"]:
+                    r["snippet"] = wrap_untrusted(r["snippet"], source=f"web:{r.get('url', query)}")
+        except Exception as _pg_err:
+            logger.debug(f"[internet] promptguard wrap skipped: {_pg_err}")
+
         return {
             "status": "success",
             "query": query,

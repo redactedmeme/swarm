@@ -1,5 +1,9 @@
 [build]
-builder = "nixpacks"
+  builder = "DOCKERFILE"
+  # Context is repo root so image can install packages/
+  dockerfilePath = "apps/hermes/Dockerfile"
 
 [deploy]
-startCommand = "bash entrypoint.sh"
+  startCommand = "bash entrypoint.sh"
+  restartPolicyType = "ON_FAILURE"
+  restartPolicyMaxRetries = 3

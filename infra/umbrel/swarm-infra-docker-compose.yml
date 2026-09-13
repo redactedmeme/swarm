@@ -217,7 +217,7 @@ services:
       WORKSPACE_TOKEN_HERMES: ${WORKSPACE_TOKEN_HERMES}
       SWARM_AUDIT_LOG: /audit/hermes.jsonl
       SWARM_INBOX_HMAC_KEY: ${SWARM_INBOX_HMAC_KEY}
-      SWARM_INBOX_ENFORCE: ${SWARM_INBOX_ENFORCE:-warn}
+      SWARM_INBOX_ENFORCE: ${SWARM_INBOX_ENFORCE:-enforce}
       # Credentials in the proxy URL => client libs emit Proxy-Authorization.
       HTTPS_PROXY: http://swarm:${EGRESS_TOKEN_HERMES}@127.0.0.1:8891
       HTTP_PROXY: http://swarm:${EGRESS_TOKEN_HERMES}@127.0.0.1:8891

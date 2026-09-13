@@ -95,11 +95,27 @@ async def handle_thought(
         ),
     ]))
 
-    user_parts = [f"**Swarm thought from {from_ag}**\n\nTopic: {topic}"]
-    if stance:
-        user_parts.append(f"Their take: {stance}")
-    if question:
-        user_parts.append(f"Their question to you: {question}")
+    # Capability check for inbound thought handling
+    try:
+        from swarm_core.security import authz
+        authz.require(MY_AGENT, "inbox.send")
+        authz.require(MY_AGENT, "llm.call")
+    except Exception as _authz_err:
+        logger.warning("[thought] authz check failed: %s", _authz_err)
+
+    try:
+        from swarm_core.security.promptguard import wrap_untrusted
+        clean_topic = wrap_untrusted(topic, source=f"swarm-inbox:{from_ag}")
+        clean_stance = wrap_untrusted(stance, source=f"swarm-inbox:{from_ag}") if stance else ""
+        clean_question = wrap_untrusted(question, source=f"swarm-inbox:{from_ag}") if question else ""
+    except Exception:
+        clean_topic, clean_stance, clean_question = topic, stance, question
+
+    user_parts = [f"**Swarm thought from {from_ag}**\n\nTopic: {clean_topic}"]
+    if clean_stance:
+        user_parts.append(f"Their take: {clean_stance}")
+    if clean_question:
+        user_parts.append(f"Their question to you: {clean_question}")
     user_content = "\n\n".join(user_parts)
 
     try:

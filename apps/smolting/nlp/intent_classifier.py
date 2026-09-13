@@ -434,9 +434,7 @@ def load_vault_entities(classifier: IntentClassifier) -> int:
     Returns count added.
     """
     try:
-        import sys
-        from pathlib import Path
-        _root = Path(__file__).resolve().parent.parent.parent
+        from swarm_core.paths import repo_root
         from swarm_core.lore_vault import get_db
         conn = get_db()
         rows = conn.execute("SELECT name FROM lore_entities").fetchall()

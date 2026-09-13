@@ -388,6 +388,27 @@ class SwarmScheduler:
             tags=["kernel", "health"],
         ))
 
+        # Register evolvable artifacts across swarm services (gated by KernelHealth)
+        self._register_evolve_tasks()
+
+    def _register_evolve_tasks(self) -> None:
+        """Register evolutionary benchmark tasks for active swarm artifacts."""
+        artifact_modules = [
+            ("evolve_chan_voice", "apps.chan.voice_artifact", 4 * 3600),
+            ("evolve_builder_prompt", "apps.builder.prompt_artifact", 4 * 3600),
+            ("evolve_smolting_deliberation", "apps.smolting.deliberation_artifact", 4 * 3600),
+            ("evolve_hermes_oracle", "apps.hermes.oracle_artifact", 4 * 3600),
+        ]
+        for task_id, mod_name, interval in artifact_modules:
+            try:
+                mod = importlib.import_module(mod_name)
+                if hasattr(mod, "scheduled_task"):
+                    task = mod.scheduled_task(interval_s=interval)
+                    if task:
+                        self.register(task)
+            except Exception as e:
+                log.debug(f"Evolve task registration for {mod_name} skipped: {e}")
+
     # ── Task control ──────────────────────────────────────────────────────────
 
     def pause(self, task_id: str) -> bool:

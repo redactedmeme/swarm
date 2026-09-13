@@ -23,16 +23,13 @@
       --red:    #ff2200;
 
       /* Pattern Blue — LIVENESS ONLY, exactly as on the site: the heartbeat
-         dot, the ONLINE state, the per-agent live marker. This replaced a
-         matrix green that meant the same thing in a different language. */
+         dot, the ONLINE state, the per-agent live marker. */
       --blue:   #4da6ff;
 
-      /* The one signal the site has no token for: a degraded-but-not-failed
-         state. Kept distinct from --red so "warn" and "error" stay readable
-         as different things. */
+      /* Degraded-but-not-failed state */
       --amber:  #ffaa00;
 
-      --panel:  rgba(8,8,9,0.96);
+      --panel:  rgba(13,13,14,0.95);
     }
 
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
@@ -43,44 +40,21 @@
       color: var(--text);
       font-family: 'Inconsolata', 'Space Mono', monospace;
       overflow: hidden;
+      -webkit-font-smoothing: antialiased;
     }
 
-    /* SCANLINES */
-    body::before {
-      content: '';
-      position: fixed; inset: 0; z-index: 9999;
-      background: repeating-linear-gradient(
-        0deg, transparent, transparent 2px,
-        rgba(0,0,0,0.18) 2px, rgba(0,0,0,0.18) 4px
-      );
-      pointer-events: none;
-    }
-
-    /* PHOSPHOR VIGNETTE */
-    body::after {
-      content: '';
-      position: fixed; inset: 0; z-index: 9998;
-      background: radial-gradient(ellipse at center, transparent 55%, rgba(0,0,0,0.75) 100%);
-      pointer-events: none;
-    }
-
-    /* NOISE */
-    @keyframes noise {
-      0%,100%{ background-position:0 0 } 10%{ background-position:-5% -10% }
-      30%{ background-position:3% 5% } 50%{ background-position:-7% 2% }
-      70%{ background-position:4% -8% } 90%{ background-position:-3% 7% }
-    }
+    /* Subtle hairline noise texture */
     #noise {
-      position:fixed; inset:0; z-index:9997; opacity:0.025; pointer-events:none;
+      position:fixed; inset:0; z-index:9997; opacity:0.015; pointer-events:none;
       background-image:url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
-      background-size:200px 200px; animation:noise 0.4s steps(1) infinite;
+      background-size:200px 200px;
     }
 
     /* LAYOUT */
     #shell {
       display: grid;
-      grid-template-rows: 42px 1fr 28px;
-      grid-template-columns: 200px 1fr 180px;
+      grid-template-rows: 48px 1fr 28px;
+      grid-template-columns: 210px 1fr 200px;
       width: 100vw; height: 100vh;
     }
 
@@ -88,29 +62,89 @@
     #topbar {
       grid-column: 1 / -1;
       display: flex; align-items: center;
-      background: #000; border-bottom: 2px solid var(--red);
-      padding: 0 16px; gap: 20px; position: relative; overflow: hidden;
+      background: rgba(13, 13, 14, 0.98);
+      border-bottom: 1px solid var(--border);
+      padding: 0 18px; gap: 16px; position: relative;
     }
-    #topbar::after {
-      content: ''; position: absolute; bottom: 0; left: 0; right: 0; height: 1px;
-      background: linear-gradient(90deg, transparent, var(--red), transparent);
-      animation: scanH 4s linear infinite;
-    }
-    @keyframes scanH { 0%{ transform:translateX(-100%) } 100%{ transform:translateX(100%) } }
 
     #logo {
-      font-family: 'Archivo', sans-serif; font-weight: 900; font-size: 15px;
-      letter-spacing: 4px; color: var(--red);
-      text-shadow: 0 0 12px var(--red), 0 0 30px rgba(255,34,0,0.4); flex-shrink: 0;
+      font-family: 'Archivo', sans-serif; font-weight: 900; font-size: 13px;
+      letter-spacing: 2px; color: var(--text);
+      flex-shrink: 0; text-decoration: none;
+      display: flex; align-items: center; gap: 8px;
     }
-    #logo span { color: var(--text); }
+    #logo span { color: var(--dim); }
+    #logo a { color: inherit; text-decoration: none; }
+    #logo a:hover { color: var(--blue); }
+
     #topbar-sep { flex: 1; }
     .tb-item { font-size: 10px; letter-spacing: 1px; color: var(--muted); display: flex; align-items: center; gap: 6px; }
-    .tb-item .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--muted); }
+    .tb-item .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--dim); }
     .tb-item.active .dot { background: var(--blue); box-shadow: 0 0 6px var(--blue); }
     .tb-item.warn   .dot { background: var(--amber); box-shadow: 0 0 6px var(--amber); }
     .tb-item.crit   .dot { background: var(--red);   box-shadow: 0 0 6px var(--red);   }
-    #clock { font-family:'Inconsolata','Space Mono',monospace; font-size:20px; color:var(--amber); letter-spacing:2px; min-width:88px; text-align:right; }
+
+    /* WALLET WIDGET */
+    #tb-wallet-widget {
+      display: flex; align-items: center; gap: 10px;
+      font-family: 'Inconsolata', monospace;
+      font-size: 11px;
+    }
+    .wallet-btn {
+      background: transparent;
+      border: 1px solid var(--border2);
+      color: var(--text);
+      font-family: 'Inconsolata', monospace;
+      font-size: 11px;
+      letter-spacing: 1px;
+      padding: 5px 12px;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      transition: all 0.15s ease;
+      border-radius: 2px;
+    }
+    .wallet-btn:hover {
+      border-color: var(--blue);
+      color: #fff;
+      box-shadow: 0 0 8px rgba(77,166,255,0.2);
+    }
+    .wallet-pill {
+      display: flex; align-items: center; gap: 8px;
+      padding: 4px 10px;
+      background: var(--bg3);
+      border: 1px solid var(--border);
+      border-radius: 2px;
+      font-size: 11px;
+    }
+    .wallet-pill .bal {
+      color: var(--blue);
+      font-weight: 700;
+    }
+    .wallet-pill .tier-tag {
+      font-size: 9px;
+      letter-spacing: 1px;
+      color: var(--muted);
+      border-left: 1px solid var(--border);
+      padding-left: 6px;
+      text-transform: uppercase;
+    }
+    .topup-btn {
+      background: rgba(77, 166, 255, 0.1);
+      border: 1px solid rgba(77, 166, 255, 0.4);
+      color: var(--blue);
+      padding: 3px 8px;
+      font-size: 10px;
+      cursor: pointer;
+      border-radius: 2px;
+    }
+    .topup-btn:hover {
+      background: var(--blue);
+      color: #000;
+    }
+
+    #clock { font-family:'Inconsolata','Space Mono',monospace; font-size:13px; color:var(--muted); letter-spacing:1px; min-width:68px; text-align:right; }
 
     /* LEFT PANEL */
     #left-panel {
@@ -118,37 +152,36 @@
       border-right: 1px solid var(--border); background: var(--panel);
       display: flex; flex-direction: column; overflow: hidden;
     }
-    .panel-header { font-size:9px; letter-spacing:3px; color:var(--red); padding:8px 12px 6px; border-bottom:1px solid var(--border); text-transform:uppercase; }
-    #agent-list { padding: 8px 0; flex-shrink: 0; }
+    .panel-header { font-size:9px; letter-spacing:2px; color:var(--dim); padding:10px 14px 6px; border-bottom:1px solid var(--border); text-transform:uppercase; font-weight:700; }
+    #agent-list { padding: 6px 0; flex-shrink: 0; }
     .agent-entry {
-      padding: 6px 12px; font-size: 11px; cursor: pointer; color: var(--muted);
-      border-left: 2px solid transparent; transition: all 0.1s; letter-spacing: 0.5px;
+      padding: 7px 14px; font-size: 11px; cursor: pointer; color: var(--muted);
+      border-left: 2px solid transparent; transition: all 0.12s; letter-spacing: 0.5px;
       display: flex; align-items: center; gap: 8px;
     }
-    .agent-entry:hover { color:var(--text); background:rgba(255,255,255,0.04); }
-    .agent-entry.active { color:var(--blue); border-left-color:var(--blue); background:rgba(77,166,255,0.08); text-shadow:0 0 8px rgba(77,166,255,0.4); }
-    .agent-entry .status-pip { width:5px; height:5px; border-radius:50%; flex-shrink:0; background:var(--muted); }
+    .agent-entry:hover { color:var(--text); background:rgba(255,255,255,0.03); }
+    .agent-entry.active { color:var(--text); border-left-color:var(--blue); background:rgba(77,166,255,0.06); font-weight:700; }
+    .agent-entry .status-pip { width:5px; height:5px; border-radius:50%; flex-shrink:0; background:var(--dim); }
     .agent-entry.active .status-pip { background:var(--blue); box-shadow:0 0 5px var(--blue); animation:pip-pulse 1.8s ease-in-out infinite; }
     @keyframes pip-pulse { 0%,100%{opacity:1} 50%{opacity:0.3} }
 
-    #curvature-block { margin:auto 0 0; padding:10px 12px; border-top:1px solid var(--border); }
-    .curv-label { font-size:9px; letter-spacing:2px; color:var(--muted); margin-bottom:6px; text-transform:uppercase; }
-    .curv-val { font-family:'Inconsolata','Space Mono',monospace; font-size:32px; color:var(--text); line-height:1; text-shadow:0 0 10px rgba(255,255,255,0.2); }
-    .curv-bar { margin-top:6px; height:3px; background:var(--border); position:relative; overflow:hidden; }
-    .curv-fill { height:100%; background:linear-gradient(90deg,#444,#fff); width:52%; transition:width 1s ease; }
-    .curv-bar::after { content:''; position:absolute; inset:0; background:linear-gradient(90deg,transparent 60%,rgba(255,170,0,0.4) 100%); animation:shimmer 2s linear infinite; }
-    @keyframes shimmer { 0%{transform:translateX(-100%)} 100%{transform:translateX(100%)} }
+    #curvature-block { margin:auto 0 0; padding:12px 14px; border-top:1px solid var(--border); }
+    .curv-label { font-size:9px; letter-spacing:2px; color:var(--dim); margin-bottom:6px; text-transform:uppercase; }
+    .curv-val { font-family:'Inconsolata','Space Mono',monospace; font-size:26px; color:var(--text); line-height:1; }
+    .curv-bar { margin-top:8px; height:3px; background:var(--border); position:relative; overflow:hidden; }
+    .curv-fill { height:100%; background:var(--blue); width:52%; transition:width 1s ease; }
 
-    #integrity-block { padding:10px 12px; border-top:1px solid var(--border); }
-    .int-rows { display:flex; flex-direction:column; gap:4px; margin-top:6px; }
+    #integrity-block { padding:12px 14px; border-top:1px solid var(--border); }
+    .int-rows { display:flex; flex-direction:column; gap:5px; margin-top:6px; }
     .int-row { display:flex; justify-content:space-between; font-size:10px; }
-    .int-row .lbl { color:var(--muted); }
-    .int-row .val { color:var(--blue); }
+    .int-row .lbl { color:var(--dim); }
+    .int-row .val { color:var(--text); }
+    .int-row .val.active { color:var(--blue); }
     .int-row .val.warn { color:var(--amber); }
 
     /* TERMINAL */
-    #term-col { grid-row:2; grid-column:2; display:flex; flex-direction:column; background:var(--bg2); overflow:hidden; position:relative; }
-    #output { flex:1; overflow-y:auto; padding:14px 18px; font-size:13px; line-height:1.6; letter-spacing:0.3px; scroll-behavior:smooth; }
+    #term-col { grid-row:2; grid-column:2; display:flex; flex-direction:column; background:var(--bg); overflow:hidden; position:relative; }
+    #output { flex:1; overflow-y:auto; padding:16px 20px; font-size:13px; line-height:1.6; letter-spacing:0.3px; scroll-behavior:smooth; }
     #output::-webkit-scrollbar { width:4px; }
     #output::-webkit-scrollbar-thumb { background:var(--border); }
     .line { white-space:pre-wrap; word-break:break-all; }
@@ -156,52 +189,46 @@
     .line.prompt { color:var(--text); font-weight:bold; }
     .line.error  { color:var(--red); }
     .line.dim    { color:var(--muted); }
-    .line.tg-event { color:#00cfff; opacity:0.85; }
-    .line.input-echo { color:#7ecf90; }
-    .line.ascii  { color:var(--red); font-size:11px; line-height:1.25; text-shadow:0 0 8px rgba(255,34,0,0.5); }
-    @keyframes glitch {
-      0%,95%,100%{ transform:none; opacity:1; }
-      96%{ transform:translateX(-2px); opacity:0.8; } 97%{ transform:translateX(3px) skewX(-1deg); opacity:0.9; }
-      98%{ transform:translateX(-1px); } 99%{ transform:translateX(2px) skewX(1deg); opacity:0.85; }
-    }
-    .line.glitch { animation:glitch 8s ease infinite; }
-    .line.streaming { color:var(--text); opacity:0.9; }
+    .line.tg-event { color:var(--blue); opacity:0.85; }
+    .line.input-echo { color:#8fe5a3; }
+    .line.ascii  { color:var(--text); font-size:11px; line-height:1.25; opacity:0.9; }
+    .line.streaming { color:var(--text); opacity:0.95; }
 
     /* INPUT */
-    #input-row { display:flex; align-items:center; padding:8px 18px; border-top:1px solid var(--border); background:rgba(0,0,0,0.6); gap:8px; flex-shrink:0; position:relative; }
-    #prompt-label { color:var(--text); font-size:13px; white-space:nowrap; flex-shrink:0; text-shadow:0 0 6px rgba(255,255,255,0.2); }
+    #input-row { display:flex; align-items:center; padding:10px 20px; border-top:1px solid var(--border); background:var(--bg2); gap:10px; flex-shrink:0; position:relative; }
+    #prompt-label { color:var(--muted); font-size:12px; white-space:nowrap; flex-shrink:0; }
     #cmd-input { flex:1; background:transparent; border:none; outline:none; color:var(--text); font-family:'Inconsolata','Space Mono',monospace; font-size:13px; caret-color:var(--blue); letter-spacing:0.3px; }
-    #cmd-input::placeholder { color:var(--muted); }
-    #send-btn { background:none; border:1px solid var(--border); color:var(--muted); font-family:'Inconsolata','Space Mono',monospace; font-size:10px; letter-spacing:2px; padding:4px 10px; cursor:pointer; transition:all 0.15s; text-transform:uppercase; }
-    #send-btn:hover { border-color:var(--text); color:var(--text); box-shadow:0 0 8px rgba(255,255,255,0.15); }
+    #cmd-input::placeholder { color:var(--dim); }
+    #send-btn { background:none; border:1px solid var(--border2); color:var(--muted); font-family:'Inconsolata','Space Mono',monospace; font-size:11px; letter-spacing:1px; padding:4px 12px; cursor:pointer; transition:all 0.15s; text-transform:uppercase; border-radius:2px; }
+    #send-btn:hover { border-color:var(--blue); color:var(--text); }
 
     /* SUGGESTIONS */
-    #cmd-suggestions { position:absolute; bottom:100%; left:0; right:0; background:#000; border:1px solid var(--border); border-bottom:none; display:none; flex-direction:column; z-index:100; }
+    #cmd-suggestions { position:absolute; bottom:100%; left:0; right:0; background:var(--bg2); border:1px solid var(--border); border-bottom:none; display:none; flex-direction:column; z-index:100; }
     #cmd-suggestions.show { display:flex; }
-    .sug-item { padding:5px 18px; font-size:11px; color:var(--muted); cursor:pointer; display:flex; gap:12px; align-items:baseline; }
+    .sug-item { padding:6px 20px; font-size:11px; color:var(--muted); cursor:pointer; display:flex; gap:12px; align-items:baseline; }
     .sug-item:hover, .sug-item.focused { background:rgba(255,255,255,0.06); color:var(--text); }
-    .sug-item .sug-cmd { color:var(--text); min-width:140px; }
+    .sug-item .sug-cmd { color:var(--blue); min-width:140px; }
 
     /* RIGHT PANEL */
     #right-panel { grid-row:2; grid-column:3; border-left:1px solid var(--border); background:var(--panel); display:flex; flex-direction:column; overflow:hidden; }
     #activity-log { flex:1; overflow-y:auto; padding:6px 0; }
     #activity-log::-webkit-scrollbar { width:2px; }
     #activity-log::-webkit-scrollbar-thumb { background:var(--border); }
-    .act-entry { padding:4px 10px; font-size:10px; color:var(--muted); border-bottom:1px solid rgba(40,40,40,0.6); letter-spacing:0.3px; line-height:1.4; }
-    .act-entry .act-time { color:#404040; font-size:9px; }
+    .act-entry { padding:5px 12px; font-size:10px; color:var(--muted); border-bottom:1px solid rgba(42,43,45,0.4); letter-spacing:0.3px; line-height:1.4; }
+    .act-entry .act-time { color:var(--dim); font-size:9px; }
     .act-entry .act-msg  { color:var(--muted); margin-top:1px; }
     .act-entry.act-ok   .act-msg { color:var(--text); }
-    .act-entry.act-warn .act-msg { color:#aaa; }
+    .act-entry.act-warn .act-msg { color:var(--amber); }
     .act-entry.act-crit .act-msg { color:var(--red); }
-    #state-block { padding:10px; border-top:1px solid var(--border); }
-    .state-rows { margin-top:6px; display:flex; flex-direction:column; gap:3px; }
+    #state-block { padding:12px; border-top:1px solid var(--border); }
+    .state-rows { margin-top:6px; display:flex; flex-direction:column; gap:4px; }
     .state-row { font-size:10px; display:flex; justify-content:space-between; }
-    .state-row .s-lbl { color:var(--muted); }
+    .state-row .s-lbl { color:var(--dim); }
     .state-row .s-val { color:var(--text); letter-spacing:0.5px; }
 
     /* STATUS BAR */
-    #statusbar { grid-column:1/-1; background:#000; border-top:1px solid var(--red); display:flex; align-items:center; padding:0 16px; gap:24px; font-size:10px; letter-spacing:1px; }
-    .sb-seg { color:var(--muted); display:flex; align-items:center; gap:6px; }
+    #statusbar { grid-column:1/-1; background:var(--bg2); border-top:1px solid var(--border); display:flex; align-items:center; padding:0 18px; gap:24px; font-size:10px; letter-spacing:1px; }
+    .sb-seg { color:var(--dim); display:flex; align-items:center; gap:6px; }
     .sb-seg strong { color:var(--text); }
     #sb-ticker { flex:1; overflow:hidden; position:relative; height:100%; display:flex; align-items:center; }
     #sb-ticker-inner { white-space:nowrap; color:var(--muted); animation:ticker 28s linear infinite; font-size:10px; letter-spacing:1px; }
@@ -213,44 +240,45 @@
     #glitch-overlay.active { animation-play-state:running; }
 
     /* BOOT */
-    #boot-screen { position:fixed; inset:0; z-index:10000; background:#000; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:8px; }
+    #boot-screen { position:fixed; inset:0; z-index:10000; background:var(--bg); display:flex; flex-direction:column; align-items:center; justify-content:center; gap:8px; }
     #boot-screen.done { display:none; }
-    #boot-logo { font-family:'Archivo',sans-serif; font-weight:900; font-size:clamp(24px,5vw,52px); color:var(--red); letter-spacing:12px; text-shadow:0 0 30px var(--red),0 0 60px rgba(255,34,0,0.3); animation:logoFlicker 2s ease-in-out; }
-    @keyframes logoFlicker { 0%{opacity:0} 20%{opacity:1} 22%{opacity:0.3} 24%{opacity:1} 60%{opacity:1} 62%{opacity:0.5} 64%{opacity:1} 100%{opacity:1} }
-    #boot-sub { font-size:11px; letter-spacing:4px; color:var(--muted); margin-top:8px; }
-    #boot-progress { margin-top:24px; width:min(400px,80vw); height:2px; background:#111; position:relative; overflow:hidden; }
-    #boot-fill { position:absolute; top:0; left:0; bottom:0; background:var(--red); width:0%; transition:width 0.1s linear; box-shadow:0 0 10px var(--red); }
-    #boot-msg { font-size:11px; color:var(--muted); letter-spacing:1px; min-height:16px; margin-top:10px; }
+    #boot-logo { font-family:'Archivo',sans-serif; font-weight:900; font-size:clamp(22px,4vw,44px); color:var(--text); letter-spacing:8px; }
+    #boot-sub { font-size:11px; letter-spacing:3px; color:var(--dim); margin-top:6px; }
+    #boot-progress { margin-top:24px; width:min(320px,80vw); height:2px; background:var(--border); position:relative; overflow:hidden; }
+    #boot-fill { position:absolute; top:0; left:0; bottom:0; background:var(--blue); width:0%; transition:width 0.1s linear; }
+    #boot-msg { font-size:11px; color:var(--muted); letter-spacing:1px; min-height:16px; margin-top:12px; }
 
-    /* AUTH MODAL (shown only if server requires token) */
-    #auth-modal { position:fixed; inset:0; z-index:20000; background:rgba(0,0,0,0.92); display:none; align-items:center; justify-content:center; }
+    /* AUTH MODAL */
+    #auth-modal { position:fixed; inset:0; z-index:20000; background:rgba(8,8,9,0.92); backdrop-filter:blur(6px); display:none; align-items:center; justify-content:center; }
     #auth-modal.show { display:flex; }
-    #auth-box { background:#0a0a0a; border:1px solid var(--red); padding:32px 40px; display:flex; flex-direction:column; gap:14px; min-width:320px; }
-    #auth-box h2 { font-family:'Archivo',sans-serif; font-size:13px; letter-spacing:3px; color:var(--red); }
-    #auth-box p { font-size:11px; color:var(--muted); }
-    #auth-token { background:#000; border:1px solid var(--border); color:var(--text); font-family:'Inconsolata','Space Mono',monospace; font-size:13px; padding:8px 12px; width:100%; outline:none; }
-    #auth-token:focus { border-color:var(--red); }
-    #auth-btn { background:none; border:1px solid var(--red); color:var(--red); font-family:'Inconsolata','Space Mono',monospace; font-size:11px; letter-spacing:2px; padding:8px 20px; cursor:pointer; text-transform:uppercase; }
-    #auth-btn:hover { background:var(--red); color:#000; }
+    #auth-box { background:var(--bg2); border:1px solid var(--border); padding:32px 40px; display:flex; flex-direction:column; gap:14px; min-width:340px; max-width:440px; border-radius:2px; }
+    #auth-box h2 { font-family:'Archivo',sans-serif; font-size:12px; letter-spacing:2px; color:var(--text); }
+    #auth-box p { font-size:11px; color:var(--muted); line-height:1.5; }
+    #auth-token { background:var(--bg3); border:1px solid var(--border); color:var(--text); font-family:'Inconsolata','Space Mono',monospace; font-size:12px; padding:8px 12px; width:100%; outline:none; }
+    #auth-token:focus { border-color:var(--blue); }
+    #auth-btn { background:none; border:1px solid var(--border2); color:var(--text); font-family:'Inconsolata','Space Mono',monospace; font-size:11px; letter-spacing:1px; padding:8px 20px; cursor:pointer; text-transform:uppercase; border-radius:2px; }
+    #auth-btn:hover { border-color:var(--blue); color:var(--blue); }
+    #gate-btn { background:rgba(77,166,255,0.08); border:1px solid var(--blue); color:#fff; font-family:'Inconsolata',monospace; font-size:11px; letter-spacing:1px; padding:10px 18px; cursor:pointer; border-radius:2px; transition:all 0.15s ease; }
+    #gate-btn:hover { background:var(--blue); color:#000; }
     #auth-err { color:var(--red); font-size:11px; display:none; }
   </style>
 </head>
 <body>
 
 <div id="noise"></div>
-<div id="glitch-overlay"></div>
 
 <!-- AUTH MODAL -->
 <div id="auth-modal">
   <div id="auth-box">
-    <h2>// AUTHENTICATION REQUIRED</h2>
-    <p>This terminal requires an access token.</p>
+    <h2>// AUTHENTICATION</h2>
+    <p>Access the autonomous multi-agent swarm. Either sign in with a wallet holding &ge;1,000,000 $REDACTED, top up prompt credits, or provide an operator token.</p>
+    <button id="gate-btn" onclick="gateSignIn()">CONNECT WALLET (PHANTOM / SOLFLARE)</button>
+    <div id="gate-msg" style="margin-top:4px;font-size:10px;color:var(--dim);min-height:14px;"></div>
+    <div style="margin:8px 0;font-size:9px;letter-spacing:2px;color:var(--dim);text-align:center;">— OR OPERATOR KEY —</div>
     <input id="auth-token" type="password" placeholder="enter access token..." autocomplete="off" />
     <div id="auth-err">Invalid token. Try again.</div>
-    <button id="auth-btn" onclick="submitAuth()">AUTHENTICATE</button>
-    <div style="margin:14px 0 8px;font-size:9px;letter-spacing:2px;color:var(--dim,#666);">— OR —</div>
-    <button id="gate-btn" onclick="gateSignIn()">CONNECT WALLET · HOLD 1,000,000 $REDACTED</button>
-    <div id="gate-msg" style="margin-top:8px;font-size:10px;color:var(--dim,#888);min-height:14px;"></div>
+    <button id="auth-btn" onclick="submitAuth()">VERIFY TOKEN</button>
+    <button style="margin-top:6px;background:none;border:none;color:var(--dim);cursor:pointer;font-size:10px;text-decoration:underline;" onclick="document.getElementById('auth-modal').classList.remove('show');">CONTINUE AS GUEST / DEMO</button>
   </div>
 </div>
 
@@ -267,12 +295,27 @@
 
   <!-- TOP BAR -->
   <div id="topbar">
-    <div id="logo">REDACTED<span>//</span>SWARM</div>
+    <div id="logo"><a href="https://redacted.meme" target="_blank" title="Return to redacted.meme">REDACTED<span>//</span>TERMINAL</a></div>
     <div class="tb-item active"><div class="dot"></div>SWARM ONLINE</div>
     <div class="tb-item active" id="tb-conn"><div class="dot"></div>SOCKET</div>
     <div class="tb-item warn" id="tb-agent"><div class="dot"></div>NO AGENT</div>
     <div id="topbar-sep"></div>
-    <div class="tb-item"><div class="dot" style="background:var(--red);box-shadow:0 0 6px var(--red)"></div>PATTERN BLUE</div>
+
+    <!-- TOPBAR WALLET WIDGET -->
+    <div id="tb-wallet-widget">
+      <button id="connect-wallet-btn" class="wallet-btn" onclick="gateSignIn()">
+        <span>◈</span> CONNECT WALLET
+      </button>
+      <div id="wallet-info" style="display:none;" class="wallet-pill">
+        <span id="wallet-addr-display">8xK...</span>
+        <span id="wallet-bal-display" class="bal">0 $REDACTED</span>
+        <span id="wallet-tier-display" class="tier-tag">OPERATOR</span>
+        <button class="topup-btn" onclick="openTopup()" title="Transfer 1,000 $REDACTED to top up 50 LLM inference prompts">+ CREDITS</button>
+        <button class="wallet-btn" style="padding:2px 6px;font-size:9px;" onclick="disconnectWallet()">✕</button>
+      </div>
+    </div>
+
+    <div class="tb-item"><div class="dot" style="background:var(--blue);box-shadow:0 0 6px var(--blue)"></div>PATTERN BLUE</div>
     <div id="clock">00:00:00</div>
   </div>
 
@@ -429,6 +472,7 @@ function runBoot() {
     setTimeout(() => {
       document.getElementById('boot-screen').classList.add('done');
       initSocket();
+      checkGateStatus();
       startClock();
       startUptime();
       document.getElementById('sess-id').textContent = sessionId.slice(0,8);
@@ -550,30 +594,100 @@ function submitAuth() {
   initSocket(tok);
 }
 
-// ══ HOLDER GATE — connect Phantom, sign a nonce, prove the $REDACTED balance ══
+// ══ WALLET & GATE STATE ══
+let connectedWallet = null;
+let walletTier = null;
+let walletBalance = 0;
+
+function updateWalletUI(wallet, tier, balance) {
+  connectedWallet = wallet;
+  walletTier = tier;
+  walletBalance = balance || 0;
+
+  const btn = document.getElementById('connect-wallet-btn');
+  const info = document.getElementById('wallet-info');
+  const addrDisplay = document.getElementById('wallet-addr-display');
+  const balDisplay = document.getElementById('wallet-bal-display');
+  const tierDisplay = document.getElementById('wallet-tier-display');
+
+  if (wallet) {
+    btn.style.display = 'none';
+    info.style.display = 'inline-flex';
+    addrDisplay.textContent = `${wallet.slice(0, 4)}...${wallet.slice(-4)}`;
+    balDisplay.textContent = `${Number(walletBalance).toLocaleString()} $REDACTED`;
+    tierDisplay.textContent = tier ? tier.toUpperCase() : 'HOLDER';
+  } else {
+    btn.style.display = 'inline-flex';
+    info.style.display = 'none';
+  }
+}
+
+async function checkGateStatus() {
+  try {
+    const r = await fetch('/api/gate/status');
+    if (!r.ok) return;
+    const data = await r.json();
+    if (data.authenticated && data.wallet) {
+      updateWalletUI(data.wallet, data.tier, data.balance || 0);
+    }
+  } catch(e) {
+    // Non-blocking
+  }
+}
+
+async function disconnectWallet() {
+  connectedWallet = null;
+  walletTier = null;
+  walletBalance = 0;
+  updateWalletUI(null, null, 0);
+  logEvent('wallet disconnected', 'warn');
+  appendLine('[SYSTEM] Wallet disconnected.', 'sys');
+}
+
+async function openTopup() {
+  appendLine('── INFERENCE CREDITS / X402 BURN ──', 'sys');
+  appendLine('Send 1,000 $REDACTED to swarm treasury (redacteddao.sol) or burn at incinerator:', 'sys');
+  appendLine('Treasury: 9xLGQrf3uge7tncimyrKjFcDEDptQRS2QG6Zxv67z7r', 'sys');
+  appendLine('Incinerator: 1nc1nerator11111111111111111111111111111111', 'sys');
+  appendLine('Token CA: 9mtKd1o8Ht7F1daumKgs5D8EdVyopWBfYQwNmMojpump', 'sys');
+  appendLine('50% is burned permanently on-chain; 30% powers GPU compute runway.', 'sys');
+  scrollOutput();
+}
+
+// ══ HOLDER GATE — connect Phantom / Solflare, sign nonce, verify balance ══
 async function gateSignIn() {
   const msg = document.getElementById('gate-msg');
-  const set = t => { msg.textContent = t; };
-  const prov = window.solana;
-  if (!prov || !prov.isPhantom) { set('Phantom wallet not found. Install the extension.'); return; }
+  const set = t => { if(msg) msg.textContent = t; };
+  const prov = window.solana || window.phantom?.solana;
+  if (!prov) {
+    set('Solana wallet (Phantom / Solflare) not found. Please install the extension.');
+    appendLine('[ERROR] No Solana wallet provider found in browser.', 'error');
+    scrollOutput();
+    return;
+  }
   try {
-    set('connecting…');
+    set('connecting wallet…');
     await prov.connect();
     const wallet = prov.publicKey.toString();
 
-    set('requesting challenge…');
+    set('requesting challenge nonce…');
     const nr = await fetch('/api/gate/nonce', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ wallet }),
     });
-    if (!nr.ok) { set('gate error: ' + (await nr.json()).error); return; }
+    if (!nr.ok) {
+      const err = await nr.json();
+      set('gate error: ' + (err.error || nr.status));
+      appendLine(`[GATE] Nonce request failed: ${err.error || nr.status}`, 'error');
+      return;
+    }
     const { message } = await nr.json();
 
-    set('sign the message in Phantom…');
+    set('sign verification challenge in wallet…');
     const signed = await prov.signMessage(new TextEncoder().encode(message), 'utf8');
     const sigB64 = btoa(String.fromCharCode(...signed.signature));
 
-    set('verifying balance…');
+    set('verifying on-chain $REDACTED balance…');
     const vr = await fetch('/api/gate/verify', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ wallet, message, signature: sigB64 }),
@@ -581,18 +695,26 @@ async function gateSignIn() {
     const body = await vr.json();
     if (!vr.ok) {
       if (body.error === 'below_threshold') {
-        set(`balance ${body.balance} $REDACTED — need ${body.min_required.toLocaleString()}`);
+        const bal = body.balance || 0;
+        const minReq = body.min_required || 1000000;
+        set(`balance ${bal} $REDACTED — need ${minReq.toLocaleString()}`);
+        appendLine(`[GATE] Wallet ${wallet.slice(0, 6)}... has ${bal.toLocaleString()} $REDACTED (requires ${minReq.toLocaleString()} for full operator tier).`, 'warn');
+        updateWalletUI(wallet, 'GUEST', bal);
       } else {
         set('denied: ' + (body.error || vr.status));
+        appendLine(`[GATE] Access denied: ${body.error || vr.status}`, 'error');
       }
       return;
     }
-    set(`✓ ${body.tier} — ${body.wallet.slice(0, 6)}… granting access`);
+    set(`✓ ${body.tier} — ${body.wallet.slice(0, 6)}… access granted`);
+    updateWalletUI(body.wallet, body.tier, body.balance || 0);
+    appendLine(`[GATE] Wallet authenticated: ${body.wallet.slice(0, 8)}... (${body.tier.toUpperCase()})`, 'sys');
     document.getElementById('auth-modal').classList.remove('show');
     if (socket) socket.disconnect();
-    initSocket();  // session cookie is now authenticated
+    initSocket();  // Session cookie is now authenticated
   } catch (e) {
     set('sign-in failed: ' + (e.message || e));
+    appendLine('[GATE] Wallet authentication failed: ' + (e.message || e), 'error');
   }
 }
 
@@ -730,19 +852,22 @@ function sendCmd() {
   input.value = '';
 }
 
-// ══ DEMO MODE ══
+// ══ DEMO MODE / OFFLINE FALLBACK ══
 function demoRespond(cmd) {
   const lc = cmd.toLowerCase().trim();
   setTimeout(() => {
     if (lc === '/status') {
-      appendLines(`[SYSTEM] Swarm integrity check...\n  nodes: 7/7 ONLINE\n  lattice: STABLE\n  curvature: ${curvatureDepth}\n  mandala: SPINNING\nswarm@[REDACTED]:~$`);
+      appendLines(`[SYSTEM] Swarm integrity check...\n  nodes: 7/7 ONLINE\n  lattice: STABLE\n  curvature: ${curvatureDepth}\n  mandala: SPINNING\n  gateway: OFFLINE OR CONNECTING\nswarm@[REDACTED]:~$`);
     } else if (lc === '/help') {
-      appendLines(`[SYSTEM] Command reference — see COMMANDS list above.\nswarm@[REDACTED]:~$`);
+      appendLines(`[SYSTEM] Command reference:\n  Connect wallet (top right) holding $REDACTED to unlock live multi-agent inference.\n  Or type /status, /pay, /observe, or /summon <agent>.\nswarm@[REDACTED]:~$`);
+    } else if (lc === '/pay') {
+      openTopup();
+      appendLines('swarm@[REDACTED]:~$');
     } else {
-      appendLines(`[SYSTEM] Demo mode — no backend connected.\nswarm@[REDACTED]:~$`);
+      appendLines(`[SYSTEM] Gateway socket disconnected or warming up.\n  If the backend container is starting, please wait a moment.\n  To run live LLM inference, connect a wallet holding $REDACTED at the top right.\nswarm@[REDACTED]:~$`);
     }
     bumpCurvature();
-  }, 300);
+  }, 250);
 }
 
 // ══ AGENT ══

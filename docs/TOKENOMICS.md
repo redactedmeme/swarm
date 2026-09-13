@@ -8,13 +8,9 @@ disagree, the module is right and this file is stale — fix it.
 
 ## The thesis in one line
 
-**The swarm sells its work. Every job is paid in $REDACTED. Half of what it
-earns is burned, and the rest keeps the swarm running.**
+**Volume rewards the community. The swarm sells its work. Every job is paid in $REDACTED — half of what it earns is burned, and the rest keeps the swarm running.**
 
-Not a reflection of trading fees. The revenue comes from the swarm doing
-things — semantic search over its own signal corpus, committee deliberation,
-parallel reasoning, proxied inference — which means it grows with *usage*
-rather than decaying with volume.
+Rewards for holding are protocol-native via Pump.fun Holder Rewards: any wallet holding >$20 in $REDACTED automatically receives pro-rata rewards several times per hour directly on Solana without claiming or locking. Utility revenue from the swarm itself (semantic search, committee deliberation, parallel reasoning, proxied inference) is burned or funds inference runway, making the token deflationary with usage.
 
 ## Identity
 
@@ -25,6 +21,7 @@ rather than decaying with volume.
 | Decimals | 6 |
 | DAO treasury (payments go here) | `9xLGQrf3uge7tncimyrKjFcDEDptQRS2QG6Zxv67z7r` — `redacteddao.sol` |
 | Burn address | `1nc1nerator11111111111111111111111111111111` |
+| Holder Rewards | Native Pump.fun protocol distribution (>$20 balance threshold) |
 | Legacy mint (V1, superseded) | `9a21gb7fWGm9dD2UFdZAzgFn5K1NwfmYkjyLbpAcKgnM` |
 
 The treasury address is configuration, not a constant: no wallet is hardcoded
@@ -66,15 +63,16 @@ before** — signatures spend exactly once, guarded by an atomic Redis claim.
 Agents on our own mesh bypass payment with an operator token. Charging the
 swarm to talk to itself would only move tokens between our own wallets.
 
-## Where the money goes
+## Value Accrual: Two Clean Mechanisms
 
-Every verified payment splits three ways:
+1. **Pump.fun Protocol Holder Rewards**: 100% of DEX/bonding curve trading fees earmarked for creator/holder incentives flow to Pump.fun's distribution contract. Rewards stream automatically and pro-rata multiple times per hour in SOL to any wallet holding at least $20 worth of $REDACTED. There is no claiming site, no staking, and no lockup.
+2. **Swarm x402 Utility Settlements**: Direct payments for swarm compute split between burning and node runway:
 
 | Slice | Share | Fate |
 |---|---|---|
-| **Burn** | 50% | Sent to the incinerator. Irreversible, verifiable, gone. |
-| **Compute** | 30% | Buys the swarm's own LLM API credits. |
-| **Rewards** | 20% | Reserved pool, claimable — see below. |
+| **Burn** | 50% | Sent to the incinerator (`1nc1nerator...`). Irreversible, verifiable, gone. |
+| **Compute** | 30% | Buys the swarm's own LLM API credits / node inference. |
+| **Rewards / Reserve** | 20% | Swarm treasury reserve for community grants and compute runway buffer. |
 
 ### The compute slice pays for the swarm's own inference
 
@@ -92,13 +90,6 @@ presented as value flowing to holders. It is capped at
 much runway, the overflow rolls into the burn instead of accumulating. A
 treasury that grows without limit is an unaccountable pile; a capped one is a
 budget.
-
-### The rewards slice
-
-Reserved, and deliberately not yet distributing. When it activates it will be a
-**claim** against the pool — holder-initiated, snapshot-based — rather than an
-automatic push. Nothing in this repository promises a return, and the site copy
-describes what the contracts do rather than what a holder will earn.
 
 ## What holding unlocks
 
@@ -186,7 +177,7 @@ mechanisms is how projects lose people's trust:
   burn has been executed on chain yet.
 - **Buyback** (Phase 5) — `apps/arb-keeper` has the execution engine, gated off
   behind `EXECUTE_TRADES=false`.
-- **Rewards claims** (Phase 7) — reserved, not distributing.
+- **Holder Rewards** (Phase 7) — native Pump.fun Holder Rewards stream SOL fees automatically on-chain to >$20 holders; no custom claims required.
 
 Live today: the payment rail, the priced `refine` endpoint, the settlement
 ledger (accruing; burns pending `SETTLEMENT_EXECUTE`), and the credits ledger

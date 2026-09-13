@@ -21,6 +21,7 @@ import sys
 import redis.asyncio as aioredis
 
 from swarm_core import tokens
+from swarm_core.security.secrets import get_secret
 from swarm_core.solana import reserve as _reserve
 from swarm_core.x402.burn import load_keypair, run_worker
 
@@ -47,7 +48,7 @@ def _preflight() -> None:
         log.warning("SETTLEMENT_EXECUTE off — ledger only, no on-chain burns")
         return
 
-    raw = os.getenv("SWARM_TREASURY_PRIVATE_KEY", "").strip()
+    raw = (get_secret("SWARM_TREASURY_PRIVATE_KEY") or "").strip()
     if not raw:
         sys.exit("SETTLEMENT_EXECUTE=true but SWARM_TREASURY_PRIVATE_KEY is unset")
     kp = load_keypair(raw)
@@ -65,7 +66,7 @@ def _reserve_preflight() -> None:
         log.warning("RESERVE_EXECUTE off — SOL reserve runs in dry-run (logs intended top-ups)")
         return
     kp = _reserve.reserve_keypair()  # raises if no key material
-    dedicated = os.getenv("SWARM_RESERVE_PRIVATE_KEY", "").strip()
+    dedicated = (get_secret("SWARM_RESERVE_PRIVATE_KEY") or "").strip()
     if not dedicated and str(kp.pubkey()) != tokens.treasury_address():
         sys.exit(
             f"RESERVE_EXECUTE=true with no SWARM_RESERVE_PRIVATE_KEY, and the "

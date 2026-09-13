@@ -594,6 +594,12 @@ async def exec_api_call(
     try:
         import internet_tools
         result = internet_tools.api_call(url, method=method, json_body=json_body, **kwargs)
+        if isinstance(result.get("data"), str):
+            try:
+                from swarm_core.security.promptguard import wrap_untrusted
+                result["data"] = wrap_untrusted(result["data"], source=f"api:{url}")
+            except Exception:
+                pass
         _log_tool_call("api_call", {"url": url, "method": method}, result)
         return result
     except Exception as e:
