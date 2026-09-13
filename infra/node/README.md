@@ -1,23 +1,23 @@
-# Umbrel box — captured stack definitions
+# Primary swarm node — captured stack definitions
 
 These files are the **authoritative** definitions for everything running on the
-umbrel node (`umbrel@${UMBREL_HOST}`). Until 2026-08-29 they existed only on the
+swarm node (`node@${SWARM_HOST}`). Until 2026-08-29 they existed only on the
 box and were not in version control; losing the box meant losing the stack.
 
 | File | Lives on box at | What it is |
 |---|---|---|
-| `swarm-infra-docker-compose.yml` | `/home/umbrel/swarm-infra/docker-compose.yml` | The swarm stack: runtime, hermes-bot, smolting, refinery, builder, redacted-proxy + postgres/redis/qdrant/gluetun/cloudflared |
-| `redacted-chan-docker-compose.yml` | `/home/umbrel/redacted-chan/docker-compose.yml` | redacted-chan, its config API, webchat, and its own redis |
-| `autostart-bootstrap-docker-compose.yml` | `/home/umbrel/autostart-bootstrap/docker-compose.yml` | Boot shim container (`restart: always`) that runs the script below |
-| `autostart-stacks.sh` | `/home/umbrel/autostart-stacks.sh` | Brings every custom stack up after a reboot or umbrelOS update |
+| `swarm-infra-docker-compose.yml` | `/opt/swarm/swarm-infra/docker-compose.yml` | The swarm stack: runtime, hermes-bot, smolting, refinery, builder, redacted-proxy + postgres/redis/qdrant/gluetun/cloudflared |
+| `redacted-chan-docker-compose.yml` | `/opt/swarm/redacted-chan/docker-compose.yml` | redacted-chan, its config API, webchat, and its own redis |
+| `autostart-bootstrap-docker-compose.yml` | `/opt/swarm/autostart-bootstrap/docker-compose.yml` | Boot shim container (`restart: always`) that runs the script below |
+| `autostart-stacks.sh` | `/opt/swarm/autostart-stacks.sh` | Brings every custom stack up after a reboot or OS update |
 
 ## Why boot goes through a container, not systemd
 
-umbrelOS updates wipe `/etc` — which removes systemd units *and* the cron binary
-entirely. `/var/lib/docker` survives. So a `restart: always` container is the only
-durable boot hook on this host. `autostart-stacks.sh` also self-heals two things
-umbrelOS resets: the `fs.inotify` limits (~50 containers exhaust the default 256
-instances and crash-loop cadvisor) and `umbrel`'s membership in the `docker` group.
+Host OS updates can wipe `/etc` — which removes systemd units *and* cron binaries
+entirely. `/var/lib/docker` survives. So a `restart: always` container is the durable
+boot hook on this host. `autostart-stacks.sh` also self-heals kernel limits that
+OS updates reset: the `fs.inotify` limits (~50 containers exhaust the default 256
+instances and crash-loop cadvisor) and docker group membership.
 
 Note: `secrets/NETWORK_INFRA.md` refers to `/etc/systemd/system/swarm-infra.service`.
 That unit **does not exist** — it was a casualty of exactly the `/etc` wipe described
@@ -28,7 +28,7 @@ above, and the autostart container replaced it.
 Every swarm service builds with its **own directory as the Docker context**:
 
 ```
-context: /home/umbrel/swarm/<service>
+context: /opt/swarm/<service>
 dockerfile: Dockerfile
 ```
 
@@ -44,8 +44,8 @@ These are **copies**. Editing them here changes nothing on the box. After changi
 one, copy it up and re-up the stack:
 
 ```bash
-scp -i "$SSH_KEY" infra/umbrel/swarm-infra-docker-compose.yml \
-    "umbrel@${UMBREL_HOST}:/home/umbrel/swarm-infra/docker-compose.yml"
+scp -i "$SSH_KEY" infra/node/swarm-infra-docker-compose.yml \
+    "node@${SWARM_HOST}:/opt/swarm/swarm-infra/docker-compose.yml"
 ```
 
 ## Redactions

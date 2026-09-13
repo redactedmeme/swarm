@@ -22,7 +22,7 @@ Under the hood: elizaOS-compatible `.character.json` agents, a NERV-inspired ter
 
 Sixteen deployed services — twelve on the swarm node, four on Railway.
 
-**On the swarm node (umbrel):**
+**On the primary swarm node:**
 
 | Service | Purpose | Stack |
 |---|---|---|

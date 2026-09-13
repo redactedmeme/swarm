@@ -49,7 +49,7 @@ services:
 
   swarm-runtime:
     build:
-      context: /home/umbrel/swarm
+      context: ../..
       dockerfile: apps/runtime/Dockerfile
     container_name: swarm-runtime
     environment:
@@ -79,7 +79,7 @@ services:
   # gluetun so all allowed egress still exits via Mullvad (no residential IP).
   swarm-egress:
     build:
-      context: /home/umbrel/swarm
+      context: ../..
       dockerfile: apps/swarm-egress/Dockerfile
     container_name: swarm-egress
     environment:
@@ -107,7 +107,7 @@ services:
       # its OWN directory, and its Dockerfile's `COPY . .` is relative to that.
       # Building it from the repo root puts app.py at /app/apps/exec-runner/app.py
       # and the container crash-loops on "can't open file '/app/app.py'".
-      context: /home/umbrel/swarm/apps/exec-runner
+      context: ../../apps/exec-runner
     container_name: swarm-exec-runner
     environment:
       EXEC_RUNNER_SOCK: /run/exec/exec.sock
@@ -133,14 +133,14 @@ services:
   # through swarm-egress (the `workspace` caller in security/egress.yaml).
   workspace:
     build:
-      context: /home/umbrel/swarm
+      context: ../..
       dockerfile: apps/workspace/Dockerfile
     container_name: swarm-workspace
     environment:
       WORKSPACE_SOCK: /run/workspace/workspace.sock
       WORKSPACE_TOKEN_HERMES: ${WORKSPACE_TOKEN_HERMES}
       # redacted-chan drives her own workspace (fs + browser + shell). She runs
-      # from the standalone /home/umbrel/redacted-chan copy, but the workspace
+      # from the standalone /opt/swarm/redacted-chan copy, but the workspace
       # service (here) must know her token + mount the shared socket into her
       # container. Shell is always-on for her (security/caps.yaml approval_exempt).
       WORKSPACE_TOKEN_REDACTED_CHAN: ${WORKSPACE_TOKEN_REDACTED_CHAN}
@@ -166,13 +166,12 @@ services:
   # (settings.yaml seeded into the volume). Self-contained build context: dsh is
   # pulled from npm, no swarm_core import, so context is apps/dsh/ ONLY.
   # dsh binds 127.0.0.1 only (it refuses non-loopback for the web profile) and
-  # prints a per-boot auth token in its logs. Stable URL:
-  #   https://umbrel.taila13a94.ts.net:3080/  (tailscale serve on tailscale_web_1)
-  # append ?token=<from `docker logs swarm-dsh`> once. SSH-tunnel fallback:
-  #   ssh -N -L 3080:127.0.0.1:3080 umbrel@100.106.250.9
+  # prints a per-boot auth token in its logs.
+  # Reachable over an SSH tunnel or authenticated mesh proxy:
+  #   ssh -N -L 3080:127.0.0.1:3080 <node>
   dsh:
     build:
-      context: /home/umbrel/swarm/apps/dsh
+      context: ../../apps/dsh
       dockerfile: Dockerfile
     container_name: swarm-dsh
     environment:
@@ -189,7 +188,7 @@ services:
 
   hermes-bot:
     build:
-      context: /home/umbrel/swarm
+      context: ../..
       dockerfile: apps/hermes/Dockerfile
     container_name: swarm-hermes-bot
     volumes:
@@ -255,7 +254,7 @@ services:
 
   smolting:
     build:
-      context: /home/umbrel/swarm
+      context: ../..
       dockerfile: apps/smolting/Dockerfile
     container_name: swarm-smolting
     env_file:
@@ -270,7 +269,7 @@ services:
 
   refinery:
     build:
-      context: /home/umbrel/swarm
+      context: ../..
       dockerfile: apps/refinery/Dockerfile
     container_name: swarm-refinery
     env_file:
@@ -301,7 +300,7 @@ services:
     volumes:
       - smoltingdata:/sources/smolting:ro
       - hermesdata:/sources/hermes:ro
-      - /home/umbrel/redacted-chan/data:/sources/redacted-chan:ro
+      - /opt/swarm/redacted-chan/data:/sources/redacted-chan:ro
       - refinerymodels:/models
     depends_on:
       postgres:
@@ -315,7 +314,7 @@ services:
   # re-export shims over swarm_core / swarm_tg, so the image must COPY packages/.
   builder:
     build:
-      context: /home/umbrel/swarm
+      context: ../..
       dockerfile: apps/builder/Dockerfile
     container_name: swarm-builder
     env_file:
@@ -332,7 +331,7 @@ services:
   # context is the repo ROOT (see CLAUDE.md "Build contexts").
   degen:
     build:
-      context: /home/umbrel/swarm
+      context: ../..
       dockerfile: apps/degen/Dockerfile
     container_name: swarm-degen
     env_file:
@@ -349,7 +348,7 @@ services:
   # build context, same reason as degen.
   govimprover:
     build:
-      context: /home/umbrel/swarm
+      context: ../..
       dockerfile: apps/govimprover/Dockerfile
     container_name: swarm-govimprover
     env_file:
@@ -364,7 +363,7 @@ services:
 
   redacted-proxy:
     build:
-      context: /home/umbrel/swarm/apps/proxy
+      context: ../../apps/proxy
       dockerfile: Dockerfile
     container_name: swarm-redacted-proxy
     env_file:
@@ -386,7 +385,7 @@ services:
   # needs it).
   status:
     build:
-      context: /home/umbrel/swarm
+      context: ../..
       dockerfile: apps/status/Dockerfile
     container_name: swarm-status
     environment:
@@ -411,7 +410,7 @@ services:
   # defaults to false (ledger only), turn on deliberately.
   settler:
     build:
-      context: /home/umbrel/swarm
+      context: ../..
       dockerfile: apps/settler/Dockerfile
     container_name: swarm-settler
     env_file:

@@ -12,7 +12,7 @@ llm-pi-ai:
   providers:
     redacted-proxy:
       api: openai-completions
-      # Host networking on umbrel — the proxy listens on loopback :7080.
+      # Host networking on swarm node — the proxy listens on loopback :7080.
       # Override with PROXY_BASE_URL semantics by editing this line per env.
       baseURL: http://127.0.0.1:7080/v1
       # Resolve the bearer token from the environment; never store a literal.

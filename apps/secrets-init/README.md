@@ -21,7 +21,7 @@ time, then remove the plaintext env vars from compose.
 
 ```yaml
   hermes-secrets:
-    build: { context: /home/umbrel/swarm, dockerfile: apps/secrets-init/Dockerfile }
+    build: { context: /opt/swarm, dockerfile: apps/secrets-init/Dockerfile }
     environment:
       SWARM_SECRETS_FILE: /run/secrets/swarm.env
       SECRETS_MANIFEST: "GROQ_API_KEY,OPENROUTER_API_KEY,MOLTBOOK_API_KEY,X_API_KEY,X_API_KEY_SECRET,X_ACCESS_TOKEN,X_ACCESS_TOKEN_SECRET"

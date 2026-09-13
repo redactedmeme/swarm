@@ -5,7 +5,7 @@
 Primary path is `trafilatura` (optional extra ``swarm-core[web]``): it removes
 nav chrome, cookie banners and script bodies and emits markdown directly. When
 trafilatura is not installed, or returns nothing usable, fall back to the same
-regex tag-strip the call sites used before. umbrel images must not hard-fail on
+regex tag-strip the call sites used before. Node container images must not hard-fail on
 a missing wheel — the fallback is load-bearing, not politeness.
 
 The result is still untrusted text. Callers MUST pass it through

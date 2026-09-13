@@ -1,14 +1,13 @@
 #!/bin/bash
-# Auto-start custom stacks after umbreOS update/reboot.
+# Auto-start custom stacks after OS update/reboot.
 # Idempotent - safe to run multiple times.
-# Invoked at boot by the `autostart-bootstrap` container (restart: always), NOT by cron:
-# umbreOS updates remove the cron binary entirely and reset /etc, but /var/lib/docker survives.
+# Invoked at boot by the `autostart-bootstrap` container (restart: always).
 
-LOG=/home/umbrel/autostart.log
+LOG=/opt/swarm/autostart.log
 exec >> "$LOG" 2>&1
 echo "===== autostart-stacks.sh starting $(date -Is) ====="
 
-# --- self-heal: kernel limits that umbreOS resets on /etc wipe ---
+# --- self-heal: kernel limits that OS resets on /etc wipe ---
 # ~50 containers exhaust the default fs.inotify.max_user_instances=256, which makes
 # homelab-cadvisor crash-loop with "inotify_add_watch /sys/fs/cgroup: no space left on device".
 docker run --rm --privileged --pid=host alpine nsenter -t 1 -m -u -i -n -p -- sh -c '
@@ -17,18 +16,15 @@ docker run --rm --privileged --pid=host alpine nsenter -t 1 -m -u -i -n -p -- sh
   printf "fs.inotify.max_user_instances = 1024\nfs.inotify.max_user_watches = 524288\n" > /etc/sysctl.d/98-inotify-cadvisor.conf
 ' || echo "WARN: inotify sysctl self-heal failed"
 
-# --- self-heal: restore umbrel's docker group membership (umbreOS updates wipe /etc/group members) ---
-docker run --rm -v /etc/group:/etc/group -v /etc/passwd:/etc/passwd:ro docker:27-cli addgroup umbrel docker 2>/dev/null || true
-
 # --- custom stacks ---
 # NOTE: errors are logged, not swallowed. A silent `2>/dev/null` here hid three dead
 # stacks during the 2026-08-29 outage recovery.
 for stack in homelab-platform swarm-infra glance open-webui nextcloud-ts redacted-chan; do
-  if [ -d "/home/umbrel/$stack" ]; then
+  if [ -d "/opt/swarm/$stack" ]; then
     echo "--- up: $stack"
-    ( cd "/home/umbrel/$stack" && docker compose up -d ) || echo "ERROR: $stack failed to start"
+    ( cd "/opt/swarm/$stack" && docker compose up -d ) || echo "ERROR: $stack failed to start"
   else
-    echo "WARN: /home/umbrel/$stack missing, skipping"
+    echo "WARN: /opt/swarm/$stack missing, skipping"
   fi
 done
 

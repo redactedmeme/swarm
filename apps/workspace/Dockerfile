@@ -1,8 +1,8 @@
 # apps/workspace — persistent per-agent computer (fs + shell + browser).
 #
 # Build context is the REPO ROOT (it imports swarm_core) — see CLAUDE.md
-# "Build contexts". In infra/umbrel/swarm-infra-docker-compose.yml the context
-# is /home/umbrel/swarm and dockerfile is apps/workspace/Dockerfile.
+# "Build contexts". In infra/node/swarm-infra-docker-compose.yml the context
+# is the swarm root and dockerfile is apps/workspace/Dockerfile.
 #
 # Uses the Playwright base image so Chromium + its system libs are already
 # present (the browser download needs network at build time regardless of base).

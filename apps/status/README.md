@@ -1,7 +1,7 @@
 # swarm-status
 
 > **Status: built, not yet deployed.** See *Deploy* below — it needs a container on the
-> umbrel node and a Tailscale Funnel port before `redacted.meme` can show anything.
+> swarm node and a Tailscale Funnel port before `redacted.meme` can show anything.
 
 The swarm's only public read-only surface. Reads `swarm:heartbeat:{agent}` and
 `swarm:door:{agent}:{name}` from the mesh Redis, joins them against a checked-in
@@ -82,7 +82,7 @@ failure; `/api/swarm` returns the declared roster with every observed field degr
   "agents": [
     {
       "id": "smolting", "name": "@RedactedIntern / smolting", "tier": "CORE",
-      "dimension": "Chaotic Self-Reference", "host": "umbrel mesh",
+      "dimension": "Chaotic Self-Reference", "host": "swarm mesh",
       "state": "active",
       "online": true, "last_seen_bucket": "just now",
       "doors": [ { "name": "telegram", "kind": "surface",
@@ -130,7 +130,7 @@ appears in the feed.
 | `AGENTS_JSON` | `../website/data/agents.json` | Declared agent registry. |
 | `OFFERS_JSON` | `./offers.json` | Declared offers registry. |
 
-## Deploy (umbrel node)
+## Deploy (swarm node)
 
 ```bash
 docker compose -f compose.status.yml up -d --build
@@ -148,7 +148,7 @@ tailscale funnel status
 Then point the website at it (Railway → `redacted-website`):
 
 ```
-SWARM_STATUS_URL=https://<node>.taila13a94.ts.net:8443/status
+SWARM_STATUS_URL=https://<node>.ts.net:8443/status
 ```
 
 Until that variable is set, `redacted.meme` simply does not render the status section.

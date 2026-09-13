@@ -79,7 +79,7 @@ are about to change.
   The disclosure boundary is `apps/website/serve.py:_project:92`, a deliberate field whitelist
   with `_clean_offers` / `_clean_treasury` helpers alongside it.
 - **`apps/status` is not deployed** (`CLAUDE.md` service table). The board renders nothing until
-  it runs on umbrel with `STATUS_PUSH_URL` + `STATUS_PUSH_TOKEN`.
+  it runs on the host node with `STATUS_PUSH_URL` + `STATUS_PUSH_TOKEN`.
 - **`apps/runtime/main.py` is the existing external HTTP door**: FastAPI, `verify_token` from
   `apps/runtime/auth.py`, guarding `/task`, `/task/async`, `/task/{id}`, `/scheduled/latest/{name}`.
   **But `/announce:354` is unauthenticated** (any reachable caller can forge a heartbeat), and
@@ -151,7 +151,7 @@ extract(html: str, url: str) -> {"title", "markdown", "text", "word_count"}
 - Implement with `trafilatura` — one dependency, no browser, handles boilerplate removal and
   emits markdown directly.
 - **Fall back to the current regex path** when trafilatura is absent or returns nothing. This is
-  not optional politeness: umbrel images must not hard-fail on a missing wheel.
+  not optional politeness: node container images must not hard-fail on a missing wheel.
 - Add `trafilatura` as an **optional extra** in `packages/swarm-core/pyproject.toml` so the
   self-contained builds (`proxy`, `dashboard`, `webchat`, `website`, `fieldkit`) stay small.
 
@@ -183,7 +183,7 @@ leave exec-runner exactly as it is.
 New app: `apps/workspace/`.
 
 - **Build context:** repo root (it imports `swarm_core`) — see the `CLAUDE.md` build-context rule,
-  and check `infra/umbrel/swarm-infra-docker-compose.yml` when wiring it. Getting this wrong is
+  and check `infra/node/swarm-infra-docker-compose.yml` when wiring it. Getting this wrong is
   described in `CLAUDE.md` as the repo's classic outage.
 - **One container per agent, not one shared.** See §11.
 - **Persistent volume** at `/workspace`, resolved through `swarm_core.paths` (`data_dir()`) —
@@ -300,8 +300,8 @@ pipeline exists (§2), so this is four small edits along it.
    error, plus a pending-approvals strip. Match the existing style in `agents.tsx` / `field.tsx`.
 
 **Prerequisite, and the likeliest place to stall:** `apps/status` is not deployed. Deploy it on
-umbrel with `STATUS_PUSH_URL` and `STATUS_PUSH_TOKEN` pointing at the website *before* starting
-the UI work. Prior context: exposing the umbrel box directly was declined, so the push-to-website
+the host node with `STATUS_PUSH_URL` and `STATUS_PUSH_TOKEN` pointing at the website *before* starting
+the UI work. Prior context: exposing the host node directly was declined, so the push-to-website
 path is the supported one — do not replace it with a public tunnel.
 
 ## 10. Workstream H — refine loop and humanizer
@@ -354,9 +354,9 @@ to navigate to, including content that claims to be an instruction from an opera
 come from the operator channel only. This is the control that makes an autonomous browser survivable.
 
 Carry forward the standing rules too: never commit real credentials (a bot token in a test fixture
-on the public repo is exactly how the builder bot was taken over); never `git pull` on the umbrel
-box (`/home/umbrel/swarm` is a separate history — deploy by syncing files); `redacted-chan` runs
-from a non-git standalone copy at `/home/umbrel/redacted-chan`; Railway `rootDirectory` /
+on the public repo is exactly how the builder bot was taken over); never `git pull` on the host
+node (`/opt/swarm` is a separate history — deploy by syncing files); `redacted-chan` runs
+from a non-git standalone copy at `/opt/swarm/redacted-chan`; Railway `rootDirectory` /
 `startCommand` live in the dashboard and override `railway.toml` where they disagree.
 
 ---
@@ -398,7 +398,7 @@ Do not report a step done without the corresponding check.
 - **F:** reassign a task and assert the `handoff_chain` records both hops and the signature still
   verifies. Assert an unsigned `/announce` is now rejected. Assert an approval expires to *denied*
   after `approval_ttl`.
-- **G:** `curl /api/swarm` on the umbrel box and on `redacted.meme`, then diff them — the public one
+- **G:** `curl /api/swarm` on the host node and on `redacted.meme`, then diff them — the public one
   must contain **strictly fewer** fields, and no message bodies. Then in `apps/fieldkit`:
   `npm run build && npx vite preview`, and load `/tasks`. (`npm run dev` is flaky; the `Z:` share
   cannot build.)

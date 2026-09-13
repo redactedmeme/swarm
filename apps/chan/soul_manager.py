@@ -10,7 +10,7 @@ conversation_memory, mesh_deliberation and authenticity_vote — chan's own
 soul-evolution policy, not shared code.
 
 Deployment note: chan does not run from this repo. The live one is a
-self-contained stack at /home/umbrel/redacted-chan with its own compose file,
+self-contained stack deployed with its own compose file,
 its own Dockerfile, and SQLCipher-encrypted databases on a bind mount. This
 file only reaches it by an explicit file sync, and that sync must carry
 packages/ with it — see the Dockerfile there.

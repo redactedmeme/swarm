@@ -37,7 +37,7 @@ GET  /health
 Off by default. On the caller (hermes): `WORKSPACE_ENABLED=true`,
 `WORKSPACE_TOKEN_HERMES=<same value the workspace container gets>`. Deploy the
 `workspace` service + `workspacedata` / `workspacesock` volumes
-(`infra/umbrel/swarm-infra-docker-compose.yml`), and add `EGRESS_TOKEN_WORKSPACE`
+(`infra/node/swarm-infra-docker-compose.yml`), and add `EGRESS_TOKEN_WORKSPACE`
 to `swarm-egress`.
 
 Hermes tools: `workspace_read`, `workspace_write`, `workspace_list`,

@@ -1,0 +1,10 @@
+services:
+  autostart:
+    image: docker:27-cli
+    container_name: autostart-bootstrap
+    restart: always
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - /opt/swarm:/opt/swarm
+    working_dir: /opt/swarm
+    entrypoint: ["sh", "-c", "sh /opt/swarm/autostart-stacks.sh; echo autostart-complete; sleep infinity"]

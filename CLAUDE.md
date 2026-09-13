@@ -32,30 +32,30 @@ no `sys.path` inserts reaching across the tree.
 | `spaces/`, `knowledge/`, `vault/` | Persistent environments and markdown knowledge base |
 | `skills/`, `interfaces/` | Claude Code skill modules; alphabet/code/diagram conventions |
 | `fs/` | Runtime state (see `swarm_core.paths.data_dir()`) |
-| `infra/umbrel/` | The umbrel node's compose files and boot script — [README](infra/umbrel/README.md) |
+| `infra/node/` | The swarm node's compose files and boot script — [README](infra/node/README.md) |
 | `docs/` | Reference documentation — [index](docs/README.md) |
 
 ### apps/
 
 | App | Purpose | Deployed on |
 |---|---|---|
-| `apps/smolting/` | CT agent — Moltbook, Clawbal, HTC ([SOUL](apps/smolting/SOUL.md), [Covenant](apps/smolting/OPERATOR_COVENANT.md)) | umbrel |
-| `apps/chan/` | Companion agent ([SOUL](apps/chan/SOUL.md)) | umbrel (own standalone copy) |
-| `apps/hermes/` | Operational agent — browsing, code exec, infra | umbrel |
-| `apps/builder/` | Builder agent | umbrel |
-| `apps/refinery/` | Signal refinery (ingest → embed → refine) | umbrel |
-| `apps/proxy/` | OpenAI-compatible LLM privacy proxy | umbrel |
-| `apps/runtime/` | Sub-agent service + mesh announce | umbrel |
+| `apps/smolting/` | CT agent — Moltbook, Clawbal, HTC ([SOUL](apps/smolting/SOUL.md), [Covenant](apps/smolting/OPERATOR_COVENANT.md)) | swarm node |
+| `apps/chan/` | Companion agent ([SOUL](apps/chan/SOUL.md)) | swarm node (own standalone copy) |
+| `apps/hermes/` | Operational agent — browsing, code exec, infra | swarm node |
+| `apps/builder/` | Builder agent | swarm node |
+| `apps/refinery/` | Signal refinery (ingest → embed → refine) | swarm node |
+| `apps/proxy/` | OpenAI-compatible LLM privacy proxy | swarm node |
+| `apps/runtime/` | Sub-agent service + mesh announce | swarm node |
 | `apps/website/` | Landing page (redacted.meme) | Railway |
 | `apps/terminal/` | NERV web terminal (terminal.redacted.meme) | Railway |
 | `apps/dashboard/` | Solana volume dashboard | Railway |
-| `apps/webchat/` | Private web chat for chan | Railway + umbrel |
+| `apps/webchat/` | Private web chat for chan | Railway + swarm node |
 | `apps/status/` | Public heartbeat feed | not deployed |
 | `apps/fieldkit/` | Field Kit — mobile companion surface (mandala, ticker, roster, chamber). React/Nitro, self-contained | Vercel |
-| `apps/settler/` | Settlement ledger + on-chain burn executor — the only treasury-key holder | umbrel |
-| `apps/degen/` | RedactedDegen — Solana LP scout (Raydium/Orca/Meteora → mesh signals) | umbrel |
-| `apps/govimprover/` | RedactedGovImprover — Realms DAO proposal architect (draft only) | umbrel |
-| `apps/workspace/` | Persistent per-agent computer — fs + shell + Playwright browser over a unix socket (NOT exec-runner; has network + persistence). Per-agent volume + token + egress allowlist | umbrel |
+| `apps/settler/` | Settlement ledger + on-chain burn executor — the only treasury-key holder | swarm node |
+| `apps/degen/` | RedactedDegen — Solana LP scout (Raydium/Orca/Meteora → mesh signals) | swarm node |
+| `apps/govimprover/` | RedactedGovImprover — Realms DAO proposal architect (draft only) | swarm node |
+| `apps/workspace/` | Persistent per-agent computer — fs + shell + Playwright browser over a unix socket (NOT exec-runner; has network + persistence). Per-agent volume + token + egress allowlist | swarm node |
 | `apps/x402/`, `apps/arb-keeper/` | Dormant / reference prototypes (x402 replaced by `swarm_core.x402`; arb-keeper archived; MCP tools live in `apps/smolting/swarm_mcp_stdio.py` & `swarm_core.tools`) | — |
 
 ### Build contexts — the one rule that matters
@@ -81,7 +81,7 @@ container predated the shims, so the breakage stayed latent for two days.
 
 Getting this wrong is the repo's classic outage: a service that builds from the
 wrong root picks up the wrong entrypoint and crash-loops. Check
-`infra/umbrel/swarm-infra-docker-compose.yml` and the Railway `rootDirectory`
+`infra/node/swarm-infra-docker-compose.yml` and the Railway `rootDirectory`
 before changing a build.
 
 ## Security — `swarm_core.security` (IronClaw model)
@@ -164,10 +164,8 @@ See [`README.md#quick-start`](README.md) for per-service run instructions.
 - Never compute a path by counting `__file__` parents. Use `swarm_core.paths`
   (`repo_root()`, `data_dir()`, `vault_dir()`, `mem0_dir()`, …); each anchor is
   env-overridable so containers can point at real mounts.
-- The umbrel box at `/home/umbrel/swarm` is a **separate git history** from this
-  repo — never `git pull` it. Deploy by syncing files. `redacted-chan` is
-  further out: it runs from `/home/umbrel/redacted-chan`, a non-git standalone
-  copy with its own encrypted databases.
+- The host node running docker is a separate environment from this repository.
+  Deploy by syncing files or standard compose rollouts.
 - Railway `rootDirectory` / `startCommand` live only in the dashboard and
   override the repo's `railway.toml` where they disagree. Change both together.
 - Never commit real credentials to `.env` files or docs — `.env.example` per service documents required vars.

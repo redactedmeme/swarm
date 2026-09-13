@@ -27,8 +27,5 @@ EXPOSE 3080
 ENTRYPOINT ["./entrypoint.sh"]
 # dsh deliberately refuses --host 0.0.0.0 (the web UI is an RCE surface). It
 # binds 127.0.0.1 only; reach it over an SSH tunnel or an authenticated proxy.
-# --trusted-host lets the browser-trust fence accept the tailscale-serve origin
-# (https://umbrel.taila13a94.ts.net:3080 -> 127.0.0.1:3080).
-CMD ["web", "--port", "3080", "--no-open", \
-     "--trusted-host", "umbrel.taila13a94.ts.net", \
-     "--trusted-host", "umbrel.taila13a94.ts.net:3080"]
+# --trusted-host lets the browser-trust fence accept the tailscale-serve origin.
+CMD ["web", "--port", "3080", "--no-open"]

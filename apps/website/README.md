@@ -131,6 +131,6 @@ their content genuinely doesn't change.
 | `SWARM_CACHE_TTL` | `30` | How long a status response is reused. |
 
 The upstream service lives in [`../apps/status/`](../apps/status/) and runs on the
-umbrel node next to the mesh Redis. `serve.py` re-projects its response onto exactly
+primary swarm node next to the mesh Redis. `serve.py` re-projects its response onto exactly
 the four fields the page renders, so anything the upstream adds later stays off the
 public surface until it is deliberately allowed through.

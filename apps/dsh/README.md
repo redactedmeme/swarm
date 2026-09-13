@@ -24,7 +24,7 @@ llm-pi-ai:
   providers:
     redacted-proxy:
       api: openai-completions
-      baseURL: http://127.0.0.1:7080/v1   # host networking on umbrel
+      baseURL: http://127.0.0.1:7080/v1   # host networking on host node
       apiKeyEnv: PROXY_TOKEN
       headers: { X-Client: dsh }
       models:
@@ -57,8 +57,8 @@ Headless smoke (also the path a swarm agent would drive later):
 docker run --rm -e PROXY_TOKEN=<token> swarm-dsh --profile headless "print hello"
 ```
 
-On umbrel it runs as `swarm-dsh` with `network_mode: host`, reaching the proxy on
-`127.0.0.1:7080`. See `infra/umbrel/swarm-infra-docker-compose.yml`.
+On the swarm node it runs as `swarm-dsh` with `network_mode: host`, reaching the proxy on
+`127.0.0.1:7080`. See `infra/node/swarm-infra-docker-compose.yml`.
 
 ## Access
 
@@ -66,23 +66,16 @@ dsh **refuses to bind anything but `127.0.0.1`** for the `web` profile (the UI i
 execution surface), and it prints a fresh `?token=…` auth token in its logs on every boot
 (`docker logs swarm-dsh`).
 
-**Stable URL (tailnet):** `https://umbrel.taila13a94.ts.net:3080/` — a `tailscale serve` proxy
-on the umbrel node (`tailscale_web_1` container) forwards it to `127.0.0.1:3080`. Reachable only
-from devices on the tailnet; that is the access control. The dsh boot token is a second factor —
-grab the current one with:
+**Access over private tailnet / SSH tunnel:**
+A private proxy or SSH tunnel forwards to `127.0.0.1:3080`. Grab the boot token with:
 
 ```bash
-ssh umbrel@100.106.250.9 'sudo docker logs swarm-dsh 2>&1 | grep -o "token=[A-Za-z0-9_-]*" | tail -1'
+ssh <node> 'sudo docker logs swarm-dsh 2>&1 | grep -o "token=[A-Za-z0-9_-]*" | tail -1'
 ```
 
-then open `https://umbrel.taila13a94.ts.net:3080/?token=<token>` once; the cookie it sets keeps
-the session. The CMD passes `--trusted-host umbrel.taila13a94.ts.net:3080` so dsh's browser-trust
-fence accepts the proxied origin.
+then open `http://127.0.0.1:3080/?token=<token>` to authenticate the session.
 
-To re-point or remove the proxy:
-`sudo docker exec tailscale_web_1 tailscale serve --https=3080 off`
-
-**SSH tunnel (fallback):** `ssh -N -L 3080:127.0.0.1:3080 umbrel@100.106.250.9`, then
+**SSH tunnel (fallback):** `ssh -N -L 3080:127.0.0.1:3080 <node>`, then
 `http://127.0.0.1:3080/?token=<token>`.
 
 ## Security

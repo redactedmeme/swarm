@@ -60,6 +60,6 @@ guarded by `swarm:treasury:burned:seen`, so a double resume cannot double-count.
 
 ## Deploy
 
-Umbrel service, host networking, `REDIS_URL=redis://127.0.0.1:6379`. Config in
-`infra/umbrel/.env.settler` (git-ignored) — **never** the shared `.env`. See
+Node service, host networking, `REDIS_URL=redis://127.0.0.1:6379`. Config in
+`infra/node/.env.settler` (git-ignored) — **never** the shared `.env`. See
 `.env.example`.

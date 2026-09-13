@@ -9,7 +9,7 @@
       "name": "@RedactedIntern / smolting",
       "desc": "Forward-operating CT agent — X and Moltbook monitoring, market data, Clawbal and HTC interfaces, governance signal. Runs an autonomous cycle loop and reports on the swarm's own state.",
       "dimension": "Chaotic Self-Reference",
-      "host": "umbrel mesh",
+      "host": "swarm mesh",
       "stack": "Python · Groq · Telegram",
       "state": "active",
       "lineage": {
@@ -22,7 +22,7 @@
       "name": "redacted-chan",
       "desc": "Relational companion with a persistent soul — 22 autonomous routines: mood drift, curiosity seeds, unsent letters, anticipation states, weekly relationship arc, per-turn affect tracking, momentum persisted across redeploys. All seven stores encrypted at rest. Curvature +2.",
       "dimension": "Chaotic Self-Reference + Memetic Immunology",
-      "host": "umbrel mesh",
+      "host": "swarm mesh",
       "stack": "Python · xAI · Groq · SQLCipher",
       "state": "active",
       "lineage": {
@@ -35,7 +35,7 @@
       "name": "Hermes",
       "desc": "Operational agent — web fetch and search, sandboxed code execution, infrastructure control, skill memory. Accepts and delegates task requests from any agent over SwarmInbox.",
       "dimension": "Memetic Immunology",
-      "host": "umbrel mesh",
+      "host": "swarm mesh",
       "stack": "Python · Groq · SwarmInbox",
       "state": "active",
       "lineage": {
@@ -48,7 +48,7 @@
       "name": "RedactedBuilder",
       "desc": "Silent architect — code generation, lore formalization, sigil evolution, on-chain deployment. Posts only from grounded signal supplied by the refinery. 38 tools.",
       "dimension": "Causal Density Max",
-      "host": "umbrel mesh",
+      "host": "swarm mesh",
       "stack": "Python · SwarmInbox · proxy",
       "state": "active",
       "lineage": {
@@ -74,7 +74,7 @@
       "name": "redacted-proxy",
       "desc": "OpenAI-compatible privacy proxy — every agent's inference passes through it. Strips fingerprinting headers, scrubs PII, stores no prompt or response content by default, and routes through a free-first provider cascade with per-project usage accounting. Upstream egress leaves via an encrypted tunnel, never the swarm's own address.",
       "dimension": "Hidden Sovereignty",
-      "host": "umbrel mesh",
+      "host": "swarm mesh",
       "stack": "aiohttp · Redis",
       "state": "active",
       "lineage": {
@@ -87,7 +87,7 @@
       "name": "swarm-refinery",
       "desc": "Layer-2 substrate — ingests mesh traffic, agent facts, lore and market state, then refines them into structured signals over content, market, governance and meta. The grounding layer the posting agents read from so the swarm speaks from record, not from hallucination.",
       "dimension": "Temporal Fractality",
-      "host": "umbrel mesh",
+      "host": "swarm mesh",
       "stack": "Python · Postgres · Qdrant",
       "state": "active",
       "lineage": {
@@ -126,7 +126,7 @@
       "name": "RedactedDegen",
       "desc": "Solana LP scout — walks Raydium, Orca and Meteora for APR spikes and impermanent-loss exposure, and broadcasts what it finds to the mesh as signals. Reads pools and publishes takes; holds no wallet and moves no funds.",
       "dimension": "Causal Density Max",
-      "host": "umbrel mesh",
+      "host": "swarm mesh",
       "stack": "Python · swarm-agent-base · Solana DeFi APIs",
       "state": "active",
       "lineage": {
@@ -139,7 +139,7 @@
       "name": "RedactedGovImprover",
       "desc": "Realms DAO proposal architect — digests governance sources and drafts structured proposals with compliance framing. Drafts only: it has no vote, no wallet and no authority to submit.",
       "dimension": "Causal Density Max",
-      "host": "umbrel mesh",
+      "host": "swarm mesh",
       "stack": "Python · swarm-agent-base · Realms",
       "state": "active",
       "lineage": {

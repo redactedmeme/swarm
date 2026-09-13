@@ -1,42 +1,37 @@
 # swarm-refinery service block.
-# Paste this `refinery:` service into /home/umbrel/swarm-infra/docker-compose.yml
-# (under `services:`, alongside smolting). Uses host networking so it reaches
-# postgres/redis/qdrant on 127.0.0.1, mirroring swarm-runtime/hermes.
+# Paste this `refinery:` service into infra/node/swarm-infra-docker-compose.yml
+# alongside redis, postgres, qdrant and the other swarm agents.
 #
-# Read-only source mounts:
-#   smoltingdata volume  -> /sources/smolting     (facts.db, post_tracker.json, ...)
-#   hermesdata volume    -> /sources/hermes
-#   redacted-chan bind   -> /sources/redacted-chan (facts.db + orchestrator *.jsonl, PRIVATE)
+# Build context: the REPO ROOT (refinery imports packages/swarm-core).
+#
+# Volumes:
+#   - /sources/smolting: read-only mount of smolting's /data volume
+#   - /sources/hermes:   read-only mount of hermes-bot's /data volume
+#   - /sources/redacted-chan: read-only mount of redacted-chan's /data directory
+#   - /models:           cache volume for fastembed model weights (~500MB)
 
+services:
   refinery:
     build:
-      context: /home/umbrel/swarm/refinery
+      context: .
       dockerfile: Dockerfile
     container_name: swarm-refinery
-    env_file:
-      - .env
+    restart: unless-stopped
     environment:
-      REDIS_URL: redis://127.0.0.1:6379
-      POSTGRES_URL: postgresql://${POSTGRES_USER:-swarm}:${POSTGRES_PASSWORD:-swarm_secret}@127.0.0.1:5432/${POSTGRES_DB:-swarm}
-      QDRANT_URL: http://127.0.0.1:6333
-      QDRANT_COLLECTION: swarm_signals
-      EMBED_MODEL: sentence-transformers/all-MiniLM-L6-v2
-      EMBED_DIM: "384"
-      TOKEN_MINT: 9mtKd1o8Ht7F1daumKgs5D8EdVyopWBfYQwNmMojpump
-      REFINERY_PORT: "8090"
-      INGEST_INTERVAL_MIN: "30"
-      REFINE_INTERVAL_MIN: "60"
-      REFINERY_PRUNE: "false"          # keep OFF until ingest is verified
+      REDIS_URL: redis://:REDACTED@swarm-redis:6379/0
+      DATABASE_URL: postgresql://swarm:swarm_secret@swarm-postgres:5432/swarm
+      QDRANT_URL: http://swarm-qdrant:6333
       SRC_SMOLTING: /sources/smolting
       SRC_HERMES: /sources/hermes
       SRC_REDACTED_CHAN: /sources/redacted-chan
       GROQ_API_KEY: ${GROQ_API_KEY}
-      GROQ_MODEL: ${GROQ_MODEL:-openai/gpt-oss-120b}
+      GROQ_MODEL: openai/gpt-oss-120b
+      PROXY_TOKEN: ${PROXY_TOKEN}
       PYTHONUNBUFFERED: "1"
     volumes:
       - smoltingdata:/sources/smolting:ro
       - hermesdata:/sources/hermes:ro
-      - /home/umbrel/redacted-chan/data:/sources/redacted-chan:ro
+      - redactedchandata:/sources/redacted-chan:ro
       - refinerymodels:/models
     depends_on:
       postgres:

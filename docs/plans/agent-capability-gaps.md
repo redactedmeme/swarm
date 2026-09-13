@@ -59,7 +59,7 @@ truncates at 3000 chars, so nav, cookie banners and script bodies consume most o
   `extract(html, url) -> {title, markdown, text, word_count}`.
 - Implementation: `trafilatura` (single dep, no browser, handles boilerplate removal and
   markdown output) with a graceful fallback to the current regex path when it returns nothing
-  or the dep is absent — the fallback matters because umbrel images should not hard-fail on a
+  or the dep is absent — the fallback matters because node container images should not hard-fail on a
   new wheel.
 - Keep the existing `_is_ssrf_blocked` guard in `web_tools.py` and keep piping results through
   `promptguard.wrap_untrusted(source="web:...")` exactly as `apps/runtime/tasks/web_research.py`
@@ -131,7 +131,7 @@ Four edits along that path:
    error, matching the existing route style in `agents.tsx` and `field.tsx`.
 
 **Prerequisite, and it is a real one:** `apps/status` is listed as *not deployed* in
-`CLAUDE.md`. The board shows nothing until status runs on umbrel with `STATUS_PUSH_URL` and
+`CLAUDE.md`. The board shows nothing until status runs on the host node with `STATUS_PUSH_URL` and
 `STATUS_PUSH_TOKEN` set against the website. That deploy is step 4.0, before any UI work, and
 it is the step most likely to be where this stalls.
 
@@ -156,7 +156,7 @@ it is the step most likely to be where this stalls.
 - **Gap 3:** golden-file test that `humanize` preserves every number and proper noun in the
   input; test that an exception inside the rewrite returns the original string verbatim; test
   `refine` stops at `max_rounds` when `stop_when` never fires.
-- **Gap 4:** curl `/api/swarm` on the umbrel box and on `redacted.meme`, diff the two — the
+- **Gap 4:** curl `/api/swarm` on the host node and on `redacted.meme`, diff the two — the
   public one must contain strictly fewer fields. Then `npm run build && vite preview` in
   `apps/fieldkit` (per prior findings `npm run dev` is flaky and the Z: share cannot build) and
   load `/tasks`.
