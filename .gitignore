@@ -144,3 +144,9 @@ skills/turnstile-spin/
 skills/web-perf/
 skills/workers-best-practices/
 skills/wrangler/
+
+# Prompts, plans, reviews & temporary review documents
+*-prompt.md
+*prompt*.md
+*-plan.md
+*review*.md
